@@ -1,0 +1,60 @@
+{
+    "map": {
+        "id": "ValtiaZeroOne",
+        "name": "Valtia Zero One",
+        "description": "Una región mágica aislada del resto de un mundo postapocalíptico, donde la tecnología avanzada y la magia coexisten en un delicado equilibrio.",
+        "image": "/data/valtia_map.jpg",
+        "width": 1536,
+        "height": 2048,
+        "unit": "km",
+        "metersPerPixel": 500
+    },
+    "locations": {
+        "Techia": {
+            "name": "Techia",
+            "description": "La capital tecnológica de Valtia, conocida por sus rascacielos futuristas y su vibrante escena de innovación.",
+            "history": "...",
+            "position": {
+                "x": 328.07,
+                "y": 626.21
+            },
+            "related_characters": ["Aris Strix", "Ardellis Mourne"]
+        },
+        "Galathia": {
+            "name": "Galathia",
+            "description": "Una ciudad antigua donde la magia es practicada libremente, famosa por sus academias de hechicería y sus mercados místicos.",
+            "history": "Conocida por su rica historia de magia y su arquitectura encantada, Galathia es un lugar donde los secretos arcanos se entrelazan con la vida cotidiana.",
+            "position": {
+                "x": 548.90,
+                "y": 1461.41
+            },
+            "related_characters": ["Oni Margalous", "Zorgun Margalous"]
+        },
+        "Lorven":{
+            "name": "Lorven",
+            "description": "Una ciudad portuaria que sirve como punto de encuentro entre comerciantes tecnológicos y magos itinerantes.",
+            "history": "...",
+            "position": {
+                "x": 1016.50,
+                "y": 518.75
+            },
+            "related_characters": ["Thalor Vex", "Lyria Dawnstar"]
+        }
+    },
+    "npcs": {
+        "Oni Margalous": {
+            "name": "Oni Margalous",
+            "description": "Una poderosa hechicera de Galathia, conocida por su sabiduría y su habilidad para manipular las fuerzas mágicas del mundo.",
+            "history": "...",
+            "related_cities": ["Galathia"]
+        }
+    },
+    "players": {
+        "Aris Strix": {
+            "name": "Aris Strix",
+            "description": "Un ingeniero brillante de Techia, dedicado a fusionar la tecnología con la magia para crear innovaciones revolucionarias.",
+            "history": "...",
+            "related_cities": ["Techia"]
+        }
+    }
+}
