@@ -14,7 +14,7 @@ export default function UIOverlay() {
         >
             {/* Componentes UI */}
             <WorldDrawer />
-            {/* <LocationInfoCard /> */}
+            <LocationInfoCard />
         </div>
     );
 }

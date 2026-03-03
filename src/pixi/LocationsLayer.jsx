@@ -6,7 +6,7 @@ import { openLocation } from "../store/uiSlice";
 
 import { useViewport } from "../context/ViewportContext";
 
-import { createPixiTooltip } from "../components/PixiTooltip";
+import { createPixiTooltip } from "./PixiTooltip";
 
 import { lerpColor } from "../helpers/colors";
 import { RENDER_LAYERS } from "../constants/renderLayers";
