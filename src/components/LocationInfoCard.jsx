@@ -21,6 +21,22 @@ import CustomBottomNavigation from "./customs/CustomBottomNavigation";
 import AnimatedTypewriterText from "./animations/AnimatedTypewriterText";
 import LocationCharactersTab from "./tabs/LocationCharactersTab";
 
+const TabBox = ({ children, isSelected, pValue = 3 }) => (
+    <Box
+        sx={{
+            hidden: !isSelected,
+            role: "tabpanel",
+            flexGrow: 1,
+            display: isSelected ? "flex" : "none",
+            flexDirection: "column",
+            width: "100%",
+            p: pValue,
+        }}
+    >
+        {children}
+    </Box>
+);
+
 export default function LocationDialog() {
     const location = useSelector((s) => s.ui.selectedLocation);
     const dispatch = useDispatch();
@@ -95,32 +111,36 @@ export default function LocationDialog() {
                 sx={{
                     flexGrow: 1,
                     overflowY: "auto",
+                    display: "flex",
+                    flexDirection: "column",
+                    overflow: "hidden",
+                    p: 0,
                 }}
             >
-                {tab === 0 && (
+                <TabBox isSelected={tab === 0}>
                     <AnimatedTypewriterText
                         text={location?.history || "No history available."}
                         duration={1800}
                     />
-                )}
+                </TabBox>
 
-                {tab === 1 && (
+                <TabBox isSelected={tab === 1} pValue={0}>
                     <LocationCharactersTab characters={location?.characters || []} />
-                )}
+                </TabBox>
 
-                {tab === 2 && (
+                <TabBox isSelected={tab === 2} pValue={3}>
                     <AnimatedTypewriterText
                         text="Curiosities and hidden secrets will be shown here."
                         duration={1200}
                     />
-                )}
+                </TabBox>
 
-                {tab === 3 && (
+                <TabBox isSelected={tab === 3} pValue={3}>
                     <AnimatedTypewriterText
                         text="Mission history connected to this place."
                         duration={1200}
                     />
-                )}
+                </TabBox>
             </DialogContent>
 
             {/* BOTTOM NAVIGATION */}

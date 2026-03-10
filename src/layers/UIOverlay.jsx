@@ -1,7 +1,12 @@
+import { useSelector } from "react-redux";
 import WorldDrawer from "../components/WorldDrawer";
 import LocationInfoCard from "../components/LocationInfoCard";
+import FloatingProfile from "../components/FloatingProfile";
 
 export default function UIOverlay() {
+    const profile = useSelector((state) => state.player.profile);
+    const nickname = profile?.nickname || "CONNECTING...";
+
     return (
         <div
             id="ui-overlay"
@@ -15,6 +20,7 @@ export default function UIOverlay() {
             {/* Componentes UI */}
             <WorldDrawer />
             <LocationInfoCard />
+            <FloatingProfile nickname={nickname} />
         </div>
     );
 }

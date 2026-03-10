@@ -8,20 +8,31 @@ import { ViewportContext } from "../context/ViewportContext";
 
 import { RENDER_LAYERS } from "../constants/renderLayers";
 
+import { loadTexture } from "../../firebase/services/assetLoader";
+
 export default function MapViewportProvider({ children }) {
     const { app } = useApplication();
     const viewportRef = useRef(null);
-    const { map, status } = useSelector((state) => state.world);
+    const { map, assetsStatus } = useSelector((state) => state.world);
+
+    console.log("MapViewportProvider - map:", map);
+    console.log("MapViewportProvider - assetsStatus:", assetsStatus);
 
     const [viewport, setViewport] = useState(null);
 
     useEffect(() => {
-        if (!app || status !== "succeeded" || !map) return;
+        if (!app || assetsStatus !== "succeeded" || !map) return;
+        if (viewportRef.current) {
+            console.warn("Viewport ya existe, no se creará uno nuevo.");
+            return;
+        };
 
         // 🔴 Asegurar EventSystem (CLAVE)
         if (!("events" in app?.renderer)) {
             app.renderer.addSystem(PIXI.EventSystem, "events");
         }
+
+        console.log("Map: ", map);
 
         const viewport = new Viewport({
             screenWidth: app.screen.width,
@@ -44,13 +55,21 @@ export default function MapViewportProvider({ children }) {
                 maxScale: 5,
             });
 
-        // 🔹 Cargar y agregar mapa
-        PIXI.Assets.load(map.image).then((texture) => {
-            const mapSprite = new PIXI.Sprite(texture);
-            mapSprite.anchor.set(0);
-            mapSprite.zIndex = RENDER_LAYERS.MAP;
-            viewport.addChild(mapSprite);
-        });
+        const loadMap = async () => {
+            try {
+                const texture = await loadTexture(map.imageUrl);
+
+                const mapSprite = new PIXI.Sprite(texture);
+                mapSprite.anchor.set(0);
+                mapSprite.zIndex = RENDER_LAYERS.MAP;
+
+                viewport.addChild(mapSprite);
+            } catch (err) {
+                console.error("Error cargando mapa:", err);
+            }
+        };
+
+        loadMap();
 
         app.stage.addChild(viewport);
         viewportRef.current = viewport;
@@ -72,9 +91,11 @@ export default function MapViewportProvider({ children }) {
 
 
         return () => {
+            app.stage.removeChild(viewport.current);
             viewport.destroy({ children: true });
+            viewportRef.current = null;
         };
-    }, [app, map, status]);
+    }, [app, map, assetsStatus]);
 
     if (!viewport) return null;
 

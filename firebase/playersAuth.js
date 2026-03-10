@@ -1,11 +1,11 @@
-import { auth } from "./firebase/firebaseConfig";
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword  } from "firebase/auth";
+import { auth } from "./firebaseConfig";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut  } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
-import { db } from "./firebase/firebaseConfig";
+import { db } from "./firebaseConfig";
 
 export async function registerPlayer(nickname, password) {
 
-    const fakeEmail = `${nickname}@valtia.local`;
+    const fakeEmail = `${nickname}@valtia.com`;
 
     const userCredential = await createUserWithEmailAndPassword(
         auth,
@@ -28,11 +28,20 @@ export async function registerPlayer(nickname, password) {
 
 export async function loginPlayer(nickname, password) {
 
-    const fakeEmail = `${nickname}@valtia.local`;
+    const fakeEmail = `${nickname}@valtia.com`;
 
     return await signInWithEmailAndPassword(
         auth,
         fakeEmail,
         password
     );
+}
+
+export async function logoutPlayer() {
+    try {
+        await signOut(auth);
+    } catch (error) {
+        console.error("Error al cerrar sesión:", error);
+        throw error;
+    }
 }

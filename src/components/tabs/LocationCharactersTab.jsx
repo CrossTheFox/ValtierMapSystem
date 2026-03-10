@@ -6,21 +6,163 @@ import {
     Divider,
     IconButton,
 } from "@mui/material";
-import { useState, useEffect, useRef } from "react";
+import {
+    CyberText,
+    CyberTitle,
+} from "../customs/CustomTexts";
+import { useState, useEffect, useRef, Fragment, memo } from "react";
+import { loadFirebaseAsset, getCachedUrl } from "../../../firebase/services/assetLoader";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import PersonIcon from "@mui/icons-material/Person";
 import gsap from "gsap";
 
+import { UI_COLORS } from "../../constants/uiColors";
+
+// Sub-componente para las Stats
+const StatBar = ({ label, value }) => (
+    <Box sx={{ mb: 1 }}>
+        <Box sx={{ display: "flex", justifyContent: "space-between", mb: 0.5 }}>
+            <CyberText sx={{ fontSize: "0.65rem", color: "#aaa" }}>{label}</CyberText>
+            <CyberText sx={{ fontSize: "0.7rem", color: UI_COLORS.accent }}>{value}%</CyberText>
+        </Box>
+        <Box sx={{ height: 3, bgcolor: "#1a1a2a", borderRadius: 1, overflow: "hidden", border: "1px solid #2a2a3d" }}>
+            <Box 
+                sx={{ 
+                    height: "100%", 
+                    width: `${value}%`, 
+                    bgcolor: UI_COLORS.accent, 
+                    boxShadow: `0 0 10px ${UI_COLORS.accentGlow}`,
+                    transition: "width 1s ease-out" 
+                }} 
+            />
+        </Box>
+    </Box>
+);
+
+const CharacterCard = memo(function CharacterCard({ char, isSelected, onClick }) {
+    const [url, setUrl] = useState(() => getCachedUrl(char.imageUrl) || null);
+
+    useEffect(() => {
+        // Por si acaso no se precargó (puedes mantener esto como respaldo)
+        if (!url && char.imageUrl) {
+            loadFirebaseAsset(char.imageUrl).then(setUrl);
+        }
+    }, [char.imageUrl, url]);
+
+    const cornerCircle = {
+        width: 8,
+        height: 8,
+        borderRadius: "50%",
+        backgroundColor: UI_COLORS.accent,
+        boxShadow: `0 0 12px ${UI_COLORS.accentGlow}`,
+    };
+
+    return (
+        <Box
+            onClick={() => onClick(char)}
+            sx={{
+                width: "clamp(220px, 14vw, 340px)",
+                height: "clamp(320px, 60vh, 520px)",
+                flexShrink: 0,
+                cursor: "pointer",
+                transition: "transform 0.3s ease",
+                "&:hover": { transform: "scale(1.02)" }
+            }}
+        >
+            <Paper
+                elevation={isSelected ? 20 : 6}
+                sx={{
+                    height: "100%",
+                    backgroundColor: "#0f0f1a",
+                    overflow: "hidden",
+                    position: "relative",
+                    border: isSelected ? `2px solid ${UI_COLORS.accent}` : "1px solid #2a2a3d",
+                    display: "flex",
+                    flexDirection: "column",
+                }}
+            >
+                <Box sx={{ flex: 1, position: "relative", overflow: "hidden" }}>
+                    {url ? (
+                        <img 
+                            src={url} 
+                            alt={char.name}
+                            draggable={false}
+                            style={{ 
+                                width: "100%", 
+                                height: "100%", 
+                                objectFit: "cover",
+                                userSelect: "none",
+                                webkitUserDrag: "none",
+                            }}
+                        />
+                    ) : (
+                        <Box sx={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", bgcolor: "#1a1a2a" }}>
+                            <PersonIcon sx={{ fontSize: 60, color: "#3a3a4d" }} />
+                        </Box>
+                    )}
+                    
+                    {/* Overlay Nombre */}
+                    <Box sx={{
+                        position: "absolute",
+                        bottom: 0, left: 0, right: 0,
+                        pt: 6, pb: 3,
+                        background: "linear-gradient(to top, #0f0f1a 10%, transparent)",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                    }}>
+                        <CyberTitle 
+                            sx={{ 
+                                color: UI_COLORS.accent, 
+                                fontSize: "1rem", 
+                                textShadow: `0 0 10px ${UI_COLORS.accentGlow}`,
+                                textAlign: "center",
+                                width: "100%",
+                                wordBreak: "break-word",
+                                lineHeight: 1.2
+                            }}
+                        >
+                            {char.name}
+                        </CyberTitle>
+                        
+                        {/* Decoración 0---0 debajo del nombre */}
+                        <Box sx={{ display: "flex", alignItems: "center", width: "60%", mt: 1 }}>
+                            <Box sx={cornerCircle} />
+                            <Box sx={{ flex: 1, height: "1px", bgcolor: UI_COLORS.accent, mx: 0.5 }} />
+                            <Box sx={cornerCircle} />
+                        </Box>
+                    </Box>
+                </Box>
+            </Paper>
+        </Box>
+    );
+});
+
 export default function LocationCharactersTab({ characters = [] }) {
     const [selected, setSelected] = useState(null);
     const carouselRef = useRef(null);
+    const isDraggingRef = useRef(false);
 
     const handleSelect = (char) => {
-        if (selected?.id === char.id) {
-            setSelected(null);
-        } else {
-            setSelected(char);
+        if (isDraggingRef.current) return; // Evita seleccionar si se estaba arrastrando
+
+        setSelected(prev => (prev?.id === char.id ? null : char));
+
+        // Centrar la carta seleccionada en el carrusel
+        const el = carouselRef.current;
+        if (!el) return;
+        const card = el.children[characters.findIndex(c => c.id === char.id) * 2]; // Cada carta ocupa 2 elementos (card + details)
+        if (card) {
+            const cardRect = card.getBoundingClientRect();
+            const elRect = el.getBoundingClientRect();
+            const offset = cardRect.left - elRect.left - (elRect.width / 2) + (cardRect.width / 2);
+            gsap.to(el, {
+                scrollLeft: el.scrollLeft + offset,
+                duration: 0.6,
+                ease: "power3.out",
+            });
         }
     };
 
@@ -53,6 +195,7 @@ export default function LocationCharactersTab({ characters = [] }) {
 
         const down = (e) => {
             isDown = true;
+            isDraggingRef.current = false; // Reset al iniciar
             el.style.cursor = "grabbing";
             startX = e.pageX;
             scrollLeft = el.scrollLeft;
@@ -61,23 +204,50 @@ export default function LocationCharactersTab({ characters = [] }) {
         const up = () => {
             isDown = false;
             el.style.cursor = "grab";
+            // Pequeño timeout para asegurar que el evento click ocurra 
+            // después de que isDraggingRef sea procesado
+            setTimeout(() => {
+                if (!isDown) el.style.pointerEvents = "auto";
+            }, 50);
         };
 
         const move = (e) => {
             if (!isDown) return;
+            
+            // Calculamos la distancia movida
+            const x = e.pageX;
+            const dist = Math.abs(x - startX);
+
+            // Si se mueve más de 5px, confirmamos que es un DRAG
+            if (dist > 5) {
+                isDraggingRef.current = true;
+            }
+
             e.preventDefault();
-            const walk = (e.pageX - startX) * 1.5;
+            const walk = (x - startX) * 1.5;
             el.scrollLeft = scrollLeft - walk;
+        };
+
+        const handleWheel = (e) => {
+            if (e.deltaY === 0) return;
+            
+            // Evitamos que la página haga scroll vertical si el ratón está sobre el carrusel
+            e.preventDefault();
+
+            // Aplicamos el movimiento. El factor 1.5 es para sensibilidad.
+            el.scrollLeft += e.deltaY * 1.5;
         };
 
         el.addEventListener("mousedown", down);
         window.addEventListener("mouseup", up);
         el.addEventListener("mousemove", move);
+        el.addEventListener("wheel", handleWheel, { passive: false });
 
         return () => {
             el.removeEventListener("mousedown", down);
             window.removeEventListener("mouseup", up);
             el.removeEventListener("mousemove", move);
+            el.removeEventListener("wheel", handleWheel, { passive: false });
         };
     }, []);
 
@@ -88,6 +258,7 @@ export default function LocationCharactersTab({ characters = [] }) {
                 height: "100%",
                 overflow: "hidden",
                 position: "relative",
+                alignItems: "center",
             }}
         >
             {/* =========================
@@ -105,7 +276,7 @@ export default function LocationCharactersTab({ characters = [] }) {
                     "&:hover": { backgroundColor: "rgba(0,0,0,0.8)" },
                 }}
             >
-                <ChevronLeftIcon sx={{ color: "#ff66ff" }} />
+                <ChevronLeftIcon sx={{ color: UI_COLORS.accent }} />
             </IconButton>
 
             {/* =========================
@@ -123,7 +294,7 @@ export default function LocationCharactersTab({ characters = [] }) {
                     "&:hover": { backgroundColor: "rgba(0,0,0,0.8)" },
                 }}
             >
-                <ChevronRightIcon sx={{ color: "#ff66ff" }} />
+                <ChevronRightIcon sx={{ color: UI_COLORS.accent }} />
             </IconButton>
 
             {/* =========================
@@ -135,6 +306,7 @@ export default function LocationCharactersTab({ characters = [] }) {
                     transition: "all 0.4s ease",
                     display: "flex",
                     overflow: "hidden",
+                    overflowX: "auto",
                     cursor: "grab",
                     userSelect: "none",
                     WebkitUserSelect: "none",
@@ -143,152 +315,89 @@ export default function LocationCharactersTab({ characters = [] }) {
                     },
                     scrollbarWidth: "none",
                     alignItems: "center",
-                    justifyContent: characters.length < 4 ? "center" : "flex-start",
-                    height: "100%",
+                    justifyContent: `characters.length < 4 ? "center" : "flex-start"`,
+                    gap: 1,
+                    px: "15px",
                 }}
             >
                 {characters.map((char, index) => {
                     const isSelected = selected?.id === char.id;
+                    const cardHeight = "clamp(320px, 60vh, 520px)";
 
                     return (
-                        <>
+                        <Fragment key={char.id}>
                             {/* CHARACTER CARD */}
-                            <Box
-                                key={char.id || index}
-                                onClick={() => handleSelect(char)}
-                                sx={{
-                                    width: "clamp(220px, 14vw, 340px)",
-                                    height: "clamp(320px, 60vh, 520px)",
-                                    flexShrink: 0,
-                                    cursor: "pointer",
-                                    userSelect: "none",
-                                    mr: isSelected ? 1 : 3,
-                                }}
-                            >
-                                <Paper
-                                    elevation={isSelected ? 16 : 6}
-                                    sx={{
-                                        height: "100%",
-                                        backgroundColor: "#1a1a2a",
-                                        overflow: "hidden",
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        border: isSelected
-                                            ? "2px solid #ff66ff"
-                                            : "1px solid #2a2a3d",
-                                        transition: "all 0.3s ease",
-                                        "&:hover": {
-                                            transform: "scale(1.03)",
-                                            boxShadow:
-                                                "0 0 25px rgba(255,0,255,0.4)",
-                                        },
-                                    }}
-                                >
-                                    <Box
-                                        sx={{
-                                            flex: "0 0 75%",
-                                            overflow: "hidden",
-                                            position: "relative",
-                                        }}
-                                    >
-                                        {char.image ? (
-                                            <img
-                                                src={char.image || "/images/placeholder.png"}
-                                                alt={char.name}
-                                                draggable={false}
-                                                style={{
-                                                    width: "100%",
-                                                    height: "100%",
-                                                    objectFit: "cover",
-                                                    pointerEvents: "none",
-                                                    userSelect: "none",
-                                                }}
-                                            />
-                                        ) : (
-                                            <Avatar
-                                                sx={{
-                                                    width: "100%",
-                                                    height: "100%",
-                                                    backgroundColor: "#2a2a3d",
-                                                }}
-                                            >
-                                                <PersonIcon />
-                                            </Avatar>
-                                        )}
-                                    </Box>
+                            <CharacterCard
+                                char={char}
+                                isSelected={isSelected}
+                                onClick={handleSelect}
+                            />
 
-                                    <Box
-                                        sx={{
-                                            flex: 1,
-                                            display: "flex",
-                                            alignItems: "center",
-                                            justifyContent: "center",
-                                            px: 2,
-                                        }}
-                                    >
-                                        <Typography
-                                            variant="h6"
-                                            align="center"
-                                            sx={{
-                                                color: "#ff66ff",
-                                                fontWeight: 500,
-                                            }}
-                                        >
-                                            {char.name}
-                                        </Typography>
-                                    </Box>
-                                </Paper>
-                            </Box>
-
-                            {/* 🔥 INLINE DETAILS PANEL */}
+                            {/* INLINE DETAILS PANEL */}
                             <Box
                                 sx={{
-                                    width: isSelected ? "clamp(320px, 25vw, 500px)" : 0,
-                                    minHeight: "clamp(320px, 50vh, 520px)",
+                                    width: isSelected ? "clamp(350px, 30vw, 600px)" : 0,
+                                    height: cardHeight, 
                                     flexShrink: 0,
-                                    background: "radial-gradient(circle at top, #2a1524 0%, #141016 100%)",
+                                    background: "linear-gradient(135deg, #161625 0%, #0a0a12 100%)",
                                     border: isSelected ? "1px solid #5a3a5f" : "none",
-                                    borderRadius: 2,
-                                    px: isSelected ? 3 : 0,
-                                    py: isSelected ? 3 : 0,
-                                    overflow: "hidden",
-                                    position: "relative",
-                                    transition: "all 0.45s cubic-bezier(0.4,0,0.2,1)",
+                                    borderLeft: `3px solid ${UI_COLORS.accent}`,
+                                    borderRadius: "0 12px 12px 0",
+                                    overflow: "hidden", 
+                                    transition: "all 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
                                     opacity: isSelected ? 1 : 0,
+                                    position: "relative",
+                                    alignSelf: "center", 
                                 }}
                             >
-                                {isSelected && (
-                                    <>
-                                        <Typography
-                                            variant="h5"
-                                            sx={{ color: "#ff66ff", mb: 2 }}
-                                        >
-                                            {selected.name}
-                                        </Typography>
+                                {/* Contenedor INTERNO*/}
+                                <Box sx={{
+                                    height: "100%",
+                                    width: "85%",
+                                    p: 4,
+                                    opacity: isSelected ? 1 : 0,
+                                    transform: isSelected ? "translateX(0)" : "translateX(20px)",
+                                    transition: "all 0.4s ease",
+                                    transitionDelay: isSelected ? "0.2s" : "0s" // Aparece justo después de expandirse
+                                }}>
+                                    {isSelected && (
+                                        <>
+                                            <CyberTitle sx={{ 
+                                                color: UI_COLORS.accent,
+                                                fontSize: "1.2rem" 
+                                            }}>
+                                                {selected.name}
+                                            </CyberTitle>
+                                            
+                                            <CyberText sx={{ 
+                                                color: "#888", 
+                                                mb: 3, 
+                                                letterSpacing: 3,
+                                                fontSize: "0.6rem" 
+                                            }}>
+                                                {selected.callname || "Placeholder of the Void"}
+                                            </CyberText>
 
-                                        <Divider
-                                            sx={{
-                                                mb: 2,
-                                                backgroundColor: "#2a2a3d",
-                                            }}
-                                        />
+                                            <Box sx={{ mb: 2 }}>
+                                                <StatBar label="INTELLECT" value={85} />
+                                                <StatBar label="MAGIC RESONANCE" value={62} />
+                                                <StatBar label="SYSTEM HACK" value={91} />
+                                            </Box>
 
-                                        <Typography sx={{ mb: 2 }}>
-                                            Age: {selected.age || "Unknown"}
-                                        </Typography>
+                                            <Divider sx={{ bgcolor: "rgba(255,102,255,0.1)", mb: 2 }} />
 
-                                        <Typography
-                                            sx={{
-                                                whiteSpace: "pre-wrap",
+                                            <CyberText sx={{ 
+                                                fontSize: "0.8rem", 
                                                 lineHeight: 1.6,
-                                            }}
-                                        >
-                                            {selected.bio || "No biography available."}
-                                        </Typography>
-                                    </>
-                                )}
+                                                color: "#ccc"
+                                            }}>
+                                                {selected.bio}
+                                            </CyberText>
+                                        </>
+                                    )}
+                                </Box>
                             </Box>
-                        </>
+                        </Fragment>
                     );
                 })}
             </Box>

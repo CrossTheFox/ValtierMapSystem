@@ -141,21 +141,5 @@
             },
             "characters": []
         }
-    },
-    "npcs": {
-        "Oni Margalous": {
-            "name": "Oni Margalous",
-            "description": "Una poderosa hechicera de Galathia, conocida por su sabiduría y su habilidad para manipular las fuerzas mágicas del mundo.",
-            "history": "...",
-            "related_cities": ["Galathia"]
-        }
-    },
-    "players": {
-        "Aris Strix": {
-            "name": "Aris Strix",
-            "description": "Un ingeniero brillante de Techia, dedicado a fusionar la tecnología con la magia para crear innovaciones revolucionarias.",
-            "history": "...",
-            "related_cities": ["Techia"]
-        }
     }
 }
