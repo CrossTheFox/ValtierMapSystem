@@ -1,4 +1,4 @@
-import { getDownloadURL, ref } from "firebase/storage";
+import { getDownloadURL, ref, uploadBytes, deleteObject } from "firebase/storage";
 import { storage } from "../firebaseConfig";
 import * as PIXI from "pixi.js";
 
@@ -26,11 +26,14 @@ export function preloadImage(url) {
 export async function loadFirebaseAsset(path) {
     if (assetCache[path]) return assetCache[path];
 
-    const storageRef = ref(storage, path);
-    const url = await getDownloadURL(storageRef);
-
-    assetCache[path] = url;
-    return url;
+    try {
+        const storageRef = ref(storage, path);
+        const url = await getDownloadURL(storageRef);
+        assetCache[path] = url;
+        return url;
+    } catch (error) {
+        throw new Error(`Asset no encontrado en Storage: ${path}`);
+    }
 }
 
 export async function loadTexture(path) {
@@ -52,6 +55,25 @@ export async function loadTexture(path) {
 
     return texturePromises[path];
 }
+
+export const uploadCharacterImage = async (characterId, file) => {
+    const storageRef = ref(storage, `characters/${characterId}_${file.name}`);
+    const snapshot = await uploadBytes(storageRef, file);
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    return { url: downloadURL, path: snapshot.ref.fullPath };
+};
+
+export const uploadLocationImage = async (locationId, file) => {
+    const storageRef = ref(storage, `locations/${locationId}_${file.name}`);
+    const snapshot = await uploadBytes(storageRef, file);
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    return { url: downloadURL, path: snapshot.ref.fullPath };
+}
+
+export const deleteStorageFile = async (path) => {
+    const storageRef = ref(storage, path);
+    await deleteObject(storageRef);
+};
 
 export function getCachedUrl(path) {
     return assetCache[path];

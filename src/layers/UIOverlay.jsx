@@ -5,7 +5,6 @@ import FloatingProfile from "../components/FloatingProfile";
 
 export default function UIOverlay() {
     const profile = useSelector((state) => state.player.profile);
-    const nickname = profile?.nickname || "CONNECTING...";
 
     return (
         <div
@@ -20,7 +19,9 @@ export default function UIOverlay() {
             {/* Componentes UI */}
             <WorldDrawer />
             <LocationInfoCard />
-            <FloatingProfile nickname={nickname} />
+            <div style={{ pointerEvents: "auto" }}> {/* Permitir clics aquí */}
+                <FloatingProfile profile={profile} />
+            </div>
         </div>
     );
 }

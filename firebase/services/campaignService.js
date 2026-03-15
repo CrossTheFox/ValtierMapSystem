@@ -1,9 +1,14 @@
 import { db } from "../firebaseConfig";
-import { collection, addDoc, getDocs, query, where } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, where, doc, updateDoc } from "firebase/firestore";
 
 export async function createCampaignDoc(campaignData) {
     return await addDoc(collection(db, "campaigns"), campaignData);
 }
+
+export async function updateCampaignElement (collectionName, id, data) {
+    const docRef = doc(db, collectionName, id);
+    await updateDoc(docRef, data);
+};
 
 export async function getCampaignsByOwner(ownerId) {
     const q = query(

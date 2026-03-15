@@ -1,159 +1,62 @@
-import {
-    Dialog,
-    DialogContent,
-    IconButton,
-    Typography,
-    Box,
-    Fade,
-} from "@mui/material";
+import React, { useEffect, useState } from "react";
+import { useSelector, useDispatch } from "react-redux";
+import { closeLocation } from "../store/uiSlice";
 
-import CloseIcon from "@mui/icons-material/Close";
 import HistoryEduIcon from "@mui/icons-material/HistoryEdu";
 import PeopleIcon from "@mui/icons-material/People";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import AssignmentIcon from "@mui/icons-material/Assignment";
 
-import { useSelector, useDispatch } from "react-redux";
-import { closeLocation } from "../store/uiSlice";
-import { useEffect, useState } from "react";
-
-import CustomBottomNavigation from "./customs/CustomBottomNavigation";
+import BaseTabbedDialog, { TabPanel } from "./BaseTabbedDialog";
 import AnimatedTypewriterText from "./animations/AnimatedTypewriterText";
 import LocationCharactersTab from "./tabs/LocationCharactersTab";
+import LocationHistoryDescriptionTab from "./tabs/LocationHistoryDescriptionTab";
 
-const TabBox = ({ children, isSelected, pValue = 3 }) => (
-    <Box
-        sx={{
-            hidden: !isSelected,
-            role: "tabpanel",
-            flexGrow: 1,
-            display: isSelected ? "flex" : "none",
-            flexDirection: "column",
-            width: "100%",
-            p: pValue,
-        }}
-    >
-        {children}
-    </Box>
-);
-
-export default function LocationDialog() {
+export default function LocationInfoCard() {
     const location = useSelector((s) => s.ui.selectedLocation);
     const dispatch = useDispatch();
 
     const [tab, setTab] = useState(0);
     const [open, setOpen] = useState(false);
 
-    /* =========================
-       CONTROL OPEN / CLOSE
-    ========================= */
     useEffect(() => {
-        if (location) {
-            setOpen(true);
-        }
+        console.log("Selected location changed:", location);
+        if (location) setOpen(true);
     }, [location]);
 
     const handleClose = () => {
         setOpen(false);
-    };
-
-    const handleExited = () => {
         dispatch(closeLocation());
-    };
+    }
+
+    const locationTabs = [
+        { label: "Descripción", icon: <AutoAwesomeIcon /> },
+        { label: "Personajes", icon: <PeopleIcon /> },
+        { label: "Misiones", icon: <AssignmentIcon /> },
+    ];
 
     if (!location && !open) return null;
 
     return (
-        <Dialog
+        <BaseTabbedDialog
             open={open}
-            TransitionComponent={Fade}
-            TransitionProps={{
-                timeout: 400,
-                onExited: handleExited,
-            }}
-            keepMounted
-            maxWidth
-            PaperProps={{
-                sx: {
-                    pointerEvents: "auto",
-                    backgroundColor: "#12121a",
-                    color: "#fff",
-                    height: "85vh",
-                    width: "80vw",
-                    borderRadius: 3,
-                    boxShadow: "0 0 40px rgba(255,0,255,0.3)",
-                },
-            }}
+            onClose={handleClose}
+            title={location?.name || "LOCATION_UNKNOWN"}
+            tabs={locationTabs}
+            activeTab={tab}
+            setActiveTab={setTab}
         >
-            {/* HEADER */}
-            <Box
-                sx={{
-                    px: 3,
-                    py: 2,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    borderBottom: "1px solid #2a2a3d",
-                    backgroundColor: "#1a1a2a",
-                }}
-            >
-                <Typography variant="h5">
-                    {location?.name}
-                </Typography>
+            <TabPanel isSelected={tab === 0}>
+                <LocationHistoryDescriptionTab location={location} />
+            </TabPanel>
 
-                <IconButton onClick={handleClose}>
-                    <CloseIcon sx={{ color: "#ff66ff" }} />
-                </IconButton>
-            </Box>
+            <TabPanel isSelected={tab === 1} pValue={0}>
+                <LocationCharactersTab characters={location?.characters || []} />
+            </TabPanel>
 
-            {/* CONTENT */}
-            <DialogContent
-                sx={{
-                    flexGrow: 1,
-                    overflowY: "auto",
-                    display: "flex",
-                    flexDirection: "column",
-                    overflow: "hidden",
-                    p: 0,
-                }}
-            >
-                <TabBox isSelected={tab === 0}>
-                    <AnimatedTypewriterText
-                        text={location?.history || "No history available."}
-                        duration={1800}
-                    />
-                </TabBox>
-
-                <TabBox isSelected={tab === 1} pValue={0}>
-                    <LocationCharactersTab characters={location?.characters || []} />
-                </TabBox>
-
-                <TabBox isSelected={tab === 2} pValue={3}>
-                    <AnimatedTypewriterText
-                        text="Curiosities and hidden secrets will be shown here."
-                        duration={1200}
-                    />
-                </TabBox>
-
-                <TabBox isSelected={tab === 3} pValue={3}>
-                    <AnimatedTypewriterText
-                        text="Mission history connected to this place."
-                        duration={1200}
-                    />
-                </TabBox>
-            </DialogContent>
-
-            {/* BOTTOM NAVIGATION */}
-            <CustomBottomNavigation
-                value={tab}
-                onChange={(e, newValue) => setTab(newValue)}
-                actions={[
-                    { label: "Historia", icon: <HistoryEduIcon /> },
-                    { label: "Personajes", icon: <PeopleIcon /> },
-                    { label: "Curiosidades", icon: <AutoAwesomeIcon /> },
-                    { label: "Misiones", icon: <AssignmentIcon /> },
-                ]}
-            />
-        </Dialog>
+            <TabPanel isSelected={tab === 2}>
+                <AnimatedTypewriterText text="[We'll add missions to this tab in a NEAR future]" duration={1200} />
+            </TabPanel>
+        </BaseTabbedDialog>
     );
 }

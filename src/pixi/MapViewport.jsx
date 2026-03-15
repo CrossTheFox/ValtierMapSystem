@@ -15,17 +15,11 @@ export default function MapViewportProvider({ children }) {
     const viewportRef = useRef(null);
     const { map, assetsStatus } = useSelector((state) => state.world);
 
-    console.log("MapViewportProvider - map:", map);
-    console.log("MapViewportProvider - assetsStatus:", assetsStatus);
-
     const [viewport, setViewport] = useState(null);
 
     useEffect(() => {
         if (!app || assetsStatus !== "succeeded" || !map) return;
-        if (viewportRef.current) {
-            console.warn("Viewport ya existe, no se creará uno nuevo.");
-            return;
-        };
+        if (viewportRef.current) return;
 
         // 🔴 Asegurar EventSystem (CLAVE)
         if (!("events" in app?.renderer)) {

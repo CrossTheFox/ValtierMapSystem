@@ -6,7 +6,8 @@ export function createLocation({
     description,
     history,
     x,
-    y
+    y,
+    imageUrl
 }) {
     return {
         mapId,
@@ -14,6 +15,7 @@ export function createLocation({
         description,
         history,
         position: { x, y },
+        imageUrl,
         createdAt: serverTimestamp()
     };
 }

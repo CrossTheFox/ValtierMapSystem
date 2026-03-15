@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Typography, Fade } from "@mui/material";
+import { CyberText } from "../customs/CustomTexts";
 
 export default function AnimatedTypewriterText({
     text = "",
@@ -34,9 +35,9 @@ export default function AnimatedTypewriterText({
 
     return (
         <Fade in={visible} timeout={400}>
-            <Typography sx={{ whiteSpace: "pre-wrap" }}>
+            <CyberText>
                 {displayedText}
-            </Typography>
+            </CyberText>
         </Fade>
     );
 }

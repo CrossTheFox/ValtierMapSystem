@@ -102,7 +102,11 @@ export default function LocationsLayer() {
                     tooltip.hide();
                 });
 
-                locationContainer.on("pointerdown", () => {
+                locationContainer.on("pointerdown", (event) => {
+                    event.stopPropagation();
+
+                    console.log("Location clicked:", loc.name);
+                    
                     dispatch(openLocation(loc));
                     tooltip.hide();
                 });

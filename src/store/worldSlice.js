@@ -27,28 +27,32 @@ export const preloadWorldAssets = createAsyncThunk(
         const { map, locations } = worldData;
         const promises = [];
 
-        // 1. Precarga del Mapa
         if (map?.imageUrl) {
             promises.push(
                 (async () => {
-                    const url = await loadFirebaseAsset(map.imageUrl);
-                    await preloadImage(url);
-                    await loadTexture(map.imageUrl);
+                    try {
+                        const url = await loadFirebaseAsset(map.imageUrl);
+                        await preloadImage(url);
+                        await loadTexture(map.imageUrl);
+                    } catch (err) {
+                        console.warn("No se pudo cargar el mapa base, saltando...", err);
+                    }
                 })()
             );
         }
 
-        // 2. Precarga de todos los Personajes
-        // Convertimos el objeto de locations a array y recorremos sus personajes
         Object.values(locations).forEach(location => {
             location.characters.forEach(char => {
                 if (char.imageUrl) {
                     promises.push(
                         (async () => {
-                            // Esto descarga la URL de Firebase, la guarda en assetCache
-                            // y fuerza al navegador a descargar el archivo
-                            const url = await loadFirebaseAsset(char.imageUrl);
-                            await preloadImage(url); 
+                            try {
+                                const url = await loadFirebaseAsset(char.imageUrl);
+                                await preloadImage(url);
+
+                            } catch (err) {
+                                console.warn(`Asset faltante para ${char.name || 'personaje'}: ${char.imageUrl}`);
+                            }
                         })()
                     );
                 }
@@ -118,7 +122,29 @@ const worldSlice = createSlice({
         assetsStatus: "idle",
         error: null,
     },
-    reducers: {},
+    reducers: {
+        updateLocationInState: (state, action) => {
+            const { id, data } = action.payload;
+            if (state.locations[id]) {
+                state.locations[id] = { ...state.locations[id], ...data };
+            }
+        },
+        updateCharacterInState: (state, action) => {
+            const { id, locationId, data } = action.payload;
+            const location = state.locations[locationId];
+            
+            if (location && location.characters) {
+                const charIndex = location.characters.findIndex(c => c.id === id);
+                if (charIndex !== -1) {
+                    // Actualización inmutable del array de personajes
+                    location.characters[charIndex] = {
+                        ...location.characters[charIndex],
+                        ...data
+                    };
+                }
+            }
+        }
+    },
     extraReducers: (builder) => {
         builder
             .addCase(loadWorld.pending, (state) => {
@@ -146,4 +172,5 @@ const worldSlice = createSlice({
     },
 });
 
+export const { updateLocationInState, updateCharacterInState } = worldSlice.actions;
 export default worldSlice.reducer;

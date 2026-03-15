@@ -9,11 +9,14 @@ export const fetchPlayerData = createAsyncThunk(
         if (!playerDoc.exists()) throw new Error("Player data not found");
         
         const data = playerDoc.data();
+        
         return {
             uid,
             nickname: data.nickname,
             role: data.role,
-            campaignId: data.campaignId // Útil para cargar el mundo después
+            // Extraemos el array y definimos la campaña activa (la primera por defecto)
+            campaignIds: data.campaignIds || [], 
+            currentCampaignId: data.campaignIds?.[0] || null 
         };
     }
 );
