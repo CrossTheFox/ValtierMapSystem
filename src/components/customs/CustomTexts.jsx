@@ -20,8 +20,8 @@ export const CyberText = ({ children, sx = {}, ...props }) => (
     <Typography
         {...props}
         sx={{
-            fontFamily: "'Michroma', sans-serif",
-            fontSize: "0.85rem", // Michroma suele ser grande, bajamos un poco el scale
+            fontFamily: "'Datatype', monospace",
+            fontSize: "0.85rem", // Datatype suele ser grande, bajamos un poco el scale
             lineHeight: 1.8,
             WebkitFontSmoothing: "antialiased",
             ...sx,

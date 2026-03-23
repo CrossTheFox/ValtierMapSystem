@@ -19,3 +19,7 @@ export async function getCampaignsByOwner(ownerId) {
     const snapshot = await getDocs(q);
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
+
+export async function createCampaignElement(collectionName, data) {
+    return await addDoc(collection(db, collectionName), data);
+}

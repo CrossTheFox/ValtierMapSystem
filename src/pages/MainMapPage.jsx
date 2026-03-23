@@ -6,6 +6,7 @@ import PixiRoot from "../layers/PixiRoot";
 import UIOverlay from "../layers/UIOverlay";
 import CyberLoader from "../components/animations/CyberLoader";
 import { UI_COLORS } from "../constants/uiColors";
+import { RENDER_LAYERS } from "../constants/renderLayers";
 
 export default function MainMapPage() {
     const mainContainerRef = useRef(null);
@@ -65,8 +66,8 @@ export default function MainMapPage() {
                     width: "100%", 
                     height: "100%",
                     visibility: isReady ? "visible" : "hidden",
-                    position: "relative",
-                    zIndex: 1,
+                    position: "absolute",
+                    zIndex: RENDER_LAYERS.MAP,
                     WebkitMaskRepeat: "no-repeat",
                     WebkitMaskPosition: "center",
                     maskRepeat: "no-repeat",
@@ -74,8 +75,9 @@ export default function MainMapPage() {
                 }}
             >
                 <PixiRoot />
-                <UIOverlay />
             </Box>
+
+            {isReady && <UIOverlay />}
         </Box>
     );
 }

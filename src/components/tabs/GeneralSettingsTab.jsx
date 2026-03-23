@@ -16,7 +16,7 @@ export default function GeneralSettingsTab({ currentCampaignId }) {
     return (
         <Grid container sx={{ height: '100%' }}>
             {/* SIDEBAR IZQUIERDA */}
-            <Grid item xs={3} sx={{ 
+            <Grid size={3} sx={{ 
                 borderRight: '1px solid rgba(255, 255, 255, 0.1)', 
                 display: 'flex', 
                 flexDirection: 'column',
@@ -33,7 +33,7 @@ export default function GeneralSettingsTab({ currentCampaignId }) {
             </Grid>
 
             {/* CONTENIDO DINÁMICO */}
-            <Grid item xs={9} sx={{ p: 4, overflowY: 'auto' }}>
+            <Grid size={9} sx={{ p: 4, overflowY: 'auto' }}>
                 {activeSubTab === 'ADD_PLAYERS' && <AddPlayerForm currentCampaignId={currentCampaignId} />}
                 {activeSubTab === 'MANAGE_MAPS' && (
                     <CyberTitle variant="h5">MAP_MANAGEMENT_INTERFACE</CyberTitle>

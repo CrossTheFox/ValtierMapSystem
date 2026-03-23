@@ -2,6 +2,8 @@ import { useSelector } from "react-redux";
 import WorldDrawer from "../components/WorldDrawer";
 import LocationInfoCard from "../components/LocationInfoCard";
 import FloatingProfile from "../components/FloatingProfile";
+import CyberSnackbar from "../components/customs/CyberSnackbar";
+import { RENDER_LAYERS } from "../constants/renderLayers";
 
 export default function UIOverlay() {
     const profile = useSelector((state) => state.player.profile);
@@ -13,7 +15,6 @@ export default function UIOverlay() {
                 position: "fixed",
                 inset: 0,
                 pointerEvents: "none",
-                zIndex: 100000,
             }}
         >
             {/* Componentes UI */}
@@ -22,6 +23,7 @@ export default function UIOverlay() {
             <div style={{ pointerEvents: "auto" }}> {/* Permitir clics aquí */}
                 <FloatingProfile profile={profile} />
             </div>
+            <CyberSnackbar />
         </div>
     );
 }

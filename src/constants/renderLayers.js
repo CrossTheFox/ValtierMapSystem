@@ -6,4 +6,6 @@ export const RENDER_LAYERS = {
     ROUTES: 30,
     LABELS: 40,
     UI: 100,
+    DIALOG: 105,
+    SNACKBAR: 110,
 };

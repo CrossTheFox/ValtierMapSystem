@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { db } from "../../firebase/firebaseConfig";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { loadTexture, preloadImage, loadFirebaseAsset } from "../../firebase/services/assetLoader";
+import { getLoreByCampaign } from "../../firebase/services/encyclopediaService";
 
 function serializeFirestore(doc) {
     const data = doc.data();
@@ -106,9 +107,21 @@ export const loadWorld = createAsyncThunk(
             }
         });
 
+        const loreSnapshot = await getDocs(
+            query(
+                collection(db, "encyclopedia"), 
+                where("campaignId", "==", campaignId)
+            )
+        );
+        const lore = loreSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...serializeFirestore(doc)
+        }));
+
         return {
             map,
-            locations
+            locations,
+            lore
         };
     }
 );
@@ -118,6 +131,7 @@ const worldSlice = createSlice({
     initialState: {
         map: null,
         locations: {},
+        lore: [],
         worldStatus: "idle",
         assetsStatus: "idle",
         error: null,
@@ -143,7 +157,10 @@ const worldSlice = createSlice({
                     };
                 }
             }
-        }
+        },
+        setLore(state, action) {
+            state.lore = action.payload;
+        },
     },
     extraReducers: (builder) => {
         builder
@@ -154,6 +171,7 @@ const worldSlice = createSlice({
                 state.worldStatus = "succeeded";
                 state.map = action.payload.map;
                 state.locations = action.payload.locations;
+                state.lore = action.payload.lore;
             })
             .addCase(loadWorld.rejected, (state, action) => {
                 state.worldStatus = "failed";
@@ -172,5 +190,5 @@ const worldSlice = createSlice({
     },
 });
 
-export const { updateLocationInState, updateCharacterInState } = worldSlice.actions;
+export const { updateLocationInState, updateCharacterInState, setLore } = worldSlice.actions;
 export default worldSlice.reducer;
