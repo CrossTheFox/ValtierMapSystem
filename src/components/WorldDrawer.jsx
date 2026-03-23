@@ -21,6 +21,7 @@ import { setSelectedLore } from "../store/uiSlice";
 const DRAWER_WIDTH = 320;
 
 const LoreItem = ({ entry, onClick }) => {
+    const [showHint, setShowHint] = useState(false); // Estado para mostrar el objetivo
     const isLocked = entry.isLocked;
     
     const dateLabel = entry.created_at 
@@ -31,10 +32,15 @@ const LoreItem = ({ entry, onClick }) => {
         })
         : "N/A";
 
+    const handleLockedClick = (e) => {
+        e.stopPropagation();
+        setShowHint(!showHint); // Alterna la visibilidad del objetivo
+    };
+
     return (
         <Box
             onClick={(e) => {
-                if (isLocked) return;
+                if (isLocked) return handleLockedClick(e);
                 e.stopPropagation();
                 onClick(entry);
             }}
@@ -42,67 +48,65 @@ const LoreItem = ({ entry, onClick }) => {
                 position: "relative",
                 p: 1.5,
                 mb: 1.5,
-                cursor: isLocked ? "default" : "pointer",
+                cursor: "pointer", // Cambiado a pointer para que el usuario sepa que puede clickear
                 borderRadius: "4px",
                 backgroundColor: "rgba(255,255,255,0.03)",
-                borderLeft: `2px solid ${isLocked ? "rgba(255,255,255,0.1)" : "transparent"}`,
-                transition: "all 0.2s ease",
-                overflow: "hidden", // Necesario para el efecto de blur
-                "&:hover": !isLocked ? {
-                    backgroundColor: "rgba(0,242,234,0.08)",
-                    borderLeft: "2px solid #00f2ea",
-                    transform: "translateX(4px)"
-                } : {},
+                borderLeft: `2px solid ${isLocked ? (showHint ? "#00f2ea" : "rgba(255,255,255,0.1)") : "transparent"}`,
+                transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                overflow: "hidden",
+                "&:hover": {
+                    backgroundColor: isLocked ? "rgba(255,255,255,0.05)" : "rgba(0,242,234,0.08)",
+                }
             }}
         >
-            {/* Overlay de Bloqueo (Blur + Candado) */}
+            {/* Overlay de Bloqueo */}
             {isLocked && (
                 <Box sx={{
                     position: "absolute",
                     top: 0, left: 0, right: 0, bottom: 0,
                     zIndex: 2,
-                    backdropFilter: "blur(4px)",
-                    backgroundColor: "rgba(0,0,0,0.4)",
+                    backdropFilter: showHint ? "blur(8px)" : "blur(4px)",
+                    backgroundColor: showHint ? "rgba(0,0,0,0.7)" : "rgba(0,0,0,0.4)",
                     display: "flex",
+                    flexDirection: "column",
                     alignItems: "center",
-                    justifyContent: "center"
+                    justifyContent: "center",
+                    transition: "all 0.3s ease",
+                    px: 2,
+                    textAlign: "center"
                 }}>
-                    <LockIcon sx={{ color: "rgba(255,255,255,0.5)", fontSize: "1.2rem" }} />
+                    <LockIcon sx={{ 
+                        color: "#00f2ea", // Candado Celeste
+                        fontSize: "1.5rem",
+                        filter: "drop-shadow(0 0 5px #00f2ea)",
+                        mb: showHint ? 1 : 0 
+                    }} />
+                    
+                    {showHint && (
+                        <CyberText variant="caption" sx={{ color: "#00f2ea", animation: "fadeIn 0.3s" }}>
+                            OBJETIVO: {entry.unlockGoal || "Misión desconocida"}
+                        </CyberText>
+                    )}
                 </Box>
             )}
 
-            {/* Header: Símbolo + Fecha */}
-            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 0.5 }}>
-                <LocalLibraryIcon sx={{ fontSize: "0.9rem", color: isLocked ? "rgba(255,255,255,0.2)" : "rgba(0,242,234,0.5)" }} />
-                <CyberText variant="caption" sx={{ color: "rgba(255,255,255,0.3)", fontSize: "0.65rem" }}>
-                    ({dateLabel})
+            {/* Resto del contenido (Título, Fecha, etc) */}
+            <Box sx={{ opacity: isLocked ? 0.2 : 1 }}>
+                <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 0.5 }}>
+                    <LocalLibraryIcon sx={{ fontSize: "0.9rem", color: "rgba(0,242,234,0.5)" }} />
+                    <CyberText variant="caption" sx={{ color: "rgba(255,255,255,0.3)", fontSize: "0.65rem" }}>
+                        ({dateLabel})
+                    </CyberText>
+                </Box>
+
+                <CyberText variant="body2" sx={{ color: "#00f2ea", fontWeight: "bold", textTransform: "uppercase" }}>
+                    {entry.title}
+                </CyberText>
+                
+                <CyberText variant="caption" sx={{ color: "rgba(255,255,255,0.5)" }}>
+                    {entry.summary}
                 </CyberText>
             </Box>
-
-            {/* Contenido */}
-            <CyberText variant="body2" sx={{ 
-                color: isLocked ? "rgba(255,255,255,0.3)" : "#00f2ea", 
-                fontWeight: "bold",
-                textTransform: "uppercase",
-                letterSpacing: 1
-            }}>
-                {entry.title}
-            </CyberText>
-            
-            <CyberText 
-                variant="caption" 
-                sx={{ 
-                    color: "rgba(255,255,255,0.5)",
-                    display: "-webkit-box",
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: "vertical",
-                    overflow: "hidden",
-                    lineHeight: 1.2,
-                    mt: 0.5
-                }}
-            >
-                {entry.summary}
-            </CyberText>
         </Box>
     );
 };

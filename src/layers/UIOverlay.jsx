@@ -3,6 +3,7 @@ import WorldDrawer from "../components/WorldDrawer";
 import LocationInfoCard from "../components/LocationInfoCard";
 import FloatingProfile from "../components/FloatingProfile";
 import CyberSnackbar from "../components/customs/CyberSnackbar";
+import LoreDialog from "../components/LoreDialog";
 import { RENDER_LAYERS } from "../constants/renderLayers";
 
 export default function UIOverlay() {
@@ -20,6 +21,7 @@ export default function UIOverlay() {
             {/* Componentes UI */}
             <WorldDrawer />
             <LocationInfoCard />
+            <LoreDialog />
             <div style={{ pointerEvents: "auto" }}> {/* Permitir clics aquí */}
                 <FloatingProfile profile={profile} />
             </div>

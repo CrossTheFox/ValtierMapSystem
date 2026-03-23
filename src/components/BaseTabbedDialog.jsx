@@ -92,7 +92,7 @@ export default function BaseTabbedDialog({
             }}
                 onClick={isMinimized ? handleToggleMinimize : undefined}
             >
-                <CyberTitle sx={{ fontSize: isMinimized ? "0.9rem" : "1.2rem", transition: '0.3s' }}>
+                <CyberTitle sx={{ fontSize: isMinimized ? "0.9rem" : "1.2rem", transition: '0.3s', color: UI_COLORS.accent }}>
                     {title} {isMinimized && "(MINIMIZADO)"}
                 </CyberTitle>
                 
