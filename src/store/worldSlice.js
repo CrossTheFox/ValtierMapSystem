@@ -102,6 +102,8 @@ export const loadWorld = createAsyncThunk(
         charactersSnapshot.forEach((doc) => {
             const character = { id: doc.id, ...serializeFirestore(doc) };
 
+            character.stats = character.stats || {};
+
             if (locations[character.locationId]) {
                 locations[character.locationId].characters.push(character);
             }

@@ -1,19 +1,44 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Accordion, AccordionSummary, AccordionDetails, Stack, IconButton, Tooltip, Grid } from '@mui/material';
+import { Box, Accordion, AccordionSummary, AccordionDetails, Stack, IconButton, Tooltip, Grid, Rating } from '@mui/material';
+
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import AddIcon from '@mui/icons-material/Add';
+import QuestionMarkIcon from '@mui/icons-material/QuestionMark';
+
 import { CyberTitle, CyberText } from '../../customs/CustomTexts';
 import { CyberAutocomplete } from '../../customs/CyberAutocomplete';
 import { CyberInput, CyberButton } from '../../customs/CyberInputs';
 import { CyberTextField } from '../../customs/CyberTextField';
+
 import { updateCampaignElement, createCampaignElement } from '../../../../firebase/services/campaignService';
 import { deleteStorageFile, uploadCharacterImage } from '../../../../firebase/services/assetLoader';
+
 import { useDispatch } from 'react-redux';
 import { showSnackbar } from '../../../store/uiSlice';
+
 import { db } from "../../../../firebase/firebaseConfig";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
-import { UI_COLORS } from '../../../constants/uiColors';
+
 import { EntityImageManager } from '../../EntityImageManager';
+
+import { UI_COLORS } from '../../../constants/uiColors';
+import { STAT_SYSTEM } from '../../../constants/stat_system';
+
+const CustomEmptyIcon = () => (
+    <Box sx={{ width: 15, height: 6, bgcolor: 'rgba(42, 42, 61, 0.3)', border: '1px solid #2a2a3d', mx: 0.2, borderRadius: '1px' }} />
+);
+
+const CustomFilledIcon = ({ isMax, isUnknown }) => (
+    <Box sx={{ 
+        width: 15, 
+        height: 6, 
+        bgcolor: isUnknown ? '#ff0055' : (isMax ? "#ff0055" : UI_COLORS.accent), 
+        border: `1px solid ${isUnknown ? '#ff0055' : (isMax ? "#ff0055" : UI_COLORS.accent)}`,
+        boxShadow: `0 0 6px ${isUnknown ? 'rgba(255,0,85,0.6)' : (isMax ? 'rgba(255,0,85,0.6)' : UI_COLORS.accentGlow)}`,
+        mx: 0.2,
+        borderRadius: '1px'
+    }} />
+);
 
 export default function CharactersSubTab({ currentCampaignId, locations }) {
     const dispatch = useDispatch();
@@ -36,13 +61,16 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
     }, [currentCampaignId]);
 
     const handleAddNew = () => {
+        const defaultStats = STAT_SYSTEM.reduce((acc, stat) => ({ ...acc, [stat.key]: 0 }), {});
+
         setSelectedItem({
             name: "NEW_ENTRY_UNNAMED",
             isNew: true,
             campaignId: currentCampaignId,
             age: 0, 
             bio: "", 
-            locationId: "" 
+            locationId: "",
+            stats: defaultStats
         });
     };
 
@@ -80,6 +108,22 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleStatChange = (statKey, newValue) => {
+        setSelectedItem(prev => ({
+            ...prev,
+            stats: {
+                ...prev.stats,
+                [statKey]: newValue
+            }
+        }));
+    };
+
+    const toggleUnknown = (statKey) => {
+        const currentValue = selectedItem.stats?.[statKey];
+        // Si ya es -1, lo devolvemos a 0, si no, lo seteamos a -1
+        handleStatChange(statKey, currentValue === -1 ? 0 : -1);
     };
 
     return (
@@ -165,6 +209,64 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
                                     onMarkForDeletion={(path) => setPendingDeletions(prev => [...prev, path])}
                                     uploadFn={uploadCharacterImage}
                                 />
+                            </Grid>
+
+                            {/* Sección de Stats con Rating */}
+                            <Grid size={12}>
+                                <CyberText sx={{ mb: 2, color: UI_COLORS.accent, fontSize: '0.8rem' }}>CHARACTER_STATISTICS_V9.0</CyberText>
+                                <Grid container spacing={2}>
+                                    {STAT_SYSTEM.map(({ key, label }) => {
+                                        const val = selectedItem.stats?.[key] || 0;
+                                        const isUnknown = val === -1;
+                                        const isMax = val >= 5;
+                                        const accentColor = isUnknown ? "#ff0055" : (isMax ? "#ff0055" : UI_COLORS.accent);
+
+                                        return (
+                                            <Grid key={key} size={3} sx={{ display: 'flex', justifyContent: 'center' }}>
+                                                <Box sx={{ 
+                                                    border: `1px solid ${accentColor}${isUnknown ? '88' : '22'}`, 
+                                                    p: 1.5, 
+                                                    borderRadius: 0, 
+                                                    position: 'relative',
+                                                    background: isUnknown ? 'linear-gradient(45deg, rgba(255,0,85,0.05) 0%, rgba(0,0,0,0) 100%)' : 'transparent',
+                                                    transition: 'all 0.3s ease'
+                                                }}>
+                                                    {/* Icono arriba a la derecha para setear -1 */}
+                                                    <Tooltip title="SET_UNKNOWN">
+                                                        <IconButton 
+                                                            onClick={() => toggleUnknown(key)}
+                                                            size="small"
+                                                            sx={{ 
+                                                                position: 'absolute', top: 2, right: 2, 
+                                                                color: isUnknown ? '#ff0055' : 'rgba(255,255,255,0.2)',
+                                                                '&:hover': { color: '#ff0055' }
+                                                            }}
+                                                        >
+                                                            <QuestionMarkIcon sx={{ fontSize: '0.9rem' }} />
+                                                        </IconButton>
+                                                    </Tooltip>
+
+                                                    <CyberText variant="caption" sx={{ 
+                                                        color: isUnknown ? '#ff0055' : 'rgba(255,255,255,0.5)',
+                                                        display: 'block', mb: 1, fontWeight: isUnknown ? 'bold' : 'normal'
+                                                    }}>
+                                                        {isUnknown ? "UNKNOWN_ERR" : label.toUpperCase()}
+                                                    </CyberText>
+
+                                                    <Rating
+                                                        max={5}
+                                                        value={isUnknown ? 0 : val}
+                                                        disabled={isUnknown}
+                                                        onChange={(e, newValue) => handleStatChange(key, newValue)}
+                                                        icon={<CustomFilledIcon isMax={isMax} isUnknown={isUnknown} />}
+                                                        emptyIcon={<CustomEmptyIcon />}
+                                                        sx={{ opacity: isUnknown ? 0.3 : 1 }}
+                                                    />
+                                                </Box>
+                                            </Grid>
+                                        );
+                                    })}
+                                </Grid>
                             </Grid>
 
                             <Grid size={12}>

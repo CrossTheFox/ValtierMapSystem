@@ -18,27 +18,100 @@ import PersonIcon from "@mui/icons-material/Person";
 import gsap from "gsap";
 
 import { UI_COLORS } from "../../constants/uiColors";
+import { STAT_SYSTEM } from "../../constants/stat_system";
 
-// Sub-componente para las Stats
-const StatBar = ({ label, value }) => (
-    <Box sx={{ mb: 1 }}>
-        <Box sx={{ display: "flex", justifyContent: "space-between", mb: 0.5 }}>
-            <CyberText sx={{ fontSize: "0.65rem", color: "#aaa" }}>{label}</CyberText>
-            <CyberText sx={{ fontSize: "0.7rem", color: UI_COLORS.accent }}>{value}%</CyberText>
+
+const StatDots = ({ label, value }) => {
+    const dots = [0, 1, 2, 3]; 
+    const isMax = value >= 5; 
+    const isUnknown = value < 0; // Identificamos si el stat es una anomalía
+
+    // Gestión de colores basada en el estado
+    const getActiveColor = () => {
+        if (isUnknown) return UI_COLORS.anomaly || "#ff00ff"; // Color de error/misterio
+        if (isMax) return "#ff0055";
+        return UI_COLORS.accent;
+    };
+
+    const activeColor = getActiveColor();
+    const glowColor = isMax ? "rgba(255, 0, 85, 0.6)" : (isUnknown ? "rgba(255, 0, 255, 0.4)" : UI_COLORS.accentGlow);
+
+    return (
+        <Box sx={{ mb: 1.2, opacity: isUnknown ? 0.9 : 1 }}>
+            <Box sx={{ display: "flex", justifyContent: "space-between", mb: 0.3, alignItems: 'center' }}>
+                <CyberText sx={{ 
+                    fontSize: "0.6rem", 
+                    color: isUnknown ? activeColor : (isMax ? "#ff0055" : "#aaa"), 
+                    textTransform: "uppercase",
+                    letterSpacing: 1,
+                    fontWeight: (isMax || isUnknown) ? "bold" : "normal",
+                    // Efecto de parpadeo suave si es desconocido
+                    animation: isUnknown ? "pulse 2s infinite" : "none",
+                    "@keyframes pulse": {
+                        "0%": { opacity: 1 },
+                        "50%": { opacity: 0.5 },
+                        "100%": { opacity: 1 },
+                    }
+                }}>
+                    {label}
+                </CyberText>
+                <CyberText sx={{ 
+                    fontSize: isUnknown ? "0.65rem" : "0.75rem", 
+                    color: activeColor,
+                    textShadow: (isMax || isUnknown) ? `0 0 8px ${activeColor}` : "none",
+                    fontFamily: 'monospace'
+                }}>
+                    {isUnknown ? "???" : value}
+                </CyberText>
+            </Box>
+            
+            <Box sx={{ display: "flex", gap: 0.5, alignItems: "center" }}>
+                {dots.map((dot) => (
+                    <Box
+                        key={dot}
+                        sx={{
+                            height: 5,
+                            flex: 1,
+                            // Si es unknown, los puntos se ven "vacíos" o con un color apagado de anomalía
+                            bgcolor: !isUnknown && value > dot ? activeColor : "rgba(42, 42, 61, 0.2)",
+                            border: `1px solid ${!isUnknown && value > dot ? activeColor : (isUnknown ? "rgba(255,0,255,0.2)" : "#2a2a3d")}`,
+                            boxShadow: !isUnknown && value > dot ? `0 0 6px ${glowColor}` : "none",
+                            borderRadius: "1px",
+                            transition: "all 0.3s ease",
+                            position: 'relative',
+                            overflow: 'hidden',
+                            // Rayas diagonales si es unknown para dar sensación de "corrupto"
+                            "&::after": isUnknown ? {
+                                content: '""',
+                                position: 'absolute',
+                                top: 0, left: 0, right: 0, bottom: 0,
+                                background: `linear-gradient(45deg, transparent 45%, ${activeColor} 50%, transparent 55%)`,
+                                backgroundSize: '8px 8px',
+                                opacity: 0.3
+                            } : {}
+                        }}
+                    />
+                ))}
+                
+                {/* Diamante de Nivel 5 / Especial */}
+                <Box
+                    sx={{
+                        height: 8,
+                        width: 8,
+                        rotate: "45deg",
+                        bgcolor: isMax ? "#ff0055" : "rgba(42, 42, 61, 0.3)",
+                        border: `1px solid ${isMax ? "#ff0055" : (isUnknown ? "rgba(255,0,255,0.1)" : "#2a2a3d")}`,
+                        boxShadow: isMax ? "0 0 12px #ff0055" : "none",
+                        ml: 0.5,
+                        transition: "all 0.4s ease",
+                        flexShrink: 0,
+                        opacity: isUnknown ? 0.2 : 1
+                    }}
+                />
+            </Box>
         </Box>
-        <Box sx={{ height: 3, bgcolor: "#1a1a2a", borderRadius: 1, overflow: "hidden", border: "1px solid #2a2a3d" }}>
-            <Box 
-                sx={{ 
-                    height: "100%", 
-                    width: `${value}%`, 
-                    bgcolor: UI_COLORS.accent, 
-                    boxShadow: `0 0 10px ${UI_COLORS.accentGlow}`,
-                    transition: "width 1s ease-out" 
-                }} 
-            />
-        </Box>
-    </Box>
-);
+    );
+};
 
 const CharacterCard = memo(function CharacterCard({ char, isSelected, onClick }) {
     const [url, setUrl] = useState(() => getCachedUrl(char.imageUrl) || null);
@@ -378,10 +451,29 @@ export default function LocationCharactersTab({ characters = [] }) {
                                                 {selected.callname || "Placeholder of the Void"}
                                             </CyberText>
 
-                                            <Box sx={{ mb: 2 }}>
-                                                <StatBar label="INTELLECT" value={85} />
-                                                <StatBar label="MAGIC RESONANCE" value={62} />
-                                                <StatBar label="SYSTEM HACK" value={91} />
+                                            <Box sx={{ 
+                                                mb: 2, 
+                                                display: 'grid', 
+                                                gridTemplateColumns: 'repeat(2, 1fr)', // 2 columnas
+                                                columnGap: 3, 
+                                                rowGap: 1,
+                                                maxHeight: '280px', // Un poco más de espacio para los 10 stats
+                                                overflowY: 'auto',
+                                                pr: 1,
+                                                '&::-webkit-scrollbar': { width: '4px' },
+                                                '&::-webkit-scrollbar-thumb': { bgcolor: '#333', borderRadius: '4px' }
+                                            }}>
+                                                {Object.entries(selected.stats || {}).map(([key, val]) => {
+                                                    // Buscamos el label en español (esto luego vendrá de tu stat_system doc)
+                                                    const statInfo = STAT_SYSTEM.find(s => s.key === key);
+                                                    return (
+                                                        <StatDots 
+                                                            key={key} 
+                                                            label={statInfo?.label || key} 
+                                                            value={val} 
+                                                        />
+                                                    );
+                                                })}
                                             </Box>
 
                                             <Divider sx={{ bgcolor: "rgba(255,102,255,0.1)", mb: 2 }} />

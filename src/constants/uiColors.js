@@ -10,4 +10,6 @@ export const UI_COLORS = {
     accentStrong: "#ff1493",
 
     accentGlow: "rgba(255, 20, 147, 0.6)",
+
+    anomaly: "#00f2ea",
 };
