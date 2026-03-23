@@ -20,6 +20,16 @@ import gsap from "gsap";
 import { UI_COLORS } from "../../constants/uiColors";
 import { STAT_SYSTEM } from "../../constants/stat_system";
 
+const CUSTOM_SCROLLBAR = {
+    '&::-webkit-scrollbar': { width: '8px', height: '8px' },
+    '&::-webkit-scrollbar-track': { background: '#0d0d14' },
+    '&::-webkit-scrollbar-thumb': {
+        backgroundColor: UI_COLORS.accent || "#00f2ea",
+        borderRadius: '4px'
+    },
+    scrollbarWidth: "thin",
+    scrollbarColor: `${UI_COLORS.accent || "#00f2ea"} #0d0d14`,
+};
 
 const StatDots = ({ label, value }) => {
     const dots = [0, 1, 2, 3]; 
@@ -39,7 +49,7 @@ const StatDots = ({ label, value }) => {
     return (
         <Box sx={{ mb: 1.2, opacity: isUnknown ? 0.9 : 1 }}>
             <Box sx={{ display: "flex", justifyContent: "space-between", mb: 0.3, alignItems: 'center' }}>
-                <CyberText sx={{ 
+                <CyberTitle sx={{ 
                     fontSize: "0.6rem", 
                     color: isUnknown ? activeColor : (isMax ? "#ff0055" : "#aaa"), 
                     textTransform: "uppercase",
@@ -54,15 +64,15 @@ const StatDots = ({ label, value }) => {
                     }
                 }}>
                     {label}
-                </CyberText>
-                <CyberText sx={{ 
+                </CyberTitle>
+                <CyberTitle sx={{ 
                     fontSize: isUnknown ? "0.65rem" : "0.75rem", 
                     color: activeColor,
                     textShadow: (isMax || isUnknown) ? `0 0 8px ${activeColor}` : "none",
                     fontFamily: 'monospace'
                 }}>
                     {isUnknown ? "???" : value}
-                </CyberText>
+                </CyberTitle>
             </Box>
             
             <Box sx={{ display: "flex", gap: 0.5, alignItems: "center" }}>
@@ -302,13 +312,21 @@ export default function LocationCharactersTab({ characters = [] }) {
         };
 
         const handleWheel = (e) => {
+            // DETECTAR SI EL MOUSE ESTÁ SOBRE UN ÁREA CON SCROLL INTERNO
+            // Buscamos si el target es o está dentro de algo con overflow-y: auto/scroll
+            const isInsideScrollable = e.target.closest('.inner-scroll');
+            
+            if (isInsideScrollable) {
+                // Si el elemento interno tiene scroll disponible, dejamos que ocurra el scroll vertical
+                if (isInsideScrollable.scrollHeight > isInsideScrollable.clientHeight) {
+                    return; // No ejecutamos el preventDefault ni el scrollLeft manual
+                }
+            }
+
             if (e.deltaY === 0) return;
             
-            // Evitamos que la página haga scroll vertical si el ratón está sobre el carrusel
-            e.preventDefault();
-
-            // Aplicamos el movimiento. El factor 1.5 es para sensibilidad.
-            el.scrollLeft += e.deltaY * 1.5;
+            e.preventDefault(); // Bloqueamos el scroll de la página
+            el.scrollLeft += e.deltaY * 1.5; // Movemos el carrusel horizontalmente
         };
 
         el.addEventListener("mousedown", down);
@@ -408,6 +426,7 @@ export default function LocationCharactersTab({ characters = [] }) {
 
                             {/* INLINE DETAILS PANEL */}
                             <Box
+                                className="inner-scroll"
                                 sx={{
                                     width: isSelected ? "clamp(350px, 30vw, 600px)" : 0,
                                     height: cardHeight, 
@@ -416,11 +435,13 @@ export default function LocationCharactersTab({ characters = [] }) {
                                     border: isSelected ? "1px solid #5a3a5f" : "none",
                                     borderLeft: `3px solid ${UI_COLORS.accent}`,
                                     borderRadius: "0 12px 12px 0",
-                                    overflow: "hidden", 
+                                    overflowY: "auto",
+                                    overflowX: "hidden",
                                     transition: "all 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
                                     opacity: isSelected ? 1 : 0,
                                     position: "relative",
-                                    alignSelf: "center", 
+                                    alignSelf: "center",
+                                    ...CUSTOM_SCROLLBAR,
                                 }}
                             >
                                 {/* Contenedor INTERNO*/}
@@ -431,19 +452,21 @@ export default function LocationCharactersTab({ characters = [] }) {
                                     opacity: isSelected ? 1 : 0,
                                     transform: isSelected ? "translateX(0)" : "translateX(20px)",
                                     transition: "all 0.4s ease",
-                                    transitionDelay: isSelected ? "0.2s" : "0s" // Aparece justo después de expandirse
+                                    transitionDelay: isSelected ? "0.2s" : "0s", // Aparece justo después de expandirse
+                                    
                                 }}>
                                     {isSelected && (
                                         <>
                                             <CyberTitle sx={{ 
                                                 color: UI_COLORS.accent,
-                                                fontSize: "1.2rem" 
+                                                fontSize: "1.2rem",
+                                                fontWeight: "bold",
                                             }}>
                                                 {selected.name}
                                             </CyberTitle>
                                             
                                             <CyberText sx={{ 
-                                                color: "#888", 
+                                                color: UI_COLORS.textSecondary,
                                                 mb: 3, 
                                                 letterSpacing: 3,
                                                 fontSize: "0.6rem" 
@@ -460,8 +483,6 @@ export default function LocationCharactersTab({ characters = [] }) {
                                                 maxHeight: '280px', // Un poco más de espacio para los 10 stats
                                                 overflowY: 'auto',
                                                 pr: 1,
-                                                '&::-webkit-scrollbar': { width: '4px' },
-                                                '&::-webkit-scrollbar-thumb': { bgcolor: '#333', borderRadius: '4px' }
                                             }}>
                                                 {Object.entries(selected.stats || {}).map(([key, val]) => {
                                                     // Buscamos el label en español (esto luego vendrá de tu stat_system doc)
@@ -481,7 +502,7 @@ export default function LocationCharactersTab({ characters = [] }) {
                                             <CyberText sx={{ 
                                                 fontSize: "0.8rem", 
                                                 lineHeight: 1.6,
-                                                color: "#ccc"
+                                                color: "#ccc",
                                             }}>
                                                 {selected.bio}
                                             </CyberText>
