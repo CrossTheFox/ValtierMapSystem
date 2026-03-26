@@ -17,7 +17,7 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 const CAMPAIGN_ID = "RfY23gcG7No5HcGddo1j"; // Tu UUID real
 
-const statsDefinition = [
+const statsDefinition = [ //TODO: NO HARDCODEAR, se debe poder configurar por campaña.
     { key: "sneak", label: "Sigilo", description: "Moverse con sigilo y silencio." },
     { key: "traverse", label: "Travesía", description: "Escalar, nadar, saltar, volar." },
     { key: "sense", label: "Sentido", description: "Escanear y evaluar un área." },

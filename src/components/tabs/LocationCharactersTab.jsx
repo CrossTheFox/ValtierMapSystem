@@ -14,6 +14,7 @@ import { useState, useEffect, useRef, Fragment, memo } from "react";
 import { loadFirebaseAsset, getCachedUrl } from "../../../firebase/services/assetLoader";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
+import LockIcon from '@mui/icons-material/Lock';
 import PersonIcon from "@mui/icons-material/Person";
 import gsap from "gsap";
 
@@ -125,6 +126,8 @@ const StatDots = ({ label, value }) => {
 
 const CharacterCard = memo(function CharacterCard({ char, isSelected, onClick }) {
     const [url, setUrl] = useState(() => getCachedUrl(char.imageUrl) || null);
+    const [showHint, setShowHint] = useState(false); // Estado para el feedback de bloqueo
+    const isLocked = char.isLocked;
 
     useEffect(() => {
         // Por si acaso no se precargó (puedes mantener esto como respaldo)
@@ -132,6 +135,14 @@ const CharacterCard = memo(function CharacterCard({ char, isSelected, onClick })
             loadFirebaseAsset(char.imageUrl).then(setUrl);
         }
     }, [char.imageUrl, url]);
+
+    const handleCardClick = () => {
+        if (isLocked) {
+            setShowHint(!showHint);
+            return;
+        }
+        onClick(char);
+    };
 
     const cornerCircle = {
         width: 8,
@@ -143,14 +154,14 @@ const CharacterCard = memo(function CharacterCard({ char, isSelected, onClick })
 
     return (
         <Box
-            onClick={() => onClick(char)}
+            onClick={handleCardClick}
             sx={{
                 width: "clamp(220px, 14vw, 340px)",
                 height: "clamp(320px, 60vh, 520px)",
                 flexShrink: 0,
-                cursor: "pointer",
+                cursor: isLocked ? "help" : "pointer",
                 transition: "transform 0.3s ease",
-                "&:hover": { transform: "scale(1.02)" }
+                "&:hover": { transform: isLocked ? "none" : "scale(1.02)" }
             }}
         >
             <Paper
@@ -165,7 +176,48 @@ const CharacterCard = memo(function CharacterCard({ char, isSelected, onClick })
                     flexDirection: "column",
                 }}
             >
-                <Box sx={{ flex: 1, position: "relative", overflow: "hidden" }}>
+                {/* OVERLAY DE BLOQUEO (CANDADITO + BLUR) */}
+                {isLocked && (
+                    <Box sx={{
+                        position: "absolute",
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        zIndex: 10,
+                        backdropFilter: showHint ? "blur(24px)" : "blur(18px)",
+                        backgroundColor: showHint ? "rgba(0,0,0,0.8)" : "rgba(0,0,0,0.4)",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        transition: "all 0.4s ease",
+                        px: 3,
+                        textAlign: "center"
+                    }}>
+                        <LockIcon sx={{ 
+                            color: UI_COLORS.accent, 
+                            fontSize: "3rem",
+                            filter: `drop-shadow(0 0 10px ${UI_COLORS.accent})`,
+                            mb: 2,
+                            opacity: showHint ? 1 : 0.7
+                        }} />
+                        
+                        {showHint && (
+                            <CyberText sx={{ 
+                                color: UI_COLORS.accent, 
+                                fontSize: "0.8rem",
+                                animation: "fadeIn 0.5s ease-out" 
+                            }}>
+                                REQUISITO: {char.unlockGoal || "Identidad encriptada"}
+                            </CyberText>
+                        )}
+                    </Box>
+                )}
+
+                <Box sx={{ 
+                    flex: 1, 
+                    position: "relative", 
+                    overflow: "hidden",
+                    filter: isLocked ? "grayscale(100%) opacity(0.5)" : "none" 
+                }}>
                     {url ? (
                         <img 
                             src={url} 
@@ -176,7 +228,6 @@ const CharacterCard = memo(function CharacterCard({ char, isSelected, onClick })
                                 height: "100%", 
                                 objectFit: "cover",
                                 userSelect: "none",
-                                webkitUserDrag: "none",
                             }}
                         />
                     ) : (
@@ -194,26 +245,22 @@ const CharacterCard = memo(function CharacterCard({ char, isSelected, onClick })
                         display: "flex",
                         flexDirection: "column",
                         alignItems: "center",
-                        justifyContent: "center",
                     }}>
                         <CyberTitle 
                             sx={{ 
-                                color: UI_COLORS.accent, 
+                                color: isLocked ? "#666" : UI_COLORS.accent, 
                                 fontSize: "1rem", 
-                                textShadow: `0 0 10px ${UI_COLORS.accentGlow}`,
+                                textShadow: isLocked ? "none" : `0 0 10px ${UI_COLORS.accentGlow}`,
                                 textAlign: "center",
                                 width: "100%",
-                                wordBreak: "break-word",
-                                lineHeight: 1.2
                             }}
                         >
-                            {char.name}
+                            {isLocked ? "????????????" : char.name}
                         </CyberTitle>
                         
-                        {/* Decoración 0---0 debajo del nombre */}
                         <Box sx={{ display: "flex", alignItems: "center", width: "60%", mt: 1 }}>
                             <Box sx={cornerCircle} />
-                            <Box sx={{ flex: 1, height: "1px", bgcolor: UI_COLORS.accent, mx: 0.5 }} />
+                            <Box sx={{ flex: 1, height: "1px", bgcolor: isLocked ? "rgba(255,255,255,0.1)" : UI_COLORS.accent, mx: 0.5 }} />
                             <Box sx={cornerCircle} />
                         </Box>
                     </Box>

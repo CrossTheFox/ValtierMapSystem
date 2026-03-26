@@ -3,7 +3,10 @@ import styled from '@emotion/styled';
 import { UI_COLORS } from '../../constants/uiColors';
 import { CyberText } from './CustomTexts';
 
-export const CyberCheckbox = ({ label, checked, onChange }) => {
+export const CyberCheckbox = ({ label, checked, onChange, name }) => {
+    // Generamos un ID único si no se provee uno para evitar colisiones de labels
+    const uniqueId = `checkbox-${name || label.replace(/\s+/g, '-').toLowerCase()}`;
+
     return (
         <StyledWrapper checked={checked}>
             <div className="checkbox-wrapper">
@@ -12,18 +15,17 @@ export const CyberCheckbox = ({ label, checked, onChange }) => {
                     type="checkbox" 
                     checked={checked}
                     onChange={onChange}
-                    id="is-dm-checkbox"
+                    name={name} // IMPORTANTE: Para que el handleChange funcione
+                    id={uniqueId} // ID Único
                 />
-                <label className="holo-checkbox" htmlFor="is-dm-checkbox">
+                <label className="holo-checkbox" htmlFor={uniqueId}>
                     <div className="holo-box">
                         <div className="holo-inner" />
                         <div className="scan-effect" />
-                        {/* Cubo miniatura */}
                         <div className="cube-transform">
-                        {[...Array(6)].map((_, i) => <div key={i} className="cube-face" />)}
+                            {[...Array(6)].map((_, i) => <div key={i} className="cube-face" />)}
                         </div>
                     </div>
-                    {/* Acentos de esquinas */}
                     {[...Array(4)].map((_, i) => <div key={i} className="corner-accent" />)}
                 </label>
                 <CyberText sx={{ ml: 2, fontSize: '13px', color: checked ? UI_COLORS.accent : '#fff' }}>

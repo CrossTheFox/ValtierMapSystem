@@ -105,6 +105,7 @@ export default function AddPlayerForm({ currentCampaignId }) {
                     />
 
                     <CyberCheckbox 
+                        name="isDM"
                         label="GRANT_DUNGEON_MASTER_AUTHORITY"
                         checked={formData.isDM}
                         onChange={(e) => setFormData({...formData, isDM: e.target.checked})}

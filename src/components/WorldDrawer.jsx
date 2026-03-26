@@ -13,7 +13,6 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
 import BookIcon from '@mui/icons-material/Book';
 import LockIcon from '@mui/icons-material/Lock';
-import TagIcon from '@mui/icons-material/Tag';
 import LocalLibraryIcon from '@mui/icons-material/LocalLibrary';
 import { CyberTitle, CyberText } from "./customs/CustomTexts";
 import { setSelectedLore } from "../store/uiSlice";

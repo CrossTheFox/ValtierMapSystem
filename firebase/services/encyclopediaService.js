@@ -1,5 +1,5 @@
 import { db } from "../firebaseConfig";
-import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
+import { collection, query, where, getDocs, orderBy, addDoc, serverTimestamp } from "firebase/firestore";
 
 export const getLoreByCampaign = async (campaignId) => {
     const loreRef = collection(db, "encyclopedia");

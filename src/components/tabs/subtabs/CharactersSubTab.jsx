@@ -9,6 +9,7 @@ import { CyberTitle, CyberText } from '../../customs/CustomTexts';
 import { CyberAutocomplete } from '../../customs/CyberAutocomplete';
 import { CyberInput, CyberButton } from '../../customs/CyberInputs';
 import { CyberTextField } from '../../customs/CyberTextField';
+import { CyberCheckbox } from '../../customs/CyberCheckbox';
 
 import { updateCampaignElement, createCampaignElement } from '../../../../firebase/services/campaignService';
 import { deleteStorageFile, uploadCharacterImage } from '../../../../firebase/services/assetLoader';
@@ -70,7 +71,9 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
             age: 0, 
             bio: "", 
             locationId: "",
-            stats: defaultStats
+            stats: defaultStats,
+            isLocked: true,
+            unlockGoal: ""
         });
     };
 
@@ -199,6 +202,23 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
                                         value={selectedItem.age || ''} 
                                         onChange={(e) => setSelectedItem({...selectedItem, age: parseInt(e.target.value)})}
                                     />
+                                    <Box sx={{ borderLeft: `2px solid ${UI_COLORS.accent}66`, pl: 2, mt: 1 }}>
+                                        <CyberText variant="caption" sx={{ color: UI_COLORS.accent, mb: 1, display: 'block' }}>
+                                            ACCESS_CONTROL_PROTOCOLS
+                                        </CyberText>
+                                        <CyberCheckbox 
+                                            label="INITIAL_ENCRYPTION (LOCKED)"
+                                            checked={selectedItem.isLocked || false}
+                                            onChange={(e) => setSelectedItem({...selectedItem, isLocked: e.target.checked})}
+                                        />
+                                        <CyberInput 
+                                            label="UNLOCK_CONDITION_HINT" 
+                                            placeholder="Ej: Derrotar al Rey Pollo"
+                                            value={selectedItem.unlockGoal || ''} 
+                                            onChange={(e) => setSelectedItem({...selectedItem, unlockGoal: e.target.value})}
+                                            sx={{ mt: 1 }}
+                                        />
+                                    </Box>
                                 </Stack>
                             </Grid>
 
