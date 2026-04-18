@@ -71,11 +71,6 @@ const LandingPage = () => {
                         </CyberTitle>
                     </button>
                 </form>
-
-                <CyberText sx={{ mt: 3, textAlign: 'center', color: '#aaa' }}>
-                    Don't have an account?{" "}
-                    <a href="#" className="a2">Sign up!</a>
-                </CyberText>
             </div>
         </StyledWrapper>
     );    

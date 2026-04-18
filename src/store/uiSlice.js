@@ -14,6 +14,19 @@ const uiSlice = createSlice({
             severity: "info",
             action: null,
         },
+        contextMenu: {
+            open: false,
+            screenX: 0,
+            screenY: 0,
+            worldX: 0,
+            worldY: 0,
+            type: "map",      // "map" | "location"
+            location: null,
+        },
+        measureTool: {
+            pointA: null,     // { x, y, label }
+            pointB: null,     // { x, y, label }
+        },
     },
     reducers: {
         openLocation(state, action) {
@@ -50,21 +63,47 @@ const uiSlice = createSlice({
         },
         setSelectedLore(state, action) {
             state.selectedLore = action.payload;
-        }
+        },
+
+        // ── Context Menu ──────────────────────────────────────────
+        openContextMenu(state, action) {
+            state.contextMenu = { open: true, ...action.payload };
+        },
+        closeContextMenu(state) {
+            state.contextMenu.open = false;
+        },
+
+        // ── Measure Tool ──────────────────────────────────────────
+        setMeasurePointA(state, action) {
+            state.measureTool.pointA = action.payload;
+            state.measureTool.pointB = null;
+        },
+        setMeasurePointB(state, action) {
+            state.measureTool.pointB = action.payload;
+        },
+        clearMeasureTool(state) {
+            state.measureTool.pointA = null;
+            state.measureTool.pointB = null;
+        },
     },
 });
 
-export const { 
-    openLocation, 
-    closeLocation, 
-    setIsSelectingPosition, 
+export const {
+    openLocation,
+    closeLocation,
+    setIsSelectingPosition,
     toggleIsSelectingPosition,
     setIsMinimized,
     toggleIsMinimized,
     setSelectedWorldPosition,
     showSnackbar,
     hideSnackbar,
-    setSelectedLore
-
+    setSelectedLore,
+    openContextMenu,
+    closeContextMenu,
+    setMeasurePointA,
+    setMeasurePointB,
+    clearMeasureTool,
 } = uiSlice.actions;
+
 export default uiSlice.reducer;

@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { db } from "../../firebase/firebaseConfig";
 import { doc, getDoc } from "firebase/firestore";
+import { setPlayerActiveCharacter } from "../../firebase/services/characterService";
 
 export const fetchPlayerData = createAsyncThunk(
     "player/fetchData",
@@ -14,10 +15,19 @@ export const fetchPlayerData = createAsyncThunk(
             uid,
             nickname: data.nickname,
             role: data.role,
-            // Extraemos el array y definimos la campaña activa (la primera por defecto)
             campaignIds: data.campaignIds || [], 
-            currentCampaignId: data.campaignIds?.[0] || null 
+            currentCampaignId: data.campaignIds?.[0] || null,
+            characterIds: data.characterIds || [],
+            activeCharacterId: data.activeCharacterId || null,
         };
+    }
+);
+
+export const persistActiveCharacter = createAsyncThunk(
+    "player/persistActiveCharacter",
+    async ({ uid, characterId }) => {
+        await setPlayerActiveCharacter(uid, characterId);
+        return characterId;
     }
 );
 
@@ -32,7 +42,12 @@ const playerSlice = createSlice({
         clearPlayer: (state) => {
             state.profile = null;
             state.status = "idle";
-        }
+        },
+        setActiveCharacterId: (state, action) => {
+            if (state.profile) {
+                state.profile.activeCharacterId = action.payload;
+            }
+        },
     },
     extraReducers: (builder) => {
         builder
@@ -50,5 +65,5 @@ const playerSlice = createSlice({
     },
 });
 
-export const { clearPlayer } = playerSlice.actions;
+export const { clearPlayer, setActiveCharacterId } = playerSlice.actions;
 export default playerSlice.reducer;

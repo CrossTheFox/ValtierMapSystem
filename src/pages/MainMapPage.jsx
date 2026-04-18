@@ -1,18 +1,29 @@
 import { useRef, useEffect } from "react";
 import { useSelector } from "react-redux";
 import { Box } from "@mui/material";
+
 import gsap from "gsap";
+
 import PixiRoot from "../layers/PixiRoot";
 import UIOverlay from "../layers/UIOverlay";
 import CyberLoader from "../components/animations/CyberLoader";
+import CyberPattern from "../components/animations/CyberPattern";
+
 import { UI_COLORS } from "../constants/uiColors";
 import { RENDER_LAYERS } from "../constants/renderLayers";
+import { StyledWrapper } from "../styles/LandingPageStyles";
+
+import CampaignSelector from "./CampaignSelector";
+
+import { useWorldSync } from "../hooks/useWorldSync";
 
 export default function MainMapPage() {
     const mainContainerRef = useRef(null);
-    const { worldStatus, assetsStatus } = useSelector((state) => state.world);
+    const { worldStatus, assetsStatus, selectedCampaignId } = useSelector((state) => state.world);
 
     const isReady = worldStatus === "succeeded" && assetsStatus === "succeeded";
+
+    useWorldSync();
 
     useEffect(() => {
         if (isReady && mainContainerRef.current) {
@@ -49,6 +60,15 @@ export default function MainMapPage() {
             );
         }
     }, [isReady]);
+
+    if (!selectedCampaignId) {
+        return (
+            <StyledWrapper accent={UI_COLORS.accent || "#00f2ea"}>
+                <CyberPattern />
+                <CampaignSelector />
+            </StyledWrapper>
+        );
+    }
 
     return (
         <Box sx={{ 

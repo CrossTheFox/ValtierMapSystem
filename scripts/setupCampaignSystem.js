@@ -17,6 +17,11 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 const CAMPAIGN_ID = "RfY23gcG7No5HcGddo1j"; // Tu UUID real
 
+const resourceTracks = [
+    { key: "effort", label: "Effort", maxDefault: 3, stateKey: "exhausted", stateLabel: "Exhausted" },
+    { key: "strain", label: "Strain", maxDefault: 5, stateKey: "broken", stateLabel: "Broken" }
+];
+
 const statsDefinition = [ //TODO: NO HARDCODEAR, se debe poder configurar por campaña.
     { key: "sneak", label: "Sigilo", description: "Moverse con sigilo y silencio." },
     { key: "traverse", label: "Travesía", description: "Escalar, nadar, saltar, volar." },
@@ -49,6 +54,7 @@ async function updateExistingCampaign() {
             campaignId: CAMPAIGN_ID,
             systemName: "Valtier Core System",
             stats: statsDefinition,
+            resourceTracks,
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
         console.log("✅ Sistema de estadísticas sincronizado.");

@@ -103,6 +103,8 @@ export const loadWorld = createAsyncThunk(
             const character = { id: doc.id, ...serializeFirestore(doc) };
 
             character.stats = character.stats || {};
+            character.bondPowers = Array.isArray(character.bondPowers) ? character.bondPowers : [];
+            character.bond = character.bond ?? null;
 
             if (locations[character.locationId]) {
                 locations[character.locationId].characters.push(character);
@@ -131,6 +133,7 @@ export const loadWorld = createAsyncThunk(
 const worldSlice = createSlice({
     name: "world",
     initialState: {
+        selectedCampaignId: null,
         map: null,
         locations: {},
         lore: [],
@@ -139,6 +142,19 @@ const worldSlice = createSlice({
         error: null,
     },
     reducers: {
+        setSelectedCampaign: (state, action) => {
+            state.selectedCampaignId = action.payload;
+            // Resetear estados de carga para forzar re-fetch en PixiRoot
+            state.worldStatus = "idle";
+            state.assetsStatus = "idle";
+        },
+        resetWorldState: (state) => {
+            state.map = null;
+            state.locations = {};
+            state.lore = [];
+            state.worldStatus = "idle";
+            state.selectedCampaignId = null;
+        },
         updateLocationInState: (state, action) => {
             const { id, data } = action.payload;
             if (state.locations[id]) {
@@ -162,6 +178,53 @@ const worldSlice = createSlice({
         },
         setLore(state, action) {
             state.lore = action.payload;
+        },
+        upsertLocationRealtime(state, action) {
+            const location = action.payload;
+
+            if (state.locations[location.id]) {
+                state.locations[location.id] = { ...state.locations[location.id], ...location };
+            } else {
+                state.locations[location.id] = { ...location, characters: [] };
+            }
+        },
+        removeLocationRealtime: (state, action) => {
+            const id = action.payload;
+            delete state.locations[id];
+        },
+        upsertCharacterRealtime: (state, action) => {
+            const char = action.payload;
+            
+            Object.values(state.locations).forEach(loc => {
+                if (loc.id !== char.locationId && loc.characters) {
+                    loc.characters = loc.characters.filter(c => c.id !== char.id);
+                }
+            });
+
+            const targetLocation = state.locations[char.locationId];
+            
+            if (targetLocation) {
+                const charIndex = targetLocation.characters.findIndex(c => c.id === char.id);
+                if (charIndex !== -1) {
+                    targetLocation.characters[charIndex] = { 
+                        ...targetLocation.characters[charIndex], 
+                        ...char 
+                    };
+                } else {
+                    targetLocation.characters.push(char);
+                }
+            } else {
+                console.warn(`[Redux] Location ${char.locationId} no existe para el personaje ${char.name}`);
+            }
+        },
+
+        // Eliminar Personaje
+        removeCharacterRealtime: (state, action) => {
+            const { id, locationId } = action.payload;
+            const location = state.locations[locationId];
+            if (location && location.characters) {
+                location.characters = location.characters.filter(c => c.id !== id);
+            }
         },
     },
     extraReducers: (builder) => {
@@ -192,5 +255,15 @@ const worldSlice = createSlice({
     },
 });
 
-export const { updateLocationInState, updateCharacterInState, setLore } = worldSlice.actions;
+export const { 
+    updateLocationInState, 
+    updateCharacterInState, 
+    setLore,
+    setSelectedCampaign,
+    resetWorldState,
+    upsertLocationRealtime,
+    removeLocationRealtime,
+    upsertCharacterRealtime,
+    removeCharacterRealtime
+} = worldSlice.actions;
 export default worldSlice.reducer;

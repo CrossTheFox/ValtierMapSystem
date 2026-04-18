@@ -6,6 +6,7 @@ import { useDispatch } from "react-redux";
 import { fetchPlayerData, clearPlayer } from "./store/playerSlice";
 import LandingPage from "./pages/LandingPage";
 import MainMapPage from "./pages/MainMapPage";
+import PopupDialogPage from "./pages/PopupDialogPage";
 
 export default function App() {
     const [user, setUser] = useState(null);
@@ -41,6 +42,12 @@ export default function App() {
                 <Route 
                     path="/map" 
                     element={user ? <MainMapPage /> : <Navigate to="/" />} 
+                />
+
+                {/* Ventana emergente de diálogos (popup) */}
+                <Route
+                    path="/popup"
+                    element={user ? <PopupDialogPage /> : <Navigate to="/" />}
                 />
             </Routes>
         </Router>

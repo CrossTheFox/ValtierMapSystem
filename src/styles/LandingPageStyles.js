@@ -42,8 +42,8 @@ export const StyledWrapper = styled.div`
 
   .login-box {
     position: relative;
-    width: 400px;
-    padding: 40px;
+    width: min(400px, calc(100vw - 32px));
+    padding: clamp(20px, 6vw, 40px);
     background: rgba(10, 10, 15, 0.95);
     box-sizing: border-box;
     box-shadow: 0 15px 25px rgba(0,0,0,.6), 0 0 10px ${(props) => props.accent}22;

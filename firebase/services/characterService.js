@@ -1,5 +1,5 @@
 import { db } from "../firebaseConfig";
-import { collection, addDoc, getDocs, query, where } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, where, documentId, doc, updateDoc } from "firebase/firestore";
 
 export async function createCharacterDoc(characterData) {
     return await addDoc(collection(db, "characters"), characterData);
@@ -23,4 +23,33 @@ export async function getCharactersByPlayer(uid) {
 
     const snapshot = await getDocs(q);
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+export async function getCharactersByIds(characterIds) {
+    if (!characterIds.length) return [];
+
+    const q = query(collection(db, "characters"), where(documentId(), "in", characterIds));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+export async function setPlayerActiveCharacter(playerId, characterId) {
+    await updateDoc(doc(db, "players", playerId), { activeCharacterId: characterId });
+}
+
+export async function getAbilitiesByIds(abilityIds) {
+    if (!abilityIds.length) return [];
+
+    const chunks = [];
+    for (let i = 0; i < abilityIds.length; i += 10) {
+        chunks.push(abilityIds.slice(i, i + 10));
+    }
+
+    const fetchPromises = chunks.map(chunk => {
+        const q = query(collection(db, "abilities"), where(documentId(), "in", chunk));
+        return getDocs(q);
+    });
+
+    const snapshots = await Promise.all(fetchPromises);
+    return snapshots.flatMap(snap => snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 }

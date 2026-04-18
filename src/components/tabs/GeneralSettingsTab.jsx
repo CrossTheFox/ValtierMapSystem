@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Box, Grid } from '@mui/material';
 import AdminNavButton from '../customs/AdminNavButton';
 import AddPlayerForm from './subtabs/AddPlayerForm'; // Formulario de inscripción
+import AddMapForm from './subtabs/AddMapForm';
 import { CyberTitle } from '../customs/CustomTexts';
 
 export default function GeneralSettingsTab({ currentCampaignId }) {
@@ -10,7 +11,6 @@ export default function GeneralSettingsTab({ currentCampaignId }) {
     const menuItems = [
         { id: 'ADD_PLAYERS', label: 'ADD_PLAYERS' },
         { id: 'MANAGE_MAPS', label: 'MANAGE_MAPS' },
-        { id: 'MANAGE_LORE', label: 'MANAGE_LORE' },
     ];
 
     return (
@@ -35,12 +35,7 @@ export default function GeneralSettingsTab({ currentCampaignId }) {
             {/* CONTENIDO DINÁMICO */}
             <Grid size={9} sx={{ p: 4, overflowY: 'auto' }}>
                 {activeSubTab === 'ADD_PLAYERS' && <AddPlayerForm currentCampaignId={currentCampaignId} />}
-                {activeSubTab === 'MANAGE_MAPS' && (
-                    <CyberTitle variant="h5">MAP_MANAGEMENT_INTERFACE</CyberTitle>
-                )}
-                {activeSubTab === 'MANAGE_LORE' && (
-                    <CyberTitle variant="h5">LORE_MANAGEMENT_INTERFACE</CyberTitle>
-                )}
+                {activeSubTab === 'MANAGE_MAPS' && <AddMapForm currentCampaignId={currentCampaignId} />}
             </Grid>
         </Grid>
     );

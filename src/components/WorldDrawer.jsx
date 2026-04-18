@@ -151,13 +151,14 @@ export default function WorldDrawer() {
                     height: 120,
                     backgroundColor: "#1e1e2f",
                     borderRadius: "0 8px 8px 0",
-                    zIndex: 1300, // Por encima del Drawer si es necesario
+                    zIndex: 1300,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     boxShadow: "0 0 15px rgba(255,0,255,0.3)",
                     border: "1px solid rgba(255,102,255,0.4)",
                     borderLeft: "none",
+                    transition: "left 225ms cubic-bezier(0, 0, 0.2, 1)",
                 }}
             >
                 <IconButton onClick={toggleDrawer} size="small">

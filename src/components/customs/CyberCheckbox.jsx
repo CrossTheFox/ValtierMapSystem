@@ -21,7 +21,6 @@ export const CyberCheckbox = ({ label, checked, onChange, name }) => {
                 <label className="holo-checkbox" htmlFor={uniqueId}>
                     <div className="holo-box">
                         <div className="holo-inner" />
-                        <div className="scan-effect" />
                         <div className="cube-transform">
                             {[...Array(6)].map((_, i) => <div key={i} className="cube-face" />)}
                         </div>
@@ -73,23 +72,6 @@ const StyledWrapper = styled.div`
     justify-content: center;
     align-items: center;
     overflow: hidden;
-  }
-
-  /* Scan line */
-  .scan-effect {
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, ${UI_COLORS.accent}, transparent);
-    animation: scan ${props => props.checked ? '1.5s' : '4s'} infinite linear;
-    opacity: ${props => props.checked ? 1 : 0.2};
-  }
-
-  @keyframes scan {
-    0% { left: -100%; }
-    100% { left: 100%; }
   }
 
   /* Cubo 3D escalado */

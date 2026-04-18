@@ -19,7 +19,7 @@ import PersonIcon from "@mui/icons-material/Person";
 import gsap from "gsap";
 
 import { UI_COLORS } from "../../constants/uiColors";
-import { STAT_SYSTEM } from "../../constants/stat_system";
+import { useStatSystem } from "../../hooks/useStatSystem";
 
 const CUSTOM_SCROLLBAR = {
     '&::-webkit-scrollbar': { width: '8px', height: '8px' },
@@ -270,7 +270,8 @@ const CharacterCard = memo(function CharacterCard({ char, isSelected, onClick })
     );
 });
 
-export default function LocationCharactersTab({ characters = [] }) {
+export default function LocationCharactersTab({ characters = [], campaignId = null }) {
+    const { stats: statDefinitions } = useStatSystem(campaignId);
     const [selected, setSelected] = useState(null);
     const carouselRef = useRef(null);
     const isDraggingRef = useRef(false);
@@ -533,7 +534,7 @@ export default function LocationCharactersTab({ characters = [] }) {
                                             }}>
                                                 {Object.entries(selected.stats || {}).map(([key, val]) => {
                                                     // Buscamos el label en español (esto luego vendrá de tu stat_system doc)
-                                                    const statInfo = STAT_SYSTEM.find(s => s.key === key);
+                                                    const statInfo = statDefinitions.find(s => s.key === key);
                                                     return (
                                                         <StatDots 
                                                             key={key} 

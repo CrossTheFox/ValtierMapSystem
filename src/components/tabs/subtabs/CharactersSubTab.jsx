@@ -23,7 +23,20 @@ import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { EntityImageManager } from '../../EntityImageManager';
 
 import { UI_COLORS } from '../../../constants/uiColors';
-import { STAT_SYSTEM } from '../../../constants/stat_system';
+import {
+    defaultStatsFromDefinitions,
+    emptyBond,
+} from '../../../constants/statSystem';
+import { useStatSystem } from '../../../hooks/useStatSystem';
+
+function normalizeCharacterSheet(char, statDefs) {
+    return {
+        ...char,
+        stats: { ...defaultStatsFromDefinitions(statDefs), ...(char.stats || {}) },
+        bond: char.bond && typeof char.bond === "object" ? { ...emptyBond(), ...char.bond } : { ...emptyBond() },
+        bondPowers: Array.isArray(char.bondPowers) ? char.bondPowers : [],
+    };
+}
 
 const CustomEmptyIcon = () => (
     <Box sx={{ width: 15, height: 6, bgcolor: 'rgba(42, 42, 61, 0.3)', border: '1px solid #2a2a3d', mx: 0.2, borderRadius: '1px' }} />
@@ -43,6 +56,7 @@ const CustomFilledIcon = ({ isMax, isUnknown }) => (
 
 export default function CharactersSubTab({ currentCampaignId, locations }) {
     const dispatch = useDispatch();
+    const { stats: campaignStats } = useStatSystem(currentCampaignId);
 
     const [characters, setCharacters] = useState([]);
     const [selectedItem, setSelectedItem] = useState(null);
@@ -62,16 +76,16 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
     }, [currentCampaignId]);
 
     const handleAddNew = () => {
-        const defaultStats = STAT_SYSTEM.reduce((acc, stat) => ({ ...acc, [stat.key]: 0 }), {});
-
         setSelectedItem({
             name: "NEW_ENTRY_UNNAMED",
             isNew: true,
             campaignId: currentCampaignId,
-            age: 0, 
-            bio: "", 
+            age: 0,
+            bio: "",
             locationId: "",
-            stats: defaultStats,
+            stats: defaultStatsFromDefinitions(campaignStats),
+            bond: emptyBond(),
+            bondPowers: [],
             isLocked: true,
             unlockGoal: ""
         });
@@ -86,7 +100,7 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
             }
 
             if (selectedItem.isNew) {
-                const { isNew, ...newData } = selectedItem;
+                const { isNew, effort: _e, strain: _s, ...newData } = selectedItem;
                 const docRef = await createCampaignElement('characters', newData);
                 setSelectedItem({ id: docRef.id, ...newData });
 
@@ -95,7 +109,7 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
                     severity: "success"
                 }));
             } else {
-                const { id, ...updateData } = selectedItem;
+                const { id, effort: _e2, strain: _s2, ...updateData } = selectedItem;
                 await updateCampaignElement('characters', id, updateData);
 
                 dispatch(showSnackbar({
@@ -137,7 +151,13 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
                     options={characters}
                     getOptionLabel={(option) => option.name || ""}
                     value={selectedItem}
-                    onChange={(e, val) => setSelectedItem(val)}
+                    onChange={(e, val) => {
+                        if (!val) {
+                            setSelectedItem(null);
+                            return;
+                        }
+                        setSelectedItem(normalizeCharacterSheet(val, campaignStats));
+                    }}
                     renderInput={(params) => (
                         <CyberTextField
                             {...params} 
@@ -235,7 +255,7 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
                             <Grid size={12}>
                                 <CyberText sx={{ mb: 2, color: UI_COLORS.accent, fontSize: '0.8rem' }}>CHARACTER_STATISTICS_V9.0</CyberText>
                                 <Grid container spacing={2}>
-                                    {STAT_SYSTEM.map(({ key, label }) => {
+                                    {campaignStats.map(({ key, label }) => {
                                         const val = selectedItem.stats?.[key] || 0;
                                         const isUnknown = val === -1;
                                         const isMax = val >= 5;
@@ -286,6 +306,188 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
                                             </Grid>
                                         );
                                     })}
+                                </Grid>
+                            </Grid>
+
+                            <Grid size={12}>
+                                <CyberText sx={{ mb: 2, color: UI_COLORS.accent, fontSize: "0.8rem" }}>
+                                    SHEET_DATA (BOND / POWERS) — Effort & strain are session-only in the player dialog
+                                </CyberText>
+                                <Grid container spacing={2}>
+                                    <Grid size={6}>
+                                        <CyberInput
+                                            label="BOND_NAME"
+                                            value={selectedItem.bond?.name ?? ""}
+                                            onChange={(e) =>
+                                                setSelectedItem({
+                                                    ...selectedItem,
+                                                    bond: { ...emptyBond(), ...selectedItem.bond, name: e.target.value },
+                                                })
+                                            }
+                                        />
+                                    </Grid>
+                                    <Grid size={6}>
+                                        <CyberInput
+                                            label="BOND_ARCHETYPE"
+                                            value={selectedItem.bond?.archetype ?? ""}
+                                            onChange={(e) =>
+                                                setSelectedItem({
+                                                    ...selectedItem,
+                                                    bond: { ...emptyBond(), ...selectedItem.bond, archetype: e.target.value },
+                                                })
+                                            }
+                                        />
+                                    </Grid>
+                                    <Grid size={12}>
+                                        <CyberInput
+                                            label="BOND_DESCRIPTION"
+                                            multiline
+                                            rows={3}
+                                            value={selectedItem.bond?.description ?? ""}
+                                            onChange={(e) =>
+                                                setSelectedItem({
+                                                    ...selectedItem,
+                                                    bond: { ...emptyBond(), ...selectedItem.bond, description: e.target.value },
+                                                })
+                                            }
+                                        />
+                                    </Grid>
+                                    <Grid size={12}>
+                                        <CyberInput
+                                            label="SPECIAL_ABILITY"
+                                            multiline
+                                            rows={2}
+                                            value={selectedItem.bond?.specialAbility ?? ""}
+                                            onChange={(e) =>
+                                                setSelectedItem({
+                                                    ...selectedItem,
+                                                    bond: { ...emptyBond(), ...selectedItem.bond, specialAbility: e.target.value },
+                                                })
+                                            }
+                                        />
+                                    </Grid>
+                                    <Grid size={12}>
+                                        <CyberInput
+                                            label="SECOND_WIND"
+                                            multiline
+                                            rows={2}
+                                            value={selectedItem.bond?.secondWind ?? ""}
+                                            onChange={(e) =>
+                                                setSelectedItem({
+                                                    ...selectedItem,
+                                                    bond: { ...emptyBond(), ...selectedItem.bond, secondWind: e.target.value },
+                                                })
+                                            }
+                                        />
+                                    </Grid>
+                                    <Grid size={12}>
+                                        <CyberInput
+                                            label="IDEALS (one line each)"
+                                            multiline
+                                            rows={3}
+                                            value={(selectedItem.bond?.ideals || []).join("\n")}
+                                            onChange={(e) =>
+                                                setSelectedItem({
+                                                    ...selectedItem,
+                                                    bond: {
+                                                        ...emptyBond(),
+                                                        ...selectedItem.bond,
+                                                        ideals: e.target.value
+                                                            .split("\n")
+                                                            .map((s) => s.trim())
+                                                            .filter(Boolean),
+                                                    },
+                                                })
+                                            }
+                                        />
+                                    </Grid>
+                                    <Grid size={12}>
+                                        <CyberInput
+                                            label="BOND_NOTES"
+                                            multiline
+                                            rows={2}
+                                            value={selectedItem.bond?.notes ?? ""}
+                                            onChange={(e) =>
+                                                setSelectedItem({
+                                                    ...selectedItem,
+                                                    bond: { ...emptyBond(), ...selectedItem.bond, notes: e.target.value },
+                                                })
+                                            }
+                                        />
+                                    </Grid>
+                                    <Grid size={12}>
+                                        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+                                            <CyberText sx={{ color: UI_COLORS.accent, fontSize: "0.75rem" }}>
+                                                BOND_POWERS
+                                            </CyberText>
+                                            <Tooltip title="ADD_POWER_ROW">
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() =>
+                                                        setSelectedItem({
+                                                            ...selectedItem,
+                                                            bondPowers: [
+                                                                ...(selectedItem.bondPowers || []),
+                                                                { name: "", description: "", frequency: "" },
+                                                            ],
+                                                        })
+                                                    }
+                                                    sx={{ color: UI_COLORS.accent }}
+                                                >
+                                                    <AddIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
+                                        </Stack>
+                                        {(selectedItem.bondPowers || []).map((p, idx) => (
+                                            <Box
+                                                key={idx}
+                                                sx={{
+                                                    mb: 2,
+                                                    p: 2,
+                                                    border: `1px solid ${UI_COLORS.accent}33`,
+                                                    borderRadius: 0,
+                                                }}
+                                            >
+                                                <Grid container spacing={1}>
+                                                    <Grid size={12}>
+                                                        <CyberInput
+                                                            label="POWER_NAME"
+                                                            value={p.name || ""}
+                                                            onChange={(e) => {
+                                                                const next = [...(selectedItem.bondPowers || [])];
+                                                                next[idx] = { ...next[idx], name: e.target.value };
+                                                                setSelectedItem({ ...selectedItem, bondPowers: next });
+                                                            }}
+                                                        />
+                                                    </Grid>
+                                                    <Grid size={12}>
+                                                        <CyberInput
+                                                            label="FREQUENCY"
+                                                            value={p.frequency || ""}
+                                                            onChange={(e) => {
+                                                                const next = [...(selectedItem.bondPowers || [])];
+                                                                next[idx] = { ...next[idx], frequency: e.target.value };
+                                                                setSelectedItem({ ...selectedItem, bondPowers: next });
+                                                            }}
+                                                        />
+                                                    </Grid>
+                                                    <Grid size={12}>
+                                                        <CyberInput
+                                                            label="DESCRIPTION"
+                                                            multiline
+                                                            rows={2}
+                                                            value={p.description || ""}
+                                                            onChange={(e) => {
+                                                                const next = [...(selectedItem.bondPowers || [])];
+                                                                next[idx] = { ...next[idx], description: e.target.value };
+                                                                setSelectedItem({ ...selectedItem, bondPowers: next });
+                                                            }}
+                                                        />
+                                                    </Grid>
+                                                </Grid>
+                                            </Box>
+                                        ))}
+                                    </Grid>
                                 </Grid>
                             </Grid>
 

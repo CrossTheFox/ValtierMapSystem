@@ -1,0 +1,117 @@
+[
+    {
+        "locationKey": "NVLuAT957KDNHmKOAQ8T",
+        "history": [
+            {
+                "date": "0 D.Z.",
+                "event": "Fundación de Galathia",
+                "description": "Zaakhiel levanta la ciudad flotante sobre el mar como núcleo del nuevo orden tras el Diluvio Rojo. Se establece la Familia Principal como linaje gobernante."
+            },
+            {
+                "date": "312 D.Z.",
+                "event": "Consolidación del Linaje Real",
+                "description": "Se formaliza el sistema de sucesión basado en primogenitura Zarken. La sangre no se diluye, asegurando dominio absoluto."
+            },
+            {
+                "date": "1480 D.Z.",
+                "event": "Guerra contra Mirage",
+                "description": "Conflicto ideológico con Mirage por el uso y control del poder Zarken. Marca el inicio de tensiones persistentes en Valtia."
+            },
+            {
+                "date": "2890 D.Z.",
+                "event": "Centralización del Poder",
+                "description": "Galathia se consolida como capital política y militar de Valtia, subordinando indirectamente a otras ciudades."
+            },
+            {
+                "date": "6120 D.Z.",
+                "event": "Desarrollo del Cañón Zarken",
+                "description": "El padre de Zorgun construye en secreto un arma capaz de replicar efectos similares al Diluvio Rojo como medida disuasoria."
+            },
+            {
+                "date": "6985 D.Z.",
+                "event": "Duelo de la Reina Felicia",
+                "description": "Felicia intenta matar a Oni tras visiones del futuro. Muere en combate contra Zorgun en el mar bajo Galathia."
+            },
+            {
+                "date": "7036 D.Z.",
+                "event": "Estado Actual",
+                "description": "Galathia mantiene el control político de Valtia mientras tensiones internas y externas aumentan peligrosamente."
+            }
+        ]
+    },
+    {
+        "locationKey": "Fix7rFHl62MV4HSpzc3F",
+        "history": [
+            {
+                "date": "1800 D.Z.",
+                "event": "Fundación de Techia",
+                "description": "Científicos exiliados tras la prohibición del uso de tecnología Zarken establecen una ciudad independiente enfocada en desarrollo tecno-mágico."
+            },
+            {
+                "date": "2100 D.Z.",
+                "event": "Nacimiento del Gabinete Central",
+                "description": "Se establece un sistema político de múltiples representantes que gobiernan la ciudad mediante consenso estratégico."
+            },
+            {
+                "date": "3400 D.Z.",
+                "event": "Industrialización Arcana",
+                "description": "Techia se convierte en el principal proveedor de tecnología y armamento de Valtia."
+            },
+            {
+                "date": "5200 D.Z.",
+                "event": "Expansión del Mercado Armamentista",
+                "description": "Empresas como las de la familia Morgyns consolidan su poder dentro del comercio bélico."
+            },
+            {
+                "date": "7015 D.Z.",
+                "event": "Aumento de Tensiones con Mirage",
+                "description": "Relaciones diplomáticas comienzan a deteriorarse debido a intereses estratégicos y presión externa."
+            },
+            {
+                "date": "7036 D.Z.",
+                "event": "Intento de Asesinato en el Gabinete",
+                "description": "Se detecta una operación encubierta que busca afectar a miembros clave del Gabinete Central, generando una crisis interna."
+            }
+        ]
+    },
+    {
+        "locationKey": "GeKnhH3vpfFva5bKl25s",
+        "history": [
+            {
+                "date": "120 D.Z.",
+                "event": "Fundación de Mirage",
+                "description": "Zerynhya y Elekhias establecen una sociedad basada en la pureza de la sangre Zarken y el dominio absoluto del poder."
+            },
+            {
+                "date": "250 D.Z.",
+                "event": "Creación de la Élite Gobernante",
+                "description": "Se crean siete entidades a partir de la sangre Zarken para gobernar Mirage. Estos serán conocidos como los Pecados."
+            },
+            {
+                "date": "900 D.Z.",
+                "event": "Nacimiento de Zero",
+                "description": "Se forma Zero como manifestación de la voluntad Zarken, capaz de controlar a los Pecados."
+            },
+            {
+                "date": "1480 D.Z.",
+                "event": "Primera Guerra contra Galathia",
+                "description": "Mirage entra en conflicto abierto contra Galathia por diferencias ideológicas sobre el futuro de Valtia."
+            },
+            {
+                "date": "3200 D.Z.",
+                "event": "Uso de Necromancia Avanzada",
+                "description": "Mirage perfecciona técnicas de resurrección controlada, incluyendo la reanimación de figuras clave como Engel."
+            },
+            {
+                "date": "6800 D.Z.",
+                "event": "Intervención Silenciosa",
+                "description": "Mirage comienza operaciones encubiertas en otras ciudades, priorizando manipulación sobre confrontación directa."
+            },
+            {
+                "date": "7036 D.Z.",
+                "event": "Activación de Operaciones en Techia",
+                "description": "Zero moviliza a Eins para ejecutar un objetivo estratégico que podría inclinar el equilibrio de poder en Valtia."
+            }
+        ]
+    }
+]
