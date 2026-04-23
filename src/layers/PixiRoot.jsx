@@ -6,6 +6,7 @@ import { ViewportContext } from "../context/ViewportContext";
 import MapViewportProvider from "../pixi/MapViewport";
 import LocationsLayer from "../pixi/LocationsLayer";
 import DistanceMeasureLayer from "../pixi/DistanceMeasureLayer";
+import PartyLayer from "../pixi/PartyLayer";
 import MapControls from "../components/MapControls";
 
 export default function PixiRoot() {
@@ -48,6 +49,7 @@ export default function PixiRoot() {
                     <MapViewportProvider onViewportReady={setViewport}>
                         <LocationsLayer />
                         <DistanceMeasureLayer />
+                        <PartyLayer />
                     </MapViewportProvider>
                 </Application>
                 <MapControls />

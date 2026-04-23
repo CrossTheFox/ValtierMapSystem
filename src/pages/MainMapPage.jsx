@@ -16,6 +16,7 @@ import { StyledWrapper } from "../styles/LandingPageStyles";
 import CampaignSelector from "./CampaignSelector";
 
 import { useWorldSync } from "../hooks/useWorldSync";
+import { useGameSync } from "../hooks/useGameSync";
 
 export default function MainMapPage() {
     const mainContainerRef = useRef(null);
@@ -24,6 +25,7 @@ export default function MainMapPage() {
     const isReady = worldStatus === "succeeded" && assetsStatus === "succeeded";
 
     useWorldSync();
+    useGameSync();
 
     useEffect(() => {
         if (isReady && mainContainerRef.current) {
