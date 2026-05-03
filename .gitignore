@@ -24,5 +24,11 @@ dist-ssr
 *.sw?
 .env
 
+# Cursor
+.cursor/
+
+# Local ICON / campaign PDFs & extracts (copyright — not for git)
+docs/
+
 # Firebase
 valtier-map-system-firebase-admins.json

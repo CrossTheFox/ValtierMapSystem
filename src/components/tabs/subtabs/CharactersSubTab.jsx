@@ -28,13 +28,13 @@ import {
     emptyBond,
 } from '../../../constants/statSystem';
 import { useStatSystem } from '../../../hooks/useStatSystem';
+import { normalizeCharacterDoc } from '../../../utils/normalizeCharacter';
 
 function normalizeCharacterSheet(char, statDefs) {
+    const base = normalizeCharacterDoc(char);
     return {
-        ...char,
-        stats: { ...defaultStatsFromDefinitions(statDefs), ...(char.stats || {}) },
-        bond: char.bond && typeof char.bond === "object" ? { ...emptyBond(), ...char.bond } : { ...emptyBond() },
-        bondPowers: Array.isArray(char.bondPowers) ? char.bondPowers : [],
+        ...base,
+        stats: { ...defaultStatsFromDefinitions(statDefs), ...(base.stats || {}) },
     };
 }
 

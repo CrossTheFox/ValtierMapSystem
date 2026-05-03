@@ -4,7 +4,7 @@ import {
     getOrCreateGameSession,
     subscribeToGameSession,
 } from "../../firebase/services/gameService";
-import { setPartyPositions, setMusic } from "../store/gameSlice";
+import { setPartyPositions } from "../store/gameSlice";
 
 export function useGameSync() {
     const dispatch   = useDispatch();
@@ -18,7 +18,6 @@ export function useGameSync() {
 
         const unsub = subscribeToGameSession(campaignId, (data) => {
             dispatch(setPartyPositions(data.partyPositions ?? {}));
-            dispatch(setMusic(data.music ?? null));
         });
 
         return unsub;

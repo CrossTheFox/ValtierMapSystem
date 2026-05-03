@@ -1,0 +1,173 @@
+{
+  "bundleVersion": 1,
+  "import": {
+    "campaignId": "REPLACE_WITH_FIRESTORE_CAMPAIGN_ID",
+    "locationId": "REPLACE_WITH_LOCATION_ID",
+    "ownerPlayerId": null,
+    "systemId": "REPLACE_IF_ABILITIES_NEED_SYSTEM_ID",
+    "dryRun": false
+  },
+  "assumptions": [
+    "Clase táctica ICON = Wright (azul) según hoja Roll20; 'Anchor/Anathema' es el nombre de job personalizado encima de Wright.",
+    "Nivel narrativo Lv.0 y capítulo CH.I se guardan en iconSheet; el modelo Firestore del VTT no tenía campos nativos job/level — no rompen la UI.",
+    "Acciones narrativas mapeadas a keys del stat system del repo: sneak, traverse, sense, study, charm, command, tinker, excel, smash, endure (minúsculas).",
+    "Bond 'The Outsider': texto de descripción resumido desde Roll20; Open Up sigue incompleto (sin captura del párrafo entero).",
+    "Mecánica ZARC, rasgos GEMS CHANNELING / INTO THE ABYSS / ALTERNATE ENDING, ANCHOR/ANATHEMA y resumen de Limit Break completados según captura táctica adicional (inglés en hoja → traducido al español del bundle).",
+    "Esfuerzo/strain iniciales (0/3, 0/5) no se persisten en Firestore en la app actual (van a localStorage); aquí van solo como referencia en iconSheet.",
+    "Habilidades tácticas homebrew (Anchor, Anathema) y rasgos ZARC se importan como documentos en `abilities` y se enlazan con `unlockedAbilities`.",
+    "imageUrl vacío: el retrato se sube luego desde el GM tools / Storage.",
+    "ownerPlayerId null hasta que enlaces el UID del jugador en Firestore `players`."
+  ],
+  "character": {
+    "name": "Judeth Kalain",
+    "age": 0,
+    "bio": "Maga Wright - Anchor/Anathema. Canaliza por gemas Z-Arcana disparadas por dos revólveres arcanotécnicos para no autodestruirse.",
+    "type": "player",
+    "imageUrl": "",
+    "isLocked": false,
+    "unlockGoal": "",
+    "stats": {
+      "charm": 1,
+      "command": 0,
+      "endure": 0,
+      "excel": 0,
+      "sense": 2,
+      "smash": 0,
+      "sneak": 0,
+      "study": 2,
+      "tinker": 1,
+      "traverse": 0
+    },
+    "bond": {
+      "name": "The Outsider",
+      "archetype": "The Outsider",
+      "description": "No eres de aquí. Eres un poco extraña o única en apariencia, costumbres o cultura; la gente puede recelar o curiosear.",
+      "specialAbility": "Obtienes +1d para preparar (set up) a otros personajes.",
+      "secondWind": "Recuperas todo el Effort cuando pasas una escena intentando no usar tus talentos o habilidades únicas.",
+      "ideals": [],
+      "notes": "Kin: Xixo. Importado desde Roll20 (revisar ideals de sesión en hoja original)."
+    },
+    "bondPowers": [
+      {
+        "name": "Open Up",
+        "frequency": "Pasiva / interludio (texto en hoja Roll20 incompleto en captura)",
+        "description": "Pasaste tiempo con otro personaje durante un interludio intentando entenderos. Si lo hacéis, cada uno puede… (completar desde Roll20)."
+      }
+    ],
+    "iconSheet": {
+      "source": "roll20",
+      "kin": "Xixo",
+      "culture": "",
+      "pronouns": "",
+      "narrativeLevel": 0,
+      "chapter": "I",
+      "iconClass": "wright",
+      "jobDisplayName": "Anchor / Anathema",
+      "narrativePoolsInitial": { "effort": { "current": 0, "max": 3 }, "strain": { "current": 0, "max": 5 } },
+      "tactical": {
+        "customResource": { "key": "zarcGems", "label": "ZARC-GEMS", "current": 2, "max": 10 },
+        "dust": 0,
+        "resolvePersonal": null,
+        "resolveParty": null,
+        "limitBreakSummary": "Los Limit Break cuestan Resolve y solo se pueden usar una vez por combate. Party Resolve sube 1 al inicio de cada ronda y vuelve a 0 al terminar el combate. Personal Resolve ganas 1 tras cada combate y vuelve a 0 al acampar. Podéis usar cualquier combinación de resolve personal/de grupo, pero el pool de grupo requiere permiso del grupo.",
+        "traits": [
+          {
+            "title": "GEMS CHANNELING",
+            "body": "Al inicio del combate, prepara un número de gemas (2 a 10 orbes) que debes usar durante el combate. Re-canalizar (1 acción): puedes volver a crear un conjunto de 2–10 gemas a mitad de combate. Desventaja: las gemas que queden sin gastar al acabar el combate explotan e infligen Xd6 de daño Divine al personaje (X según cuántas sobren; alinear con GM/hoja)."
+          },
+          {
+            "title": "INTO THE ABYSS",
+            "body": "Antes o después de realizar una habilidad, puedes Teletransporte 4. Puedes gastar X gemas para aumentar esa distancia a 4 × X (4 casillas por gema)."
+          },
+          {
+            "title": "ALTERNATE ENDING",
+            "body": "Si un ataque falla, puedes gastar 1 Gema para relanzar la habilidad. Coste: al final de tu turno recibes 1d6 de daño Divine por cada gema gastada de este modo."
+          }
+        ]
+      }
+    },
+    "unlockedAbilities": [
+      "judeth-kalain-class-root",
+      "judeth-trait-gems-channeling",
+      "judeth-trait-into-the-abyss",
+      "judeth-trait-alternate-ending",
+      "judeth-ability-anchor",
+      "judeth-ability-anathema"
+    ]
+  },
+  "abilities": [
+    {
+      "id": "judeth-kalain-class-root",
+      "key": "judeth-kalain-class-root",
+      "type": "class_root",
+      "label": "Wright — Anchor / Anathema",
+      "cost": "",
+      "tags": ["wright", "homebrew"],
+      "content": "Esta maga no controla la magia que fluye por su cuerpo. Para no autodestruirse, divide la canalización en gemas y las dispara mediante dos revólveres arcanotécnicos: Anchor y Anathema.\n\nZARC-GEMS: cada habilidad/ataque consume 1 o más Gemas Z-Arcana (ZARC-GEMS), cargadas en uno de dos modos:\n\n• ANCHOR — La magia se estabiliza: daño sostenido y controlado, efectos conocidos, bajo riesgo.\n• ANATHEMA — La magia se sobrecarga: más daño, pero incontrolable con efectos adversos, alto riesgo.\n\nRegla: declaras el modo al cargar las gemas, no al dispararlas.\n\nValor actual del recurso: ver iconSheet.tactical.customResource.",
+      "displayOrder": 0,
+      "displayTitle": "> CORE_CLASS_MATRIX",
+      "displayColor": "#4488ff",
+      "gridSize": 12
+    },
+    {
+      "id": "judeth-trait-gems-channeling",
+      "key": "judeth-trait-gems-channeling",
+      "type": "trait",
+      "label": "GEMS CHANNELING",
+      "cost": "",
+      "tags": ["trait"],
+      "content": "Al inicio del combate, prepara un número de gemas (2 a 10 orbes) que debes usar durante el combate.\n\nRe-canalizar (1 acción): puedes volver a crear un conjunto de 2–10 gemas a mitad de combate.\n\nDesventaja: las gemas que queden sin gastar al acabar el combate explotan e infligen Xd6 de daño Divine al personaje (X = gemas sobrantes; confirmar con GM/hoja).",
+      "displayOrder": 1,
+      "displayColor": "#ff66ff",
+      "gridSize": 3
+    },
+    {
+      "id": "judeth-trait-into-the-abyss",
+      "key": "judeth-trait-into-the-abyss",
+      "type": "trait",
+      "label": "INTO THE ABYSS",
+      "cost": "",
+      "tags": ["trait", "teleport"],
+      "content": "Antes o después de realizar una habilidad, puedes Teletransporte 4.\n\nPuedes gastar X gemas para aumentar esa distancia a 4 × X (4 casillas por gema).",
+      "displayOrder": 2,
+      "displayColor": "#ff66ff",
+      "gridSize": 3
+    },
+    {
+      "id": "judeth-trait-alternate-ending",
+      "key": "judeth-trait-alternate-ending",
+      "type": "trait",
+      "label": "ALTERNATE ENDING",
+      "cost": "",
+      "tags": ["trait"],
+      "content": "Si un ataque falla, puedes gastar 1 Gema para relanzar la tirada de la habilidad.\n\nCoste: al final de tu turno recibes 1d6 de daño Divine por cada gema gastada de este modo.",
+      "displayOrder": 3,
+      "displayColor": "#ff66ff",
+      "gridSize": 3
+    },
+    {
+      "id": "judeth-ability-anchor",
+      "key": "judeth-ability-anchor",
+      "type": "ability",
+      "label": "ANCHOR",
+      "cost": "1–3 Z-Gems · 1–2 acciones",
+      "tags": ["attack", "true strike", "homebrew"],
+      "content": "Etiqueta: True Strike.\n\nEfectos: cada Gema consumida otorga +1 Boon al ataque (máx. 2). Si gastas 3 gemas, el ataque gana la etiqueta Divine y añade daño adicional igual a fray.\n\nNarrativo: cada gema aumenta estabilidad/control pero reduce efectividad/alcance.\n\nTiradas (sintaxis Roll20 / placeholders): ataque 1d20+boons · ligero 1d[damage-die]+fray · pesado 2d[damage-die]+fray · fallo: fray.",
+      "displayOrder": 2,
+      "displayColor": "#00f2ea",
+      "gridSize": 4
+    },
+    {
+      "id": "judeth-ability-anathema",
+      "key": "judeth-ability-anathema",
+      "type": "ability",
+      "label": "ANATHEMA",
+      "cost": "4–10 Z-Gems · 1–2 acciones",
+      "tags": ["attack", "homebrew", "risk"],
+      "content": "Efectos: por cada ⌊gemas/2⌋ consumidas sumas +fray al daño. Con 10 gemas gastadas, el daño es Divine y el ataque no puede esquivarse.\n\nRiesgo: cuando la habilidad resuelve, tira 1d6 por cada Gema consumida. Cualquier resultado de 4 o menos es un efecto adverso (lo determina el GM) o daño Divine a la aliada más cercana igual a tu dado de daño (según hoja original).\n\nNarrativo: más gemas = más alcance/potencia y menos estabilidad/control.\n\nTiradas: ataque 1d20+boons · ligero 2d[damage-die] · pesado 3d[damage-die] · fallo: 1d[damage-die].",
+      "displayOrder": 2,
+      "displayColor": "#00f2ea",
+      "gridSize": 4
+    }
+  ]
+}

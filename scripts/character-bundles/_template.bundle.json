@@ -1,0 +1,63 @@
+{
+  "bundleVersion": 1,
+  "import": {
+    "campaignId": "REPLACE_WITH_FIRESTORE_CAMPAIGN_ID",
+    "locationId": "REPLACE_WITH_LOCATION_ID",
+    "ownerPlayerId": null,
+    "systemId": null,
+    "dryRun": true
+  },
+  "assumptions": [],
+  "character": {
+    "name": "NEW_CHARACTER_NAME",
+    "age": 0,
+    "bio": "",
+    "type": "player",
+    "imageUrl": "",
+    "isLocked": false,
+    "unlockGoal": "",
+    "stats": {
+      "sneak": 0,
+      "traverse": 0,
+      "sense": 0,
+      "study": 0,
+      "charm": 0,
+      "command": 0,
+      "tinker": 0,
+      "excel": 0,
+      "smash": 0,
+      "endure": 0
+    },
+    "bond": {
+      "name": "",
+      "archetype": "",
+      "description": "",
+      "specialAbility": "",
+      "secondWind": "",
+      "ideals": [],
+      "notes": ""
+    },
+    "bondPowers": [],
+    "iconSheet": {
+      "source": "roll20",
+      "kin": "",
+      "culture": "",
+      "pronouns": "",
+      "narrativeLevel": 0,
+      "chapter": "I",
+      "iconClass": "wright",
+      "jobDisplayName": "",
+      "narrativePoolsInitial": {
+        "effort": { "current": 0, "max": 3 },
+        "strain": { "current": 0, "max": 5 }
+      },
+      "tactical": {
+        "customResource": null,
+        "dust": 0,
+        "traits": []
+      }
+    },
+    "unlockedAbilities": []
+  },
+  "abilities": []
+}

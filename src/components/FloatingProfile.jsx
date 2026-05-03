@@ -16,12 +16,17 @@ const FloatingProfile = ({ profile }) => {
 
     const { list: characters } = useSelector((state) => state.characters);
 
-    // Load the player's characters as soon as the profile is available
+    // Load characters owned by this player (ownerPlayerId); legacy characterIds merged if present
     useEffect(() => {
-        if (profile?.characterIds?.length > 0) {
-            dispatch(fetchPlayerCharacters(profile.characterIds));
+        if (profile?.uid) {
+            dispatch(
+                fetchPlayerCharacters({
+                    uid: profile.uid,
+                    characterIds: profile.characterIds || [],
+                })
+            );
         }
-    }, [profile?.uid, dispatch]);
+    }, [profile?.uid, profile?.characterIds, dispatch]);
 
     const activeCharacter = characters.find(c => c.id === profile?.activeCharacterId) || characters[0] || null;
 

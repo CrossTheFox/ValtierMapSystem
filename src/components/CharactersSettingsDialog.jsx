@@ -536,7 +536,8 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
     const dispatch = useDispatch();
     
     const { profile } = useSelector((state) => state.player);
-    const { list: characters, loading } = useSelector((state) => state.characters); 
+    const { list: characters, status: charactersStatus } = useSelector((state) => state.characters);
+    const loading = charactersStatus === "loading"; 
 
     const [selectedCharId, setSelectedCharId] = useState(null);
     const [selectedCharacter, setSelectedCharacter] = useState(null);
@@ -568,12 +569,17 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
         onClose();
     };
 
-    // Despacho de la acción al abrir el diálogo
+    // Al abrir: personajes con ownerPlayerId == jugador; characterIds solo como respaldo legacy
     useEffect(() => {
-        if (open && profile?.characterIds?.length > 0) {
-            dispatch(fetchPlayerCharacters(profile.characterIds));
+        if (open && profile?.uid) {
+            dispatch(
+                fetchPlayerCharacters({
+                    uid: profile.uid,
+                    characterIds: profile.characterIds || [],
+                })
+            );
         }
-    }, [open, profile, dispatch]);
+    }, [open, profile?.uid, profile?.characterIds, dispatch]);
 
     // Autoseleccionar: priorizar activeCharacterId del perfil, si no el primero de la lista
     useEffect(() => {

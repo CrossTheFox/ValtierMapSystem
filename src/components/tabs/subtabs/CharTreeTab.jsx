@@ -106,13 +106,33 @@ export default function CharTreeTab({ character }) {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (character?.allAbilities) {
-            getAbilitiesByIds(character.allAbilities).then(res => {
+        let cancelled = false;
+        const ids =
+            Array.isArray(character?.allAbilities) && character.allAbilities.length > 0
+                ? character.allAbilities
+                : Array.isArray(character?.unlockedAbilities) && character.unlockedAbilities.length > 0
+                  ? character.unlockedAbilities
+                  : [];
+
+        if (!ids.length) {
+            setAllAbilities([]);
+            setLoading(false);
+            return () => {
+                cancelled = true;
+            };
+        }
+
+        setLoading(true);
+        getAbilitiesByIds(ids).then((res) => {
+            if (!cancelled) {
                 setAllAbilities(res);
                 setLoading(false);
-            });
-        }
-    }, [character]);
+            }
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [character?.id, character?.allAbilities, character?.unlockedAbilities]);
 
     // Lógica de ordenamiento y filtrado
     const treeData = useMemo(() => {
@@ -135,6 +155,14 @@ export default function CharTreeTab({ character }) {
     const checkUnlocked = (key) => character.unlockedAbilities?.includes(key);
 
     if (loading) return <CircularProgress sx={{ display: 'block', m: 'auto', color: UI_COLORS.accent }} />;
+
+    if (!treeData) {
+        return (
+            <CyberText sx={{ display: 'block', textAlign: 'center', py: 4, color: 'rgba(255,255,255,0.65)' }}>
+                No hay datos de matriz (sin allAbilities ni unlockedAbilities con abilities en Firestore).
+            </CyberText>
+        );
+    }
 
     return (
         <Box sx={{ maxWidth: "100%" }}>

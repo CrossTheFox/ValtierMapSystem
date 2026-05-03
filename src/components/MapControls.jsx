@@ -10,7 +10,6 @@ import ExpandMore from "@mui/icons-material/ExpandMore";
 import { useViewport } from "../context/ViewportContext";
 import { UI_COLORS } from "../constants/uiColors";
 import { CyberText } from "./customs/CustomTexts";
-import MusicPlayer from "./MusicPlayer";
 
 /** Relative scale change per step (~12% per click); pixi-viewport expects a ratio, not a whole percent. */
 const ZOOM_STEP = 0.12;
@@ -105,9 +104,6 @@ export default function MapControls() {
                 minWidth: 220,
             }}
         >
-            {/* Music Player sits above the zoom controls */}
-            <MusicPlayer />
-
             <Box
                 sx={{
                     display: "flex",
