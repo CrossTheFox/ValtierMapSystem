@@ -27,6 +27,14 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
+    // ICON jobs / classes: metadata + per-class ability membership (doc id = ability key)
+    match /clases/{classId} {
+      allow read, write: if request.auth != null;
+      match /abilities/{abilitySlotId} {
+        allow read, write: if request.auth != null;
+      }
+    }
+
     match /players/{playerId} {
       allow read, write: if request.auth != null;
     }

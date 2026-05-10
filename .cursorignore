@@ -1,0 +1,99 @@
+﻿# Cursor: exclusiones de índice y contexto (ahorro de tokens).
+# Sintaxis tipo .gitignore. Ver: https://cursor.com/docs/context/ignore-files
+
+# -----------------------------------------------------------------------------
+# Dependencias (nunca editar a mano)
+# -----------------------------------------------------------------------------
+node_modules/
+**/node_modules/
+
+# -----------------------------------------------------------------------------
+# Locks y manifiestos enormes (regenerados; versiones en package.json)
+# Si necesitas depurar resolución de dependencias, comenta estas líneas.
+# -----------------------------------------------------------------------------
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+npm-shrinkwrap.json
+
+# -----------------------------------------------------------------------------
+# Salidas de build y bundlers
+# -----------------------------------------------------------------------------
+dist/
+dist-ssr/
+build/
+out/
+.next/
+.nuxt/
+.vite/
+.turbo/
+.parcel-cache/
+storybook-static/
+*.tsbuildinfo
+
+# -----------------------------------------------------------------------------
+# Cobertura y reportes de tests
+# -----------------------------------------------------------------------------
+coverage/
+.nyc_output/
+.jest/
+html-report/
+
+# -----------------------------------------------------------------------------
+# Cachés de herramientas
+# -----------------------------------------------------------------------------
+.cache/
+.eslintcache
+.rpt2_cache/
+*.cache
+.fusebox/
+.awcache/
+
+# -----------------------------------------------------------------------------
+# Source maps (muy voluminosos; el código fuente ya está en src/)
+# -----------------------------------------------------------------------------
+*.map
+
+# -----------------------------------------------------------------------------
+# Logs y salida de depuración
+# -----------------------------------------------------------------------------
+*.log
+logs/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# -----------------------------------------------------------------------------
+# Secretos y entorno (no deben entrar al contexto del modelo)
+# -----------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# -----------------------------------------------------------------------------
+# Firebase / emuladores (artefactos locales)
+# -----------------------------------------------------------------------------
+.firebase/
+dataconnect-generated/
+
+# -----------------------------------------------------------------------------
+# OS e IDE (ruido)
+# -----------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+
+# -----------------------------------------------------------------------------
+# Paquetes de referencia / skills copiados (muy grandes; quitar si los editas)
+# -----------------------------------------------------------------------------
+.agents/
+
+# -----------------------------------------------------------------------------
+# Archivos generados de skills (opcional)
+# -----------------------------------------------------------------------------
+skills-lock.json
+
+# -----------------------------------------------------------------------------
+# Minificación en artefactos de build (ya cubiertos por dist/; por si acaso)
+# -----------------------------------------------------------------------------
+**/*.min.js

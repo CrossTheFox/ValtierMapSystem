@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "import-character": "node scripts/importCharacterFromJson.mjs",
     "set-player-roster": "node scripts/setPlayerCharacterRoster.mjs",
-    "push-judeth-matrix": "node scripts/pushJudethMatrixToFirebase.mjs"
+    "push-judeth-matrix": "node scripts/pushJudethMatrixToFirebase.mjs",
+    "seed-clases-test": "node scripts/seedClasesMultiJobTest.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

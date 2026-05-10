@@ -619,7 +619,14 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
 
     /* ── Shared character content (used in both normal + popup modes) ── */
     const characterContent = selectedCharacter ? (
-        <Box sx={{ p: 4, pt: 2, ...CYBER_SCROLL_STYLE, position: 'relative' }}>
+        <Box
+            sx={{
+                p: 4,
+                pt: 2,
+                position: "relative",
+                ...CYBER_SCROLL_STYLE,
+            }}
+        >
             <Box sx={{ mb: 4, ml: 1 }}>
                 <Box sx={{ display: "flex", alignItems: "baseline", gap: 2, flexWrap: "wrap", width: "100%", pr: 2 }}>
                     <CyberTitle variant="h3" sx={{ textShadow: `0 0 10px ${UI_COLORS.accent}66`, fontSize: "2.5rem", flex: "0 1 auto", m: 0, lineHeight: 1.1, color: "#fff" }}>
@@ -647,11 +654,11 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                     </Box>
                 ))}
             </Stack>
-            <Box sx={{ minHeight: '400px' }}>
+            <Box sx={{ minHeight: "400px" }}>
                 {activeSubTab === "STATS" && <CharStatsTab character={selectedCharacter} characterId={selectedCharacter.id} statDefinitions={statDefinitions} resourceTracks={resourceTracks} systemName={systemName} />}
                 {activeSubTab === "BIO"   && <CharBioTab character={selectedCharacter} />}
                 {activeSubTab === "SKILLS"       && <CharSkillsTab character={selectedCharacter} />}
-                {activeSubTab === "SKILL MATRIX" && <CharTreeTab   character={selectedCharacter} />}
+                {activeSubTab === "SKILL MATRIX" && <CharTreeTab character={selectedCharacter} />}
             </Box>
         </Box>
     ) : (
@@ -709,10 +716,14 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                         <CharacterHeaderSelector characters={characters} selectedId={selectedCharId} onSelect={handleSelectCharacter} />
                         {headerControls}
                     </Box>
-                    <Box sx={{ flexGrow: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                    <Box sx={{ flexGrow: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
                         {loading
                             ? <Box sx={{ display: 'flex', justifyContent: 'center', mt: 10 }}><CircularProgress /></Box>
-                            : <Box sx={{ flexGrow: 1, ...CYBER_SCROLL_STYLE }}>{characterContent}</Box>
+                            : (
+                                <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", ...CYBER_SCROLL_STYLE }}>
+                                    {characterContent}
+                                </Box>
+                            )
                         }
                     </Box>
                 </Box>

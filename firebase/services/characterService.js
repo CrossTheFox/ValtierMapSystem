@@ -37,6 +37,12 @@ export async function setPlayerActiveCharacter(playerId, characterId) {
     await updateDoc(doc(db, "players", playerId), { activeCharacterId: characterId });
 }
 
+/** Actualiza campos sueltos del documento personaje (p. ej. `activeClassId`). */
+export async function updateCharacterFields(characterId, partial) {
+    if (!characterId || !partial || typeof partial !== "object") return;
+    await updateDoc(doc(db, "characters", characterId), partial);
+}
+
 export async function getAbilitiesByIds(abilityIds) {
     if (!abilityIds.length) return [];
 
