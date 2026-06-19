@@ -15,6 +15,7 @@ import { useEffect, useRef } from "react";
 import { useSelector } from "react-redux";
 import { useApplication } from "@pixi/react";
 import { useViewport } from "../context/ViewportContext";
+import { safeDestroy } from "./pixiCleanup";
 
 const CYAN      = 0x00f2ea;
 const CYAN_STR  = "#00f2ea";
@@ -206,8 +207,8 @@ export default function DistanceMeasureLayer() {
         labelRef.current = label;
 
         return () => {
-            g.destroy();
-            label.destroy();
+            safeDestroy(g);
+            safeDestroy(label);
             graphicsRef.current = null;
             labelRef.current    = null;
         };
