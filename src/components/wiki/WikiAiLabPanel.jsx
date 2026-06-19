@@ -30,10 +30,10 @@ import { UI_COLORS } from "../../constants/uiColors";
 import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
 import {
     AI_MODES, AI_MODE_LABELS, AI_MODE_TOOLTIPS, SITUATION_INTENTS,
-    AI_PROVIDERS, AI_PROVIDER_LABELS, AI_PROVIDER_TOOLTIPS,
+    AI_PROVIDERS,
     CONFIDENCE_TOOLTIPS, TONE_LABELS,
-    GEMINI_MODELS, OPENROUTER_MODELS,
-    CASCADE_CONTEXT_OPTS, cascadeOptsForDepth,
+    GEMINI_MODELS,
+    cascadeOptsForDepth,
 } from "../../constants/wiki/narrativeAiSchemas";
 import {
     buildSituationContext,
@@ -52,6 +52,7 @@ import {
     getExplicitlyMentionedEntityIds,
 } from "../../constants/wiki/narrativeAiConfig";
 import { filterGraphEntities } from "../../utils/wikiGraphEntities";
+import { hasGeminiApiKeyConfigured } from "../../utils/aiApiKeys";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -381,20 +382,15 @@ export default function WikiAiLabPanel({
     const aiRules = aiConfig.rules;
     const generationParams = aiConfig.generation;
 
-    // Controls
-    const hasGeminiDirect = Boolean(import.meta.env.VITE_GEMINI_API_KEY);
-    const hasOpenRouter   = Boolean(import.meta.env.VITE_OPENROUTER_API_KEY);
-    const defaultProvider = hasGeminiDirect
-        ? AI_PROVIDERS.GEMINI_DIRECT
-        : hasOpenRouter
-            ? AI_PROVIDERS.OPENROUTER
-            : AI_PROVIDERS.GEMINI;
+    // Controls — solo Gemini API via VITE_GEMINI_API_KEY
+    const hasGeminiKey = hasGeminiApiKeyConfigured();
+    const provider = AI_PROVIDERS.GEMINI_DIRECT;
 
     const [mode, setMode]           = useState(AI_MODES.SITUATION);
-    const [provider, setProvider]   = useState(defaultProvider);
     const [modelId, setModelId]     = useState(GEMINI_MODELS[0].value);
     const [intent, setIntent]       = useState("");
     const [instruction, setInstruction] = useState("");
+    const [debouncedInstruction, setDebouncedInstruction] = useState("");
 
     // Cascade propagation depth (slider 1–8)
     const [propagationDepth, setPropagationDepth] = useState(4);
@@ -413,23 +409,34 @@ export default function WikiAiLabPanel({
     const [applyTarget, setApplyTarget] = useState(null);
     const [applying, setApplying]       = useState(false);
 
-    const modelOptions = provider === AI_PROVIDERS.OPENROUTER ? OPENROUTER_MODELS : GEMINI_MODELS;
+    const modelOptions = GEMINI_MODELS;
     const graphEntities = filterGraphEntities(entities);
+
+    useEffect(() => {
+        const t = setTimeout(() => setDebouncedInstruction(instruction), 350);
+        return () => clearTimeout(t);
+    }, [instruction]);
 
     const propagationOpts = useMemo(() => ({
         aiRules,
-        eventText: instruction,
-    }), [aiRules, instruction]);
+        eventText: debouncedInstruction,
+    }), [aiRules, debouncedInstruction]);
 
-    const handleProviderChange = (newProvider) => {
-        setProvider(newProvider);
-        setModelId(newProvider === AI_PROVIDERS.OPENROUTER
-            ? OPENROUTER_MODELS[0].value
-            : GEMINI_MODELS[0].value
-        );
-    };
+    const restoreCascadePreview = useCallback(() => {
+        if (mode !== AI_MODES.CASCADE || !selectedEntity?.id) {
+            onPropagationEnd?.();
+            return;
+        }
+        const depthOpts = cascadeOptsForDepth(propagationDepth);
+        const { waves } = computePropagationWaves(selectedEntity.id, graphEntities, relations, {
+            strategy: "cascade",
+            maxWaves: depthOpts.maxWaves,
+            ...propagationOpts,
+        });
+        onPropagationStart?.(waves, { preview: true });
+    }, [mode, selectedEntity, propagationDepth, graphEntities, relations, propagationOpts, onPropagationStart, onPropagationEnd]);
 
-    // Live mention preview (cascade only, debounced by user typing)
+    // Live mention preview (cascade only)
     const handleInstructionChange = useCallback((value) => {
         setInstruction(value);
         if (mode === AI_MODES.CASCADE && value.trim().length > 3) {
@@ -527,10 +534,14 @@ export default function WikiAiLabPanel({
         } catch (err) {
             setError(err.message ?? "Error desconocido.");
         } finally {
-            onPropagationEnd?.();
             setLoading(false);
+            if (mode === AI_MODES.CASCADE) {
+                restoreCascadePreview();
+            } else {
+                onPropagationEnd?.();
+            }
         }
-    }, [mode, provider, modelId, intent, instruction, selectedEntity, graphEntities, relations, aiRules, generationParams, propagationOpts, onPropagationStart, onPropagationEnd]);
+    }, [mode, modelId, intent, instruction, selectedEntity, graphEntities, relations, aiRules, generationParams, propagationOpts, propagationDepth, onPropagationStart, onPropagationEnd, restoreCascadePreview]);
 
     // When the anchor entity or depth changes in cascade mode, update the static preview halo.
     // When leaving cascade mode, clear it.
@@ -690,48 +701,40 @@ export default function WikiAiLabPanel({
                     />
                 </Box>
 
-                {/* Provider + Model */}
-                <Box sx={{ display: "flex", gap: 1 }}>
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                        <LabDropdown
-                            label="Proveedor"
-                            value={provider}
-                            onChange={handleProviderChange}
-                            options={[
-                                {
-                                    value: AI_PROVIDERS.GEMINI,
-                                    label: AI_PROVIDER_LABELS[AI_PROVIDERS.GEMINI],
-                                    hint: AI_PROVIDER_TOOLTIPS[AI_PROVIDERS.GEMINI],
-                                },
-                                {
-                                    value: AI_PROVIDERS.GEMINI_DIRECT,
-                                    label: AI_PROVIDER_LABELS[AI_PROVIDERS.GEMINI_DIRECT],
-                                    hint: AI_PROVIDER_TOOLTIPS[AI_PROVIDERS.GEMINI_DIRECT],
-                                    disabled: !hasGeminiDirect,
-                                    suffix: !hasGeminiDirect ? " (sin key)" : "",
-                                },
-                                {
-                                    value: AI_PROVIDERS.OPENROUTER,
-                                    label: AI_PROVIDER_LABELS[AI_PROVIDERS.OPENROUTER],
-                                    hint: AI_PROVIDER_TOOLTIPS[AI_PROVIDERS.OPENROUTER],
-                                    disabled: !hasOpenRouter,
-                                    suffix: !hasOpenRouter ? " (sin key)" : "",
-                                },
-                            ]}
-                        />
+                {/* Motor IA + modelo */}
+                <Box>
+                    <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary, letterSpacing: 0.5, mb: 0.5 }}>
+                        MOTOR IA
+                    </CyberText>
+                    <Box
+                        sx={{
+                            px: 1,
+                            py: 0.75,
+                            mb: 1,
+                            borderRadius: 1,
+                            border: `1px solid ${hasGeminiKey ? `${UI_COLORS.anomaly}44` : `${UI_COLORS.accentStrong}55`}`,
+                            bgcolor: hasGeminiKey ? `${UI_COLORS.anomaly}08` : `${UI_COLORS.accentStrong}10`,
+                        }}
+                    >
+                        <CyberText sx={{ fontSize: "0.72rem", color: hasGeminiKey ? UI_COLORS.anomaly : UI_COLORS.accentStrong }}>
+                            Gemini API · <code style={{ fontSize: "0.68rem" }}>VITE_GEMINI_API_KEY</code>
+                        </CyberText>
+                        {!hasGeminiKey && (
+                            <CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.textSecondary, mt: 0.35, lineHeight: 1.4 }}>
+                                Key no detectada en el build. Añádela al <code>.env</code> local o en Cloudflare Pages → Settings → Environment variables.
+                            </CyberText>
+                        )}
                     </Box>
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                        <LabDropdown
-                            label="Modelo"
-                            value={modelId}
-                            onChange={setModelId}
-                            options={modelOptions.map((m) => ({
-                                value: m.value,
-                                label: m.label,
-                                hint: m.tooltip,
-                            }))}
-                        />
-                    </Box>
+                    <LabDropdown
+                        label="Modelo"
+                        value={modelId}
+                        onChange={setModelId}
+                        options={modelOptions.map((m) => ({
+                            value: m.value,
+                            label: m.label,
+                            hint: m.tooltip,
+                        }))}
+                    />
                 </Box>
 
                 {/* Anchor display */}
@@ -910,6 +913,7 @@ export default function WikiAiLabPanel({
                     fullWidth
                     disabled={
                         loading
+                        || !hasGeminiKey
                         || !selectedEntity
                         || ((mode === AI_MODES.NARRATIVE_IMPACT || mode === AI_MODES.CASCADE) && !instruction.trim())
                     }
@@ -955,23 +959,12 @@ export default function WikiAiLabPanel({
                         <CyberText sx={{ fontSize: "0.75rem", color: UI_COLORS.accentStrong }}>
                             {error}
                         </CyberText>
-                        {error.includes("firebase-tools") || error.includes("PERMISSION_DENIED") ? (
+                        {!hasGeminiKey && (
                             <CyberText sx={{ fontSize: "0.7rem", color: UI_COLORS.textSecondary, mt: 0.5 }}>
-                                Ejecuta: <code>npx -y firebase-tools@latest init ailogic</code>
+                                Configura <code>VITE_GEMINI_API_KEY</code> en el entorno de build
+                                (local: <code>.env</code> · producción: Cloudflare Pages → Environment variables).
                             </CyberText>
-                        ) : null}
-                        {error.includes("prepayment credits") || error.includes("depleted") ? (
-                            <CyberText sx={{ fontSize: "0.7rem", color: UI_COLORS.textSecondary, mt: 0.5 }}>
-                                Los créditos prepago del proyecto Firebase están agotados.
-                                Solución rápida: añade <code>VITE_GEMINI_API_KEY</code> al <code>.env</code>
-                                (misma clave que <code>GEMINI_API_KEY</code> del CLI), reinicia <code>npm run dev</code>
-                                y usa proveedor <strong>Gemini API (local)</strong>.
-                                O recarga créditos en{" "}
-                                <a href="https://ai.studio/projects" target="_blank" rel="noreferrer" style={{ color: UI_COLORS.anomaly }}>
-                                    ai.studio/projects
-                                </a>.
-                            </CyberText>
-                        ) : null}
+                        )}
                     </Box>
                 )}
 

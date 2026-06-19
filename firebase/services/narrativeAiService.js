@@ -31,6 +31,7 @@ import {
 } from "../../src/constants/wiki/narrativeAiSchemas";
 import { getAiRelationTypeList } from "../../src/constants/wikiRelationTypes";
 import { resolveGenerationParams } from "../../src/constants/wiki/narrativeAiConfig";
+import { resolveGeminiApiKey } from "../../src/utils/aiApiKeys";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -82,12 +83,12 @@ function getGenConfig(mode, generationParams) {
     return resolveGenerationParams(generationParams ?? {}, mode);
 }
 
-async function callGeminiDirect({ mode, contextText, modelId, intent, instruction, resolvedMentions, guardrailsText, generationParams }) {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+async function callGeminiDirect({ mode, contextText, modelId, intent, instruction, resolvedMentions, guardrailsText, generationParams, apiKey: apiKeyOverride }) {
+    const apiKey = apiKeyOverride || resolveGeminiApiKey();
     if (!apiKey) {
         throw new Error(
-            "VITE_GEMINI_API_KEY no está en .env. "
-            + "Copia la misma clave que GEMINI_API_KEY (CLI) y reinicia npm run dev."
+            "No hay API key de Gemini. "
+            + "Pégala en Lab IA → «Tu API key» o añade VITE_GEMINI_API_KEY al .env y reinicia el dev server."
         );
     }
 
@@ -173,10 +174,13 @@ async function callGemini({ mode, contextText, modelId, intent, instruction, res
 
 // ── OpenRouter provider ───────────────────────────────────────────────────────
 
-async function callOpenRouter({ mode, contextText, modelId, intent, instruction, resolvedMentions, guardrailsText, generationParams }) {
-    const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
+async function callOpenRouter({ mode, contextText, modelId, intent, instruction, resolvedMentions, guardrailsText, generationParams, apiKey: apiKeyOverride }) {
+    const apiKey = apiKeyOverride || resolveOpenRouterApiKey();
     if (!apiKey) {
-        throw new Error("VITE_OPENROUTER_API_KEY no está configurada. Agrégala al .env.");
+        throw new Error(
+            "No hay API key de OpenRouter. "
+            + "Pégala en Lab IA → «Tu API key» o añade VITE_OPENROUTER_API_KEY al .env."
+        );
     }
 
     const systemPrompt = getSystemPrompt(mode, guardrailsText);
@@ -250,8 +254,9 @@ async function callOpenRouter({ mode, contextText, modelId, intent, instruction,
  *   resolvedMentions?: object[],  — cascade: pre-resolved entity mentions
  *   guardrailsText?: string,      — reglas DJ (fallecidos, etc.)
  *   generationParams?: object,    — temperature, topP, maxOutputTokens
- *   provider: "gemini" | "openrouter",
+ *   provider: "gemini" | "gemini_direct" | "openrouter",
  *   modelId: string,
+ *   apiKeys?: { gemini?: string, openrouter?: string },
  * }} params
  * @returns {Promise<{ raw: string, usage: object|null, provider: string, modelId: string }>}
  */
@@ -265,6 +270,7 @@ export async function generateNarrativeAi({
     generationParams,
     provider,
     modelId,
+    apiKeys,
 }) {
     if (!contextText?.trim()) {
         throw new Error("contextText está vacío. Verifica que la entidad ancla tiene relaciones.");
@@ -276,6 +282,11 @@ export async function generateNarrativeAi({
 
     const callOpts = {
         mode, contextText, modelId, intent, instruction, resolvedMentions, guardrailsText, generationParams,
+        apiKey: provider === "gemini_direct"
+            ? (apiKeys?.gemini || resolveGeminiApiKey())
+            : provider === "openrouter"
+                ? (apiKeys?.openrouter || resolveOpenRouterApiKey())
+                : undefined,
     };
     if (provider === "gemini") {
         ({ raw, usage } = await callGemini(callOpts));

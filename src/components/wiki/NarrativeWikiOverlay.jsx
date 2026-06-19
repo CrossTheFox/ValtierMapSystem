@@ -112,7 +112,6 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
     const [neuralLabRightOpen, setNeuralLabRightOpen] = useState(true);
     const [aiConfigOpen, setAiConfigOpen] = useState(false);
     const [propagationState, setPropagationState] = useState(null);
-    const propagationTimerRef = useRef(null);
     const wikiOverlay = useSelector((s) => s.ui.wikiOverlay);
     const entities = useSelector((s) => s.wiki.entities);
     const wikiStatus = useSelector((s) => s.wiki.status);
@@ -274,21 +273,19 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
      */
     const handlePropagationStart = useCallback((waves, opts = {}) => {
         if (!waves?.length) return;
-        const allNodeIds = [...new Set(waves.flatMap((w) => w.nodeIds ?? []))];
         const litNodeIds = [...new Set(waves[0]?.nodeIds ?? [])];
 
         if (opts?.preview) {
-            // Static preview: show full depth as attenuated halo, no animation timer
             setPropagationState({
                 mode: "preview",
                 active: false,
                 currentWave: waves.length - 1,
                 waves,
-                litNodeIds: allNodeIds,
+                litNodeIds: [],
                 maxWave: waves.length - 1,
             });
         } else {
-            // Live animation: start at wave 0, advance via interval
+            // Live animation: Pixi ticker advances waves (no React setInterval)
             setPropagationState({ mode: "live", active: true, currentWave: 0, waves, litNodeIds });
         }
     }, []);
@@ -296,37 +293,6 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
     const handlePropagationEnd = useCallback(() => {
         setPropagationState(null);
     }, []);
-
-    useEffect(() => {
-        if (!propagationState?.active || propagationState?.mode === "preview") {
-            if (propagationTimerRef.current) {
-                clearInterval(propagationTimerRef.current);
-                propagationTimerRef.current = null;
-            }
-            return;
-        }
-
-        propagationTimerRef.current = setInterval(() => {
-            setPropagationState((prev) => {
-                if (!prev?.active || !prev.waves?.length) return prev;
-                const nextWave = prev.currentWave + 1;
-                if (nextWave >= prev.waves.length) return prev;
-
-                const litNodeIds = [];
-                for (let i = 0; i <= nextWave; i++) {
-                    for (const id of prev.waves[i]?.nodeIds ?? []) litNodeIds.push(id);
-                }
-                return { ...prev, currentWave: nextWave, litNodeIds: [...new Set(litNodeIds)] };
-            });
-        }, 1200);
-
-        return () => {
-            if (propagationTimerRef.current) {
-                clearInterval(propagationTimerRef.current);
-                propagationTimerRef.current = null;
-            }
-        };
-    }, [propagationState?.active, propagationState?.mode]);
 
     const handleAreaFilterChange = useCallback(
         (id) => {

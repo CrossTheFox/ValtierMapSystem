@@ -2,17 +2,11 @@
  * WikiGraphCanvas.jsx
  *
  * Self-contained Pixi.js canvas that renders the entity relation graph.
- * Uses pixi-viewport for pan/zoom (same library as the main map).
- *
- * Props:
- *   entities          — wikiEntity[] (all visible for current role)
- *   relations         — wikiRelation[] (all campaign relations)
- *   selectedEntityId  — string | null
- *   onSelectEntity    — (entity) => void
- *   readOnly          — boolean
+ * Node structure rebuilds only when entities/relations/selection change.
+ * Propagation animation updates alpha/pulses/edges in place (no full rebuild).
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import * as PIXI from "pixi.js";
 import { Viewport } from "pixi-viewport";
@@ -26,21 +20,28 @@ import {
     NODE_RADIUS_SELECTED,
     EDGE_COLORS,
     EDGE_ALPHA,
-    EDGE_ALPHA_DIMMED,
-    NODE_ALPHA_DIMMED,
 } from "./wikiGraphTypes";
 import { drawSymbolNode, resolveNodeVisual } from "./wikiGraphNodeFactory";
-import { attachNodePulse, detachAllNodePulses, WIKI_NODE_PULSE_PRESET } from "./wikiGraphNodePulse";
+import { detachAllNodePulses } from "./wikiGraphNodePulse";
 import { attachEdgePropagation, detachEdgePropagation } from "./wikiGraphEdgeParticles";
+import { resolveViewportScreenSize } from "./wikiGraphCoords";
 import {
-    resolveViewportScreenSize,
-} from "./wikiGraphCoords";
+    applyPropagationNodeVisuals,
+    buildPreviewWaveMap,
+    syncNodePulses,
+} from "./wikiGraphPropagationVisuals";
+import {
+    buildEffectivePropagation,
+    propagationRenderKey,
+    tickLivePropagation,
+} from "./wikiGraphPropagationRuntime";
 
 const BG_COLOR = 0x0e0e14;
 const PAN_DURATION_MS = 720;
-/** Fixed world size for d3 layout — decoupled from panel/screen width so coords stay stable. */
 const LAYOUT_WORLD = 2000;
 const NODE_LABEL_SPACE = 24;
+/** Cap GPU memory on HiDPI displays (production often has DPR > local dev). */
+const MAX_RENDERER_DPR = 1.5;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -63,18 +64,12 @@ function computeNodeBounds(nodes, padding = 80) {
     const height = Math.max(maxY - minY + padding * 2, 240);
 
     return {
-        minX,
-        minY,
-        maxX,
-        maxY,
-        width,
-        height,
+        minX, minY, maxX, maxY, width, height,
         cx: (minX + maxX) / 2,
         cy: (minY + maxY) / 2,
     };
 }
 
-/** Sync renderer + viewport screen size with CSS layout pixels (NOT renderer buffer pixels). */
 function syncViewportScreen(viewport, app, containerEl) {
     if (!viewport || !app) return;
 
@@ -82,7 +77,6 @@ function syncViewportScreen(viewport, app, containerEl) {
     const cw = el?.clientWidth ?? 0;
     const ch = el?.clientHeight ?? 0;
 
-    // resizeTo can lag during flex sibling width transitions — keep renderer in sync
     if (cw > 0 && ch > 0) {
         if (Math.abs(app.screen.width - cw) > 0.5 || Math.abs(app.screen.height - ch) > 0.5) {
             app.renderer.resize(cw, ch);
@@ -106,14 +100,12 @@ function syncViewportScreen(viewport, app, containerEl) {
     return resolved;
 }
 
-/** Stop an in-progress pan animation so resize can re-center with updated screen bounds. */
 function cancelViewportPan(viewport) {
     if (!viewport?.plugins) return;
     const animatePlugin = viewport.plugins.get("animate");
     if (animatePlugin) viewport.plugins.remove("animate");
 }
 
-/** Fit all nodes in view (overview). */
 function fitGraphToNodes(viewport, nodes) {
     const bounds = computeNodeBounds(nodes);
     if (!bounds) return;
@@ -121,7 +113,6 @@ function fitGraphToNodes(viewport, nodes) {
     viewport.moveCenter(bounds.cx, bounds.cy);
 }
 
-/** Smooth pan so the selected node drifts to center instead of jumping. */
 function smoothCenterOnWorld(viewport, worldX, worldY, { time = PAN_DURATION_MS } = {}) {
     const center = viewport.center;
     const dx = worldX - center.x;
@@ -143,63 +134,8 @@ function smoothCenterOnWorld(viewport, worldX, worldY, { time = PAN_DURATION_MS 
 function centerOnNode(viewport, nodes, entityId, { animate = true } = {}) {
     const node = nodes?.find((n) => n.id === entityId);
     if (!node) return;
-
-    const vc = viewport.center;
     if (animate) smoothCenterOnWorld(viewport, node.x, node.y);
     else viewport.moveCenter(node.x, node.y);
-
-    const screenPt = viewport.toScreen(new PIXI.Point(node.x, node.y));
-    console.log("[WikiNetwork] center on node", {
-        entityId,
-        nodeWorld: { x: node.x, y: node.y },
-        viewportCenterAfter: { x: viewport.center.x, y: viewport.center.y },
-        viewportCenterBefore: { x: vc.x, y: vc.y },
-        screenSize: { w: viewport.screenWidth, h: viewport.screenHeight },
-        screenCenter: { x: viewport.screenWidth / 2, y: viewport.screenHeight / 2 },
-        nodeOnScreen: { x: screenPt.x, y: screenPt.y },
-        offsetFromScreenCenter: {
-            x: screenPt.x - viewport.screenWidth / 2,
-            y: screenPt.y - viewport.screenHeight / 2,
-        },
-        animate,
-    });
-}
-
-/** Debug: screen/world coords — world = viewport-local (same as node.x/y). */
-function logNetworkPointerDebug(label, viewport, event, extra = {}) {
-    const clickScreen = { x: event.global.x, y: event.global.y };
-    const clickWorld = event.getLocalPosition(viewport);
-    const vc = viewport.center;
-
-    const payload = {
-        canvasOrigin: "top-left of pixi canvas = screen (0,0)",
-        coordSystems: {
-            clickScreen: "Pixi global, CSS px from canvas top-left",
-            clickWorld: "viewport-local; must match nodeWorld when clicking a node",
-            nodeWorld: "d3 layout; children of viewport at container.position",
-        },
-        clickScreen,
-        clickWorld: { x: clickWorld.x, y: clickWorld.y },
-        viewportCenter: { x: vc.x, y: vc.y },
-        screenCenter: { x: viewport.screenWidth / 2, y: viewport.screenHeight / 2 },
-        screenSize: { w: viewport.screenWidth, h: viewport.screenHeight },
-        ...extra,
-    };
-
-    if (extra.nodeWorld) {
-        const screenPt = viewport.toScreen(new PIXI.Point(extra.nodeWorld.x, extra.nodeWorld.y));
-        payload.nodeOnScreen = { x: screenPt.x, y: screenPt.y };
-        payload.clickVsNodeWorld = {
-            dx: clickWorld.x - extra.nodeWorld.x,
-            dy: clickWorld.y - extra.nodeWorld.y,
-        };
-        payload.nodeOffsetFromScreenCenter = {
-            x: screenPt.x - viewport.screenWidth / 2,
-            y: screenPt.y - viewport.screenHeight / 2,
-        };
-    }
-
-    console.log(`[WikiNetwork] ${label}`, payload);
 }
 
 function destroyNodeLayer(nodeLayer, app) {
@@ -210,13 +146,12 @@ function destroyNodeLayer(nodeLayer, app) {
         try {
             child.destroy({ children: true });
         } catch {
-            /* strict mode / teardown order */
+            /* teardown order */
         }
     }
 }
 
-/** Viewport must be destroyed before Application so pixi-viewport can detach from the ticker. */
-function teardownWikiGraphApp(app, viewport, { resizeObserver, panFrameRef } = {}) {
+function teardownWikiGraphApp(app, viewport, { resizeObserver, panFrameRef, particleLayer } = {}) {
     if (panFrameRef?.current != null) {
         cancelAnimationFrame(panFrameRef.current);
         panFrameRef.current = null;
@@ -229,13 +164,17 @@ function teardownWikiGraphApp(app, viewport, { resizeObserver, panFrameRef } = {
         app._wikiResizeHandler = null;
     }
 
+    if (app && particleLayer) {
+        detachEdgePropagation(app, particleLayer);
+    }
+
     if (viewport) {
         try {
             viewport.plugins?.pause?.("drag");
             if (viewport.parent) viewport.parent.removeChild(viewport);
             viewport.destroy({ children: true });
         } catch {
-            /* strict mode / already destroyed */
+            /* already destroyed */
         }
     }
 
@@ -257,7 +196,9 @@ function drawEdges(backGraphics, frontGraphics, links, positions, selectedId, pr
 
     const isLive    = propagation?.mode === "live" && propagation?.active;
     const isPreview = propagation?.mode === "preview";
-    const litSet = (isLive || isPreview) && propagation.litNodeIds?.length
+    const previewWaveMap = isPreview ? buildPreviewWaveMap(propagation?.waves) : null;
+
+    const litSet = isLive && propagation?.litNodeIds?.length
         ? new Set(propagation.litNodeIds)
         : null;
 
@@ -273,13 +214,13 @@ function drawEdges(backGraphics, frontGraphics, links, positions, selectedId, pr
         const to = positions.get(link.target?.id ?? link.target);
         if (!from || !to) return;
 
-        const bothLit = litSet?.has(from.id) && litSet?.has(to.id);
-        const incident = isIncident(link);
-        const dimmed = forceHighlight
-            ? false
-            : litSet
-                ? !bothLit
-                : selectedId && !incident;
+        let dimmed = forceHighlight ? false : selectedId && !isIncident(link);
+
+        if (isLive && litSet) {
+            dimmed = !litSet.has(from.id) || !litSet.has(to.id);
+        } else if (isPreview && previewWaveMap) {
+            dimmed = !previewWaveMap.has(from.id) || !previewWaveMap.has(to.id);
+        }
 
         const color = EDGE_COLORS[link.relationType] ?? EDGE_COLORS.otro;
         const strength = link.strength ?? 0;
@@ -304,13 +245,28 @@ function drawEdges(backGraphics, frontGraphics, links, positions, selectedId, pr
     }
 }
 
-/** Opaque disc so edges never bleed through semi-transparent node fills. */
 function addNodeBackdrop(container, radius) {
     const backdrop = new PIXI.Graphics();
     backdrop.setFillStyle({ color: BG_COLOR, alpha: 1 });
     backdrop.circle(0, 0, radius + 3);
     backdrop.fill();
     container.addChild(backdrop);
+}
+
+function ensureLayout(entities, relations, layoutRef) {
+    const entityIds = entities.map((e) => e.id).sort().join(",");
+    const relationIds = relations.map((r) => r.id).sort().join(",");
+    const layoutKey = `${entityIds}::${relationIds}`;
+
+    if (!layoutRef.current || layoutRef.current.key !== layoutKey) {
+        const { nodes, links } = computeGraphLayout(entities, relations, {
+            width: LAYOUT_WORLD,
+            height: LAYOUT_WORLD,
+        });
+        layoutRef.current = { key: layoutKey, nodes, links };
+    }
+
+    return layoutRef.current;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -320,11 +276,8 @@ export default function WikiGraphCanvas({
     relations = [],
     selectedEntityId,
     onSelectEntity,
-    /** When true, the left detail panel is open and the canvas is narrower — center after layout settles. */
     detailPanelOpen = false,
-    /** When true, the LAB_IA panel is open on the right. */
     labPanelOpen = true,
-    /** AI propagation animation state — does not trigger layout recompute. */
     propagationState = null,
 }) {
     const containerRef = useRef(null);
@@ -336,28 +289,43 @@ export default function WikiGraphCanvas({
     const nodeLayerRef = useRef(null);
     const selectedNodeLayerRef = useRef(null);
     const layoutRef = useRef(null);
+    /** @type {React.MutableRefObject<Map<string, { container: PIXI.Container, pulsing?: boolean, pulseWave?: number }>>} */
+    const nodeRegistryRef = useRef(new Map());
+    const imageLoadGenRef = useRef(0);
     const destroyedRef = useRef(false);
     const selectedEntityIdRef = useRef(selectedEntityId);
     const resizeObserverRef = useRef(null);
     const panFrameRef = useRef(null);
     const pendingCenterRef = useRef(null);
     const syncAfterContainerResizeRef = useRef(null);
+    const onSelectEntityRef = useRef(onSelectEntity);
+    const propagationRef = useRef(null);
+    const liveAnimRef = useRef({
+        waveIndex: 0,
+        elapsedMs: 0,
+        wavesSig: "",
+        lastParticleWave: -1,
+    });
+    const entityByIdRef = useRef(new Map());
+    const lastRenderKeyRef = useRef("");
     const [ready, setReady] = useState(false);
 
     selectedEntityIdRef.current = selectedEntityId;
+    onSelectEntityRef.current = onSelectEntity;
+    propagationRef.current = propagationState;
 
-    // Build vttCharacterImages map for node image fallback
     const locations = useSelector((s) => s.world.locations);
-    const vttCharacterImages = {};
-    for (const loc of Object.values(locations)) {
-        for (const char of (loc.characters || [])) {
-            if (char.id && char.imageUrl) {
-                vttCharacterImages[char.id] = char.imageUrl;
+    const vttCharacterImages = useMemo(() => {
+        const map = {};
+        for (const loc of Object.values(locations)) {
+            for (const char of loc.characters || []) {
+                if (char.id && char.imageUrl) map[char.id] = char.imageUrl;
             }
         }
-    }
+        return map;
+    }, [locations]);
 
-    // ── Init Pixi app and viewport ──────────────────────────────────────────
+    // ── Init Pixi app ───────────────────────────────────────────────────────
     useEffect(() => {
         if (!containerRef.current || appRef.current) return;
 
@@ -370,7 +338,7 @@ export default function WikiGraphCanvas({
             background: BG_COLOR,
             antialias: true,
             autoDensity: true,
-            resolution: window.devicePixelRatio || 1,
+            resolution: Math.min(window.devicePixelRatio || 1, MAX_RENDERER_DPR),
         }).then(() => {
             if (cancelled || !containerRef.current) {
                 teardownWikiGraphApp(app, null);
@@ -391,28 +359,21 @@ export default function WikiGraphCanvas({
 
             vp.drag().pinch().wheel().decelerate({ friction: 0.88 });
             vp.eventMode = "static";
-            vp.on("pointertap", (e) => {
-                logNetworkPointerDebug("canvas click", vp, e);
-            });
             app.stage.addChild(vp);
             viewportRef.current = vp;
 
-            // Edge layer (behind nodes)
             const edgeLayer = new PIXI.Graphics();
             vp.addChild(edgeLayer);
             edgeLayerRef.current = edgeLayer;
 
-            // Node layer (non-selected nodes)
             const nodeLayer = new PIXI.Container();
             vp.addChild(nodeLayer);
             nodeLayerRef.current = nodeLayer;
 
-            // Highlighted edges for selected node (above other nodes, below selected node)
             const edgeLayerFront = new PIXI.Graphics();
             vp.addChild(edgeLayerFront);
             edgeLayerFrontRef.current = edgeLayerFront;
 
-            // Selected node always on top of its incident edges
             const selectedNodeLayer = new PIXI.Container();
             vp.addChild(selectedNodeLayer);
             selectedNodeLayerRef.current = selectedNodeLayer;
@@ -426,11 +387,7 @@ export default function WikiGraphCanvas({
 
                 const viewport = viewportRef.current;
                 const app = appRef.current;
-                const sizeInfo = syncViewportScreen(viewport, app, containerRef.current);
-
-                if (sizeInfo?.diagnostics?.resolutionMismatch) {
-                    console.warn("[WikiNetwork] renderer/CSS size mismatch — check autoDensity", sizeInfo.diagnostics);
-                }
+                syncViewportScreen(viewport, app, containerRef.current);
 
                 const layout = layoutRef.current;
                 if (!layout?.nodes?.length) return;
@@ -450,7 +407,6 @@ export default function WikiGraphCanvas({
 
             syncAfterContainerResizeRef.current = syncAfterContainerResize;
 
-            // Flex panels (e.g. detail sidebar) resize the canvas without a window resize event
             if (typeof ResizeObserver !== "undefined" && containerRef.current) {
                 const ro = new ResizeObserver(() => {
                     requestAnimationFrame(syncAfterContainerResize);
@@ -461,7 +417,6 @@ export default function WikiGraphCanvas({
                 resizeObserverRef.current = ro;
             }
 
-            // Window resize fallback
             const onResize = () => syncAfterContainerResize();
             window.addEventListener("resize", onResize);
             app._wikiResizeHandler = onResize;
@@ -473,9 +428,11 @@ export default function WikiGraphCanvas({
             cancelled = true;
             destroyedRef.current = true;
             setReady(false);
+            nodeRegistryRef.current.clear();
             teardownWikiGraphApp(appRef.current ?? app, viewportRef.current, {
                 resizeObserver: resizeObserverRef.current,
                 panFrameRef,
+                particleLayer: particleLayerRef.current,
             });
             resizeObserverRef.current = null;
             appRef.current = null;
@@ -488,10 +445,9 @@ export default function WikiGraphCanvas({
             layoutRef.current = null;
             syncAfterContainerResizeRef.current = null;
         };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // ── Rebuild graph when data or selection changes ───────────────────────
+    // ── Rebuild node structure (NOT on propagation ticks) ───────────────────
     useEffect(() => {
         if (!ready || !nodeLayerRef.current || entities.length === 0) return;
 
@@ -499,107 +455,45 @@ export default function WikiGraphCanvas({
         const viewport = viewportRef.current;
         const nodeLayer = nodeLayerRef.current;
         const selectedNodeLayer = selectedNodeLayerRef.current;
-        const edgeLayer = edgeLayerRef.current;
-        const edgeLayerFront = edgeLayerFrontRef.current;
-
-        const W = LAYOUT_WORLD;
-        const H = LAYOUT_WORLD;
 
         syncViewportScreen(viewport, app, containerRef.current);
 
-        // Compute layout (or reuse if already done for same set of ids)
-        const entityIds = entities.map((e) => e.id).sort().join(",");
-        const relationIds = relations.map((r) => r.id).sort().join(",");
-        const layoutKey = `${entityIds}::${relationIds}`;
+        const { nodes, links } = ensureLayout(entities, relations, layoutRef);
+        const loadGen = ++imageLoadGenRef.current;
 
-        if (!layoutRef.current || layoutRef.current.key !== layoutKey) {
-            const { nodes, links } = computeGraphLayout(entities, relations, {
-                width: W,
-                height: H,
-            });
-            layoutRef.current = { key: layoutKey, nodes, links };
-        }
-
-        const { nodes, links } = layoutRef.current;
-        const posMap = new Map(nodes.map((n) => [n.id, n]));
-
-        const isLiveMode    = propagationState?.mode === "live" && propagationState?.active;
-        const isPreviewMode = propagationState?.mode === "preview";
-        const isAnyPropagation = isLiveMode || isPreviewMode;
-
-        const litSet = isAnyPropagation && propagationState.litNodeIds?.length
-            ? new Set(propagationState.litNodeIds)
-            : null;
-        const currentWaveIds = isLiveMode
-            ? new Set(propagationState.waves?.[propagationState.currentWave]?.nodeIds ?? [])
-            : null;
-
-        // For preview mode: build a map of nodeId → waveIndex for color-coding
-        const previewWaveMap = isPreviewMode
-            ? (() => {
-                const m = new Map();
-                for (const [wi, wave] of (propagationState.waves ?? []).entries()) {
-                    for (const id of wave.nodeIds ?? []) m.set(id, wi);
-                }
-                return m;
-            })()
-            : null;
-
-        // ── Draw edges (back = all non-incident; front = incident to selection) ──
-        drawEdges(edgeLayer, edgeLayerFront, links, posMap, selectedEntityId, propagationState);
-
-        // ── Draw nodes ──
         destroyNodeLayer(nodeLayer, app);
         destroyNodeLayer(selectedNodeLayer, app);
+        nodeRegistryRef.current.clear();
+
+        const entityById = new Map(entities.map((e) => [e.id, e]));
+        entityByIdRef.current = entityById;
 
         for (const node of nodes) {
-            const entity = entities.find((e) => e.id === node.id);
+            const entity = entityById.get(node.id);
             if (!entity) continue;
 
             const isSelected = entity.id === selectedEntityId;
             const targetLayer = isSelected ? selectedNodeLayer : nodeLayer;
-            const isNeighbor = selectedEntityId && links.some(
-                (l) =>
-                    ((l.source?.id ?? l.source) === selectedEntityId &&
-                        (l.target?.id ?? l.target) === entity.id) ||
-                    ((l.target?.id ?? l.target) === selectedEntityId &&
-                        (l.source?.id ?? l.source) === entity.id)
-            );
-            const isLit = litSet?.has(entity.id);
-            const isCurrentWave = currentWaveIds?.has(entity.id);
-
-            const isDimmed = isAnyPropagation
-                ? (!isLit && !isSelected)
-                : selectedEntityId
-                    ? !isSelected && !isNeighbor
-                    : false;
-
-            // Preview: attenuate non-lit nodes more softly than live mode
-            const previewAlpha = isPreviewMode && !isLit && !isSelected ? 0.25 : null;
+            const displayRadius = isSelected ? NODE_RADIUS_SELECTED : NODE_RADIUS;
+            const nodeColor = NODE_COLORS[entity.entityType] ?? 0x888888;
 
             const container = new PIXI.Container();
             container.position.set(node.x, node.y);
             container.eventMode = "static";
             container.cursor = "pointer";
-            container.alpha = previewAlpha !== null ? previewAlpha : isDimmed ? NODE_ALPHA_DIMMED : 1;
-
-            const nodeColor = NODE_COLORS[entity.entityType] ?? 0x888888;
-            const displayRadius = isSelected ? NODE_RADIUS_SELECTED : NODE_RADIUS;
 
             addNodeBackdrop(container, displayRadius);
 
-            // Symbol fallback (rendered immediately; replaced async if image loads)
             const symbolNode = drawSymbolNode(entity.entityType);
             if (isSelected) symbolNode.scale.set(NODE_RADIUS_SELECTED / NODE_RADIUS);
             container.addChild(symbolNode);
 
-            // Async: try to load a real image and swap symbol out
             resolveNodeVisual(entity, vttCharacterImages).then((visual) => {
                 if (
                     destroyedRef.current
+                    || loadGen !== imageLoadGenRef.current
                     || visual === "symbol"
                     || !container.parent
-                    || !nodeLayerRef.current
                 ) {
                     return;
                 }
@@ -609,18 +503,6 @@ export default function WikiGraphCanvas({
                 container.addChildAt(visual, 0);
             });
 
-            if (isSelected || (isLiveMode && isCurrentWave)) {
-                attachNodePulse(
-                    app,
-                    container,
-                    nodeColor,
-                    isCurrentWave && !isSelected
-                        ? { ...WIKI_NODE_PULSE_PRESET, alphaMax: 0.55, scaleMax: 1.45, pulseDuration: 1.0 }
-                        : {}
-                );
-            }
-
-            // Label text
             const label = new PIXI.Text({
                 text: (entity.title || "").slice(0, 18) + (entity.title?.length > 18 ? "…" : ""),
                 style: new PIXI.TextStyle({
@@ -631,90 +513,125 @@ export default function WikiGraphCanvas({
                 }),
             });
             label.anchor.set(0.5, 0);
-            label.position.set(0, (isSelected ? NODE_RADIUS_SELECTED : NODE_RADIUS) + 5);
+            label.position.set(0, displayRadius + 5);
             container.addChild(label);
 
-            // Interaction
             container.on("pointerover", () => {
-                if (!isSelected) container.scale.set(1.12);
+                if (entity.id !== selectedEntityIdRef.current) container.scale.set(1.12);
             });
             container.on("pointerout", () => {
                 container.scale.set(1);
             });
             container.on("pointertap", (e) => {
                 e.stopPropagation();
-                logNetworkPointerDebug("node click", viewport, e, {
-                    entityId: entity.id,
-                    title: entity.title,
-                    nodeWorld: { x: node.x, y: node.y },
-                });
-                onSelectEntity?.(entity);
+                onSelectEntityRef.current?.(entity);
             });
 
             targetLayer.addChild(container);
+            nodeRegistryRef.current.set(entity.id, { container, pulsing: false, pulseWave: -1, lastAlpha: 1 });
         }
 
-        // Fit all nodes when nothing is selected
         if (!selectedEntityId) {
             fitGraphToNodes(viewport, nodes);
         }
 
         return () => {
-            destroyNodeLayer(nodeLayerRef.current, appRef.current);
-            destroyNodeLayer(selectedNodeLayerRef.current, appRef.current);
-            edgeLayerRef.current?.clear?.();
-            edgeLayerFrontRef.current?.clear?.();
+            imageLoadGenRef.current += 1;
         };
-    }, [ready, entities, relations, selectedEntityId, propagationState, onSelectEntity]);
+    }, [ready, entities, relations, selectedEntityId, vttCharacterImages]);
 
-    // ── Edge particle animation (no layout recompute) ─────────────────────
+    // ── Propagation visuals via Pixi ticker (no React re-render per wave) ───
     useEffect(() => {
+        if (!ready || !appRef.current) return;
+
         const app = appRef.current;
-        const particleLayer = particleLayerRef.current;
-        const layout = layoutRef.current;
+        const liveAnim = liveAnimRef.current;
+        liveAnim.waveIndex = 0;
+        liveAnim.elapsedMs = 0;
+        liveAnim.wavesSig = "";
+        liveAnim.lastParticleWave = -1;
+        lastRenderKeyRef.current = "";
 
-        if (!ready || !app || !particleLayer || !layout?.nodes?.length) return;
+        const renderPropagation = (force = false) => {
+            if (destroyedRef.current || !layoutRef.current?.nodes?.length) return;
 
-        // Edge particles only in live mode, never in static preview
-        if (propagationState?.mode !== "live" || !propagationState?.active) {
-            detachEdgePropagation(app, particleLayer);
-            return;
-        }
+            const prop = propagationRef.current;
+            const effective = buildEffectivePropagation(prop, liveAnim);
+            const selectedId = selectedEntityIdRef.current;
+            const renderKey = propagationRenderKey(effective, selectedId);
 
-        const wave = propagationState.waves?.[propagationState.currentWave];
-        if (!wave?.edges?.length) {
-            detachEdgePropagation(app, particleLayer);
-            return;
-        }
+            if (!force && renderKey === lastRenderKeyRef.current) return;
+            lastRenderKeyRef.current = renderKey;
 
-        const posMap = new Map(layout.nodes.map((n) => [n.id, n]));
-        const entityById = new Map(entities.map((e) => [e.id, e]));
+            const { nodes, links } = layoutRef.current;
+            const posMap = new Map(nodes.map((n) => [n.id, n]));
+            const registry = nodeRegistryRef.current;
+            const entityById = entityByIdRef.current;
 
-        attachEdgePropagation(
-            app,
-            particleLayer,
-            wave.edges,
-            posMap,
-            (id) => NODE_COLORS[entityById.get(id)?.entityType] ?? 0xffffff
-        );
+            drawEdges(
+                edgeLayerRef.current,
+                edgeLayerFrontRef.current,
+                links,
+                posMap,
+                selectedId,
+                effective
+            );
+            applyPropagationNodeVisuals(registry, effective, selectedId, links);
+            syncNodePulses(app, registry, effective, selectedId, entityById);
 
-        return () => detachEdgePropagation(app, particleLayer);
-    }, [ready, propagationState, entities]);
+            const isLive = effective?.mode === "live" && effective?.active;
+            const particleLayer = particleLayerRef.current;
+            if (isLive && particleLayer) {
+                const waveIdx = effective.currentWave ?? 0;
+                if (waveIdx !== liveAnim.lastParticleWave) {
+                    liveAnim.lastParticleWave = waveIdx;
+                    const wave = effective.waves?.[waveIdx];
+                    if (wave?.edges?.length) {
+                        attachEdgePropagation(
+                            app,
+                            particleLayer,
+                            wave.edges,
+                            posMap,
+                            (id) => NODE_COLORS[entityById.get(id)?.entityType] ?? 0xffffff
+                        );
+                    } else {
+                        detachEdgePropagation(app, particleLayer);
+                    }
+                }
+            } else if (particleLayer) {
+                liveAnim.lastParticleWave = -1;
+                detachEdgePropagation(app, particleLayer);
+            }
+        };
 
-    // Panel toggles use width transitions — resync renderer/viewport after layout settles
+        const onTick = (ticker) => {
+            const prop = propagationRef.current;
+            if (prop?.mode !== "live" || !prop?.active) return;
+            if (tickLivePropagation(prop, liveAnim, ticker.deltaMS)) {
+                renderPropagation(false);
+            }
+        };
+
+        app.ticker.add(onTick);
+        renderPropagation(true);
+
+        return () => {
+            app.ticker.remove(onTick);
+            detachEdgePropagation(app, particleLayerRef.current);
+        };
+    }, [ready, propagationState, selectedEntityId]);
+
+    // Panel width transitions
     useEffect(() => {
         if (!ready) return;
-
         syncAfterContainerResizeRef.current?.();
-
         const afterTransition = setTimeout(() => {
             syncAfterContainerResizeRef.current?.();
         }, 280);
-
         return () => clearTimeout(afterTransition);
     }, [ready, detailPanelOpen, labPanelOpen]);
 
-    // Smooth pan when selection changes — wait for detail panel flex layout to settle
+    // Smooth pan on selection change
     useEffect(() => {
         if (!ready || !viewportRef.current || !layoutRef.current) return;
         if (!selectedEntityId) {
@@ -723,21 +640,17 @@ export default function WikiGraphCanvas({
         }
 
         const nodes = layoutRef.current.nodes;
-        const node = nodes?.find((n) => n.id === selectedEntityId);
-        if (!node) return;
+        if (!nodes?.find((n) => n.id === selectedEntityId)) return;
 
         pendingCenterRef.current = { entityId: selectedEntityId, animate: true };
 
-        if (panFrameRef.current != null) {
-            cancelAnimationFrame(panFrameRef.current);
-        }
+        if (panFrameRef.current != null) cancelAnimationFrame(panFrameRef.current);
 
-        // Triple rAF + microtask: flex panel (right detail) may resize the canvas after paint
         panFrameRef.current = requestAnimationFrame(() => {
             panFrameRef.current = requestAnimationFrame(() => {
                 panFrameRef.current = requestAnimationFrame(() => {
                     panFrameRef.current = null;
-                    if (destroyedRef.current || !viewportRef.current || !appRef.current) return;
+                    if (destroyedRef.current || !viewportRef.current) return;
                     syncAfterContainerResizeRef.current?.();
                 });
             });
@@ -750,7 +663,7 @@ export default function WikiGraphCanvas({
                 panFrameRef.current = null;
             }
         };
-    }, [ready, selectedEntityId, detailPanelOpen, labPanelOpen, entities, relations]);
+    }, [ready, selectedEntityId, detailPanelOpen, labPanelOpen]);
 
     return (
         <Box

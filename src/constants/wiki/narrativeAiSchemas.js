@@ -69,8 +69,8 @@ export const AI_PROVIDER_TOOLTIPS = {
         "Firebase AI Logic: usa el proyecto Firebase (créditos prepago de AI Studio). "
         + "Requiere `npx firebase-tools init ailogic` una vez. Sin API key en el navegador.",
     [AI_PROVIDERS.GEMINI_DIRECT]:
-        "Llama directamente a generativelanguage.googleapis.com con VITE_GEMINI_API_KEY. "
-        + "Útil si Firebase no tiene créditos o devuelve PERMISSION_DENIED.",
+        "Llama a generativelanguage.googleapis.com con tu API key. "
+        + "Pégala en Lab IA → «Tu API key (Gemini)» o define VITE_GEMINI_API_KEY en .env.",
     [AI_PROVIDERS.OPENROUTER]:
         "Proxy REST a múltiples modelos. Requiere VITE_OPENROUTER_API_KEY. "
         + "Útil para comparar DeepSeek, GPT, etc.",
