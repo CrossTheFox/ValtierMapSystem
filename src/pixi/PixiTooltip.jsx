@@ -1,6 +1,7 @@
 import * as PIXI from "pixi.js";
 import gsap from "gsap";
 import { RENDER_LAYERS } from "../constants/renderLayers";
+import { killGsapDeep, safeDestroy } from "./pixiCleanup";
 
 export function createPixiTooltip({
     text,
@@ -63,8 +64,24 @@ export function createPixiTooltip({
             });
         },
 
+        setText(nextText) {
+            if (label.text === nextText) return;
+            label.text = nextText;
+            bg.clear();
+            bg.beginFill(backgroundColor, 0.9);
+            bg.drawRoundedRect(
+                -label.width / 2 - paddingX,
+                -label.height / 2 - paddingY,
+                label.width + paddingX * 2,
+                label.height + paddingY * 2,
+                borderRadius,
+            );
+            bg.endFill();
+        },
+
         destroy() {
-            container.destroy({ children: true });
+            killGsapDeep(container);
+            safeDestroy(container, { children: true });
         },
     };
 }

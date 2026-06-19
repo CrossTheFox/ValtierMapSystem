@@ -189,12 +189,14 @@ const worldSlice = createSlice({
         },
         upsertCharacterRealtime: (state, action) => {
             const char = action.payload;
-            
-            Object.values(state.locations).forEach(loc => {
-                if (loc.id !== char.locationId && loc.characters) {
-                    loc.characters = loc.characters.filter(c => c.id !== char.id);
-                }
-            });
+
+            // Only touch locations that actually hold this character (avoids
+            // re-rendering unrelated map markers on every character sync).
+            for (const loc of Object.values(state.locations)) {
+                if (loc.id === char.locationId) continue;
+                if (!loc.characters?.some((c) => c.id === char.id)) continue;
+                loc.characters = loc.characters.filter((c) => c.id !== char.id);
+            }
 
             const targetLocation = state.locations[char.locationId];
             

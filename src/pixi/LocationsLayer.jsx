@@ -2,7 +2,6 @@ import { useEffect, useRef } from "react";
 import * as PIXI from "pixi.js";
 import { useSelector, useDispatch } from "react-redux";
 import {
-    openLocation,
     selectLocationPreview,
     openContextMenu,
     setMeasurePointB,
@@ -10,6 +9,7 @@ import {
 } from "../store/uiSlice";
 import { useViewport } from "../context/ViewportContext";
 import { createPixiTooltip } from "./PixiTooltip";
+import { killGsapDeep, safeDestroy } from "./pixiCleanup";
 import { lerpColor } from "../helpers/colors";
 import { RENDER_LAYERS } from "../constants/renderLayers";
 import { UI_COLORS } from "../constants/uiColors";
@@ -27,6 +27,134 @@ const getHex = (color) => {
 const NORMAL_TINT = getHex(UI_COLORS.accent       || "#ff66ff");
 const HOVER_TINT  = getHex(UI_COLORS.accentStrong || "#ff1493");
 
+function destroyLocationMarker(entry) {
+    const { container, icon, colorState } = entry;
+    container.removeAllListeners();
+    killGsapDeep(icon);
+    killGsapDeep(icon?.scale);
+    killGsapDeep(colorState);
+    safeDestroy(container, { children: true });
+}
+
+function createLocationMarker(locId, texture, dispatch, measureRef, locationsRef) {
+    const locationContainer = new PIXI.Container();
+    locationContainer.eventMode = "static";
+    locationContainer.cursor    = "pointer";
+    locationContainer.hitArea   = new PIXI.Circle(0, 0, 40);
+
+    const icon = new PIXI.Sprite(texture);
+    icon.anchor.set(0.5);
+    const BASE_SCALE = 1;
+    icon.scale.set(BASE_SCALE);
+    icon.tint = NORMAL_TINT;
+
+    gsap.to(icon.scale, {
+        x: BASE_SCALE + 0.05,
+        y: BASE_SCALE + 0.05,
+        duration: 2 + Math.random(),
+        repeat: -1,
+        yoyo: true,
+        ease: "sine.inOut",
+    });
+
+    gsap.to(icon, {
+        rotation: Math.PI * 2,
+        duration: 20 + Math.random() * 10,
+        repeat: -1,
+        ease: "none",
+    });
+
+    const tooltip    = createPixiTooltip({ text: "" });
+    const colorState = { t: 0 };
+
+    locationContainer.on("pointerover", () => {
+        gsap.killTweensOf(colorState);
+        gsap.to(colorState, {
+            t: 1, duration: 0.3, ease: "power2.out",
+            onUpdate: () => { icon.tint = lerpColor(NORMAL_TINT, HOVER_TINT, colorState.t); },
+        });
+        tooltip.show();
+    });
+
+    locationContainer.on("pointerout", () => {
+        gsap.killTweensOf(colorState);
+        gsap.to(colorState, {
+            t: 0, duration: 0.3, ease: "power2.out",
+            onUpdate: () => { icon.tint = lerpColor(NORMAL_TINT, HOVER_TINT, colorState.t); },
+        });
+        tooltip.hide();
+    });
+
+    let rightStart = null;
+
+    locationContainer.on("pointerdown", (event) => {
+        event.stopPropagation();
+        const loc = locationsRef.current?.[locId];
+        if (!loc) return;
+
+        const isMeasuring =
+            !!measureRef.current.pointA && !measureRef.current.pointB;
+
+        if (event.button === 2) {
+            if (isMeasuring) {
+                dispatch(clearMeasureTool());
+            } else {
+                rightStart = { x: event.global.x, y: event.global.y };
+            }
+            return;
+        }
+
+        if (event.button !== 0) return;
+
+        if (isMeasuring) {
+            dispatch(setMeasurePointB({
+                x:     loc.position.x,
+                y:     loc.position.y,
+                label: loc.name.toUpperCase(),
+            }));
+            return;
+        }
+
+        dispatch(selectLocationPreview(loc));
+        tooltip.hide();
+    });
+
+    locationContainer.on("pointerup", (event) => {
+        event.stopPropagation();
+        const loc = locationsRef.current?.[locId];
+        if (!loc) return;
+        if (event.button !== 2 || !rightStart) return;
+        const dist = Math.hypot(
+            event.global.x - rightStart.x,
+            event.global.y - rightStart.y,
+        );
+        rightStart = null;
+        if (dist >= RIGHT_CLICK_DRAG_THRESHOLD) return;
+
+        dispatch(openContextMenu({
+            screenX:  event.global.x,
+            screenY:  event.global.y,
+            worldX:   loc.position.x,
+            worldY:   loc.position.y,
+            type:     "location",
+            location: loc,
+        }));
+    });
+
+    locationContainer.on("pointerupoutside", () => { rightStart = null; });
+
+    locationContainer.addChild(tooltip.container, icon);
+
+    return { container: locationContainer, tooltip, icon, colorState };
+}
+
+function syncLocationMarker(entry, loc) {
+    const { container, tooltip } = entry;
+    container.x = loc.position.x;
+    container.y = loc.position.y;
+    tooltip.setText(loc.name);
+}
+
 export default function LocationsLayer() {
     const viewport  = useViewport();
     const locations = useSelector((s) => s.world.locations);
@@ -34,147 +162,81 @@ export default function LocationsLayer() {
 
     const { measureTool } = useSelector((s) => s.ui);
 
-    // Ref so the PIXI event handlers always read the latest measure state
-    // without needing to rebuild the whole layer on every measure step
-    const measureRef = useRef(measureTool);
-    useEffect(() => { measureRef.current = measureTool; }, [measureTool]);
+    const measureRef    = useRef(measureTool);
+    const locationsRef  = useRef(locations);
+    const layerRef      = useRef(null);
+    const markersRef    = useRef(new Map());
+    const textureRef    = useRef(null);
 
+    useEffect(() => { measureRef.current = measureTool; }, [measureTool]);
+    useEffect(() => { locationsRef.current = locations; }, [locations]);
+
+    // ── Layer container (once per viewport) ───────────────────────
     useEffect(() => {
-        if (!viewport || !locations) return;
+        if (!viewport) return;
 
         const layerContainer = new PIXI.Container();
-        layerContainer.name    = "LocationsLayer";
-        layerContainer.zIndex  = RENDER_LAYERS.LOCATIONS;
+        layerContainer.name   = "LocationsLayer";
+        layerContainer.zIndex = RENDER_LAYERS.LOCATIONS;
         viewport.addChild(layerContainer);
-
-        let destroyed = false;
-
-        PIXI.Assets.load(locationIconPath).then((texture) => {
-            if (destroyed) return;
-
-            Object.values(locations).forEach((loc) => {
-                const locationContainer = new PIXI.Container();
-                locationContainer.x         = loc.position.x;
-                locationContainer.y         = loc.position.y;
-                locationContainer.eventMode = "static";
-                locationContainer.cursor    = "pointer";
-                locationContainer.hitArea   = new PIXI.Circle(0, 0, 40);
-
-                const icon = new PIXI.Sprite(texture);
-                icon.anchor.set(0.5);
-                const BASE_SCALE = 1;
-                icon.scale.set(BASE_SCALE);
-                icon.tint = NORMAL_TINT;
-
-                // Pulse animation
-                gsap.to(icon.scale, {
-                    x: BASE_SCALE + 0.05,
-                    y: BASE_SCALE + 0.05,
-                    duration: 2 + Math.random(),
-                    repeat: -1,
-                    yoyo: true,
-                    ease: "sine.inOut",
-                });
-
-                // Slow rotation
-                gsap.to(icon, {
-                    rotation: Math.PI * 2,
-                    duration: 20 + Math.random() * 10,
-                    repeat: -1,
-                    ease: "none",
-                });
-
-                const tooltip    = createPixiTooltip({ text: loc.name });
-                const colorState = { t: 0 };
-
-                locationContainer.on("pointerover", () => {
-                    gsap.killTweensOf(colorState);
-                    gsap.to(colorState, {
-                        t: 1, duration: 0.3, ease: "power2.out",
-                        onUpdate: () => { icon.tint = lerpColor(NORMAL_TINT, HOVER_TINT, colorState.t); },
-                    });
-                    tooltip.show();
-                });
-
-                locationContainer.on("pointerout", () => {
-                    gsap.killTweensOf(colorState);
-                    gsap.to(colorState, {
-                        t: 0, duration: 0.3, ease: "power2.out",
-                        onUpdate: () => { icon.tint = lerpColor(NORMAL_TINT, HOVER_TINT, colorState.t); },
-                    });
-                    tooltip.hide();
-                });
-
-                // ── Right-click detection (down → up distance) ──────────
-                let rightStart = null;
-
-                locationContainer.on("pointerdown", (event) => {
-                    event.stopPropagation();
-
-                    const isMeasuring =
-                        !!measureRef.current.pointA && !measureRef.current.pointB;
-
-                    if (event.button === 2) {
-                        if (isMeasuring) {
-                            // Right-click while measuring → cancel
-                            dispatch(clearMeasureTool());
-                        } else {
-                            rightStart = { x: event.global.x, y: event.global.y };
-                        }
-                        return;
-                    }
-
-                    if (event.button !== 0) return;
-
-                    if (isMeasuring) {
-                        // Left-click while measuring → set this location as endpoint
-                        dispatch(setMeasurePointB({
-                            x:     loc.position.x,
-                            y:     loc.position.y,
-                            label: loc.name.toUpperCase(),
-                        }));
-                        return;
-                    }
-
-                    // Normal left-click → preview HUD only (full dialog via ABRIR FICHA COMPLETA)
-                    dispatch(selectLocationPreview(loc));
-                    tooltip.hide();
-                });
-
-                locationContainer.on("pointerup", (event) => {
-                    event.stopPropagation();
-                    if (event.button !== 2 || !rightStart) return;
-                    const dist = Math.hypot(
-                        event.global.x - rightStart.x,
-                        event.global.y - rightStart.y,
-                    );
-                    rightStart = null;
-                    if (dist >= RIGHT_CLICK_DRAG_THRESHOLD) return;
-
-                    // Short right-click on a location → location context menu
-                    dispatch(openContextMenu({
-                        screenX:  event.global.x,
-                        screenY:  event.global.y,
-                        worldX:   loc.position.x,
-                        worldY:   loc.position.y,
-                        type:     "location",
-                        location: loc,
-                    }));
-                });
-
-                // Also reset rightStart if pointer leaves the hitArea
-                locationContainer.on("pointerupoutside", () => { rightStart = null; });
-
-                locationContainer.addChild(tooltip.container, icon);
-                layerContainer.addChild(locationContainer);
-            });
-        });
+        layerRef.current = layerContainer;
 
         return () => {
-            destroyed = true;
-            layerContainer.destroy({ children: true });
+            for (const entry of markersRef.current.values()) {
+                destroyLocationMarker(entry);
+            }
+            markersRef.current.clear();
+            textureRef.current = null;
+            safeDestroy(layerContainer, { children: false });
+            layerRef.current = null;
         };
-    }, [viewport, locations, dispatch]);
+    }, [viewport]);
+
+    // ── Incremental marker sync (no full rebuild on unrelated updates) ─
+    useEffect(() => {
+        const layer = layerRef.current;
+        if (!layer || !locations) return;
+
+        let cancelled = false;
+
+        const applySync = (texture) => {
+            if (cancelled) return;
+            textureRef.current = texture;
+
+            const markers = markersRef.current;
+            const ids     = new Set(Object.keys(locations));
+
+            for (const [id, entry] of markers) {
+                if (!ids.has(id)) {
+                    layer.removeChild(entry.container);
+                    destroyLocationMarker(entry);
+                    markers.delete(id);
+                }
+            }
+
+            for (const loc of Object.values(locations)) {
+                let entry = markers.get(loc.id);
+                if (!entry) {
+                    entry = createLocationMarker(
+                        loc.id, texture, dispatch, measureRef, locationsRef,
+                    );
+                    syncLocationMarker(entry, loc);
+                    layer.addChild(entry.container);
+                    markers.set(loc.id, entry);
+                } else {
+                    syncLocationMarker(entry, loc);
+                }
+            }
+        };
+
+        if (textureRef.current) {
+            applySync(textureRef.current);
+        } else {
+            PIXI.Assets.load(locationIconPath).then((texture) => applySync(texture));
+        }
+
+        return () => { cancelled = true; };
+    }, [locations, dispatch]);
 
     return null;
 }
