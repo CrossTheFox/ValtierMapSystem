@@ -4,6 +4,7 @@ import { Viewport } from "pixi-viewport";
 import { useEffect, useRef, useState } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { RENDER_LAYERS } from "../constants/renderLayers";
+import { safeDestroy } from "./pixiCleanup";
 import { loadTexture } from "../../firebase/services/assetLoader";
 import {
     setIsSelectingPosition,
@@ -67,11 +68,15 @@ export default function MapViewportProvider({ children, onViewportReady }) {
             .decelerate()
             .clampZoom({ minScale: 0.1, maxScale: 5 });
 
+        let mapSprite = null;
+        let mapLoadCancelled = false;
+
         // Load map image
         (async () => {
             try {
                 const texture = await loadTexture(map.imageUrl);
-                const mapSprite = new PIXI.Sprite(texture);
+                if (mapLoadCancelled || vp.destroyed) return;
+                mapSprite = new PIXI.Sprite(texture);
                 mapSprite.anchor.set(0);
                 mapSprite.zIndex = RENDER_LAYERS.MAP;
                 vp.addChild(mapSprite);
@@ -86,14 +91,19 @@ export default function MapViewportProvider({ children, onViewportReady }) {
         onViewportReady?.(vp);
 
         return () => {
+            mapLoadCancelled = true;
             onViewportReady?.(null);
+            safeDestroy(ghostRef.current);
+            ghostRef.current = null;
+            safeDestroy(mapSprite);
             try {
                 if (vp.parent) vp.parent.removeChild(vp);
             } catch {
                 /* strict mode / teardown order: parent may already be gone */
             }
             try {
-                vp.destroy({ children: true });
+                // Child layers clean up their own containers first.
+                if (!vp.destroyed) vp.destroy({ children: false });
             } catch {
                 /* idem */
             }

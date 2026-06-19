@@ -5,6 +5,7 @@ import { useSelector } from "react-redux";
 import { useViewport } from "../context/ViewportContext";
 import { RENDER_LAYERS } from "../constants/renderLayers";
 import { createPixiTooltip } from "./PixiTooltip";
+import { killGsapDeep, safeDestroy } from "./pixiCleanup";
 import { updatePartyPosition } from "../../firebase/services/gameService";
 
 const GOLD      = 0xffd700;
@@ -141,7 +142,8 @@ export default function PartyLayer() {
             marker.off("pointerdown", onMarkerDown);
             viewport.off("pointermove", onViewportMove);
             viewport.off("pointerup",   onViewportUp);
-            layer.destroy({ children: true });
+            killGsapDeep(marker);
+            safeDestroy(layer, { children: true });
             layerRef.current  = null;
             markerRef.current = null;
         };
