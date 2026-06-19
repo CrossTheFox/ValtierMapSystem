@@ -13,8 +13,17 @@ import * as PIXI from "pixi.js";
 import { loadFirebaseAsset } from "../../../firebase/services/assetLoader";
 import { NODE_COLORS, NODE_SYMBOLS, NODE_RADIUS } from "./wikiGraphTypes";
 
-// Simple LRU-ish cache (module-level; survives re-renders)
+// Module-level cache — bounded to avoid unbounded GPU memory in large wikis.
 const _textureCache = new Map();
+const MAX_TEXTURE_CACHE = 64;
+
+function cacheTexture(url, tex) {
+    if (_textureCache.size >= MAX_TEXTURE_CACHE && !_textureCache.has(url)) {
+        const oldest = _textureCache.keys().next().value;
+        _textureCache.delete(oldest);
+    }
+    _textureCache.set(url, tex);
+}
 
 /**
  * Load or return cached PIXI.Texture for an image URL.
@@ -28,10 +37,10 @@ async function loadTextureSafe(url) {
         // If it's a Firebase Storage path (not https) resolve via assetLoader
         const resolvedUrl = url.startsWith("https://") ? url : await loadFirebaseAsset(url);
         const tex = await PIXI.Assets.load(resolvedUrl);
-        _textureCache.set(url, tex);
+        cacheTexture(url, tex);
         return tex;
     } catch {
-        _textureCache.set(url, null);
+        cacheTexture(url, null);
         return null;
     }
 }
