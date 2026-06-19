@@ -63,6 +63,8 @@ export function normalizeCharacterDoc(char) {
                 : { ...emptyBond() },
         bondPowers: Array.isArray(char.bondPowers) ? char.bondPowers : [],
         relations: char.relations && typeof char.relations === "object" ? char.relations : {},
+        speciesEntityId: typeof char.speciesEntityId === "string" && char.speciesEntityId ? char.speciesEntityId : null,
+        organizationMemberships: Array.isArray(char.organizationMemberships) ? char.organizationMemberships : [],
         unlockedAbilities: rawUnl,
         allAbilities,
     };

@@ -3,6 +3,7 @@ import * as PIXI from "pixi.js";
 import { useSelector, useDispatch } from "react-redux";
 import {
     openLocation,
+    selectLocationPreview,
     openContextMenu,
     setMeasurePointB,
     clearMeasureTool,
@@ -135,8 +136,8 @@ export default function LocationsLayer() {
                         return;
                     }
 
-                    // Normal left-click → open location panel
-                    dispatch(openLocation(loc));
+                    // Normal left-click → preview HUD only (full dialog via ABRIR FICHA COMPLETA)
+                    dispatch(selectLocationPreview(loc));
                     tooltip.hide();
                 });
 

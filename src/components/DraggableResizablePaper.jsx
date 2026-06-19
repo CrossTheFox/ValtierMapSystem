@@ -14,13 +14,12 @@ import { useTheme, useMediaQuery } from "@mui/material";
  * Extra prop (consumed here, not forwarded to DOM):
  *   dragKey  — change this value to reset the drag position (e.g. on minimize/restore)
  */
-export default function DraggableResizablePaper({ dragKey, ...props }) {
+export default function DraggableResizablePaper({ dragKey, disableDrag = false, disableResize = false, ...props }) {
     const nodeRef = useRef(null);
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
-    if (isMobile) {
-        // On mobile: plain Paper – no drag, no resize handle
+    if (isMobile || disableDrag) {
         return <Paper {...props} ref={nodeRef} />;
     }
 
@@ -36,7 +35,7 @@ export default function DraggableResizablePaper({ dragKey, ...props }) {
                 ref={nodeRef}
                 style={{
                     ...props.style,
-                    resize: "both",
+                    resize: disableResize ? "none" : "both",
                     overflow: "hidden",
                     minWidth: 320,
                     minHeight: 120,

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Box, Stack } from "@mui/material";
 import { CyberTitle } from "../../customs/CustomTexts";
 import { UI_COLORS } from "../../../constants/uiColors";
@@ -12,8 +12,16 @@ const MODES = [
     { id: "C", label: "C · 3 RAÍLES" },
 ];
 
-export default function CharTreeTab({ character }) {
-    const [mode, setMode] = useState("A");
+export default function CharTreeTab({ character, playerMode = false, fillAvailable = false }) {
+    const [mode, setMode] = useState(playerMode ? "B" : "A");
+
+    if (playerMode) {
+        return (
+            <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <SkillMatrixConstellation character={character} fillAvailable={fillAvailable !== false} />
+            </Box>
+        );
+    }
 
     return (
         <Box>

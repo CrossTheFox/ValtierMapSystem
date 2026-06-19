@@ -20,6 +20,9 @@ export function createCharacter({
         bio,
         imageUrl,
         relations: {},
+        // Narrative wiki integration (optional)
+        speciesEntityId: null, // -> wikiEntities especie
+        organizationMemberships: [], // [{ organizationEntityId, status, role }]
         createdAt: serverTimestamp()
     };
 }

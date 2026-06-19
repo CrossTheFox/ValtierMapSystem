@@ -11,7 +11,13 @@ import { CyberTextField } from '../../customs/CyberTextField';
 import { updateCampaignElement, createCampaignElement } from '../../../../firebase/services/campaignService';
 import { deleteStorageFile, uploadLocationImage } from '../../../../firebase/services/assetLoader';
 import { useDispatch, useSelector } from 'react-redux';
-import { setIsSelectingPosition, setSelectedWorldPosition, showSnackbar } from '../../../store/uiSlice';
+import { setIsSelectingPosition, setSelectedWorldPosition, showSnackbar, openWikiOverlay } from '../../../store/uiSlice';
+import { WIKI_ENTITY_TYPES } from '../../../constants/wikiEntityTypes';
+import { WIKI_AREA_IDS } from '../../../constants/wiki/index';
+import { useCampaignWikiEntities } from '../../../hooks/useCampaignWikiEntities';
+import { linkWikiLocacionToVtt } from '../../../../firebase/services/wikiVttLinkService';
+import { fetchWikiEntities } from '../../../store/wikiSlice';
+import AutoStoriesIcon from '@mui/icons-material/AutoStories';
 import { UI_COLORS } from '../../../constants/uiColors';
 import { EntityImageManager } from '../../EntityImageManager';
 import useDialogActions from '../../../hooks/useDialogActions';
@@ -19,9 +25,12 @@ import useDialogActions from '../../../hooks/useDialogActions';
 export default function LocationsSubTab({ currentCampaignId, locations, maps }) {
     const dispatch = useDispatch();
     const { isSelectingPosition, selectedWorldPosition } = useSelector((state) => state.ui);
+    const uid = useSelector((state) => state.player.profile?.uid);
     const { forceMinimize } = useDialogActions();
+    const wikiEntities = useCampaignWikiEntities(currentCampaignId);
 
     const [selectedItem, setSelectedItem] = useState(null);
+    const [wikiLinkSaving, setWikiLinkSaving] = useState(false);
     const [pendingDeletions, setPendingDeletions] = useState([]);
     const [loading, setLoading] = useState(false);
 
@@ -82,6 +91,49 @@ export default function LocationsSubTab({ currentCampaignId, locations, maps }) 
             dispatch(setSelectedWorldPosition(null));
         }
     }, [selectedWorldPosition, selectedItem, dispatch]);
+
+    const narrativeLocaciones = wikiEntities.filter((e) => e.entityType === WIKI_ENTITY_TYPES.LOCACION);
+    const linkedNarrativeEntity = selectedItem?.id
+        ? narrativeLocaciones.find((e) => e.linkedVttLocationId === selectedItem.id)
+        : null;
+
+    const handleOpenNarrativeWiki = () => {
+        if (!selectedItem?.id) return;
+        dispatch(openWikiOverlay({
+            mode: linkedNarrativeEntity ? "detail" : "create",
+            areaFilter: WIKI_AREA_IDS.CODEX,
+            entityId: linkedNarrativeEntity?.id || null,
+            vttContext: {
+                linkedVttLocationId: selectedItem.id,
+                prefillType: WIKI_ENTITY_TYPES.LOCACION,
+            },
+        }));
+    };
+
+    const handleNarrativeWikiLink = async (wikiEntityId) => {
+        if (!currentCampaignId || !selectedItem?.id || selectedItem.isNew) return;
+        setWikiLinkSaving(true);
+        try {
+            await linkWikiLocacionToVtt(
+                currentCampaignId,
+                wikiEntityId || null,
+                selectedItem.id,
+                uid
+            );
+            dispatch(fetchWikiEntities({ campaignId: currentCampaignId }));
+            dispatch(showSnackbar({
+                message: wikiEntityId ? "Vínculo narrativo actualizado." : "Vínculo narrativo eliminado.",
+                severity: "success",
+            }));
+        } catch {
+            dispatch(showSnackbar({
+                message: "Error al vincular ficha narrativa.",
+                severity: "error",
+            }));
+        } finally {
+            setWikiLinkSaving(false);
+        }
+    };
 
     const hasPosition = !!selectedItem?.position;
     const positionIcon = hasPosition ? <EditLocationAltIcon /> : <AddLocationAltIcon />;
@@ -194,6 +246,45 @@ export default function LocationsSubTab({ currentCampaignId, locations, maps }) 
                                         value={selectedItem.description || ''} 
                                         onChange={(e) => setSelectedItem({...selectedItem, description: e.target.value})}
                                     />
+
+                                    <Box sx={{ border: `1px solid ${UI_COLORS.accent}33`, p: 2, borderRadius: 0 }}>
+                                        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
+                                            <CyberText sx={{ color: UI_COLORS.accent, fontSize: '0.75rem' }}>
+                                                NARRATIVE_ARCHIVE_LINK
+                                            </CyberText>
+                                            <Tooltip title={selectedItem.id ? "Abrir o crear ficha en el archivo" : "Guarda la ubicación primero"}>
+                                                <span>
+                                                    <IconButton
+                                                        size="small"
+                                                        disabled={!selectedItem.id}
+                                                        onClick={handleOpenNarrativeWiki}
+                                                        sx={{ color: UI_COLORS.accent, '&:hover': { bgcolor: `${UI_COLORS.accent}18` } }}
+                                                    >
+                                                        <AutoStoriesIcon sx={{ fontSize: '1rem' }} />
+                                                    </IconButton>
+                                                </span>
+                                            </Tooltip>
+                                        </Stack>
+                                        <CyberInput
+                                            select
+                                            label="FICHA_LOCACION_NARRATIVA"
+                                            value={linkedNarrativeEntity?.id || ''}
+                                            disabled={!selectedItem.id || selectedItem.isNew || wikiLinkSaving}
+                                            onChange={(e) => handleNarrativeWikiLink(e.target.value || null)}
+                                        >
+                                            <option value="" style={{ backgroundColor: '#000' }}>
+                                                {selectedItem.isNew ? 'GUARDAR_UBICACION_PRIMERO' : 'SIN_VINCULO_NARRATIVO'}
+                                            </option>
+                                            {narrativeLocaciones.map((ent) => (
+                                                <option key={ent.id} value={ent.id} style={{ backgroundColor: '#000' }}>
+                                                    {(ent.title || ent.slug || ent.id).toUpperCase()}
+                                                </option>
+                                            ))}
+                                        </CyberInput>
+                                        <CyberText sx={{ fontSize: '0.65rem', color: UI_COLORS.textSecondary, mt: 1, display: 'block', lineHeight: 1.4 }}>
+                                            El pin VTT es la ciudad/mazmorra en el mapa; la ficha narrativa puede ser país, región o jerarquía superior. Crea regiones en el Códice sin pin y enlázalas aquí.
+                                        </CyberText>
+                                    </Box>
                                 </Stack>
                             </Grid>
 

@@ -2,47 +2,75 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Authenticated users can read/write campaigns
+    // ── Helper functions ──────────────────────────────────────────────────────
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Returns true if the current user has role "dm" in the players collection.
+    function isDM() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/players/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/players/$(request.auth.uid)).data.role == "dm";
+    }
+
+    // ── Campaigns ─────────────────────────────────────────────────────────────
+
     match /campaigns/{campaignId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isAuthenticated();
+
+      // wikiEntities: players can only read "players" visibility; DMs read all + write all
+      match /wikiEntities/{entityId} {
+        allow read: if isDM() ||
+          (isAuthenticated() && resource.data.visibility == "players");
+        allow write: if isDM();
+      }
+
+      // entityRelations: all authenticated users read; only DMs write
+      match /entityRelations/{relationId} {
+        allow read: if isAuthenticated();
+        allow write: if isDM();
+      }
     }
 
     match /maps/{mapId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isAuthenticated();
     }
 
     match /locations/{locationId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isAuthenticated();
     }
 
     match /characters/{characterId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isAuthenticated();
     }
 
+    // Legacy lore entries — read-only for migration period; DM can still create/update
     match /encyclopedia/{entryId} {
-      allow read, write: if request.auth != null;
+      allow read: if isAuthenticated();
+      allow write: if isDM();
     }
 
     match /abilities/{abilityId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isAuthenticated();
     }
 
-    // ICON jobs / classes: metadata + per-class ability membership (doc id = ability key)
+    // ICON jobs / classes
     match /clases/{classId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isAuthenticated();
       match /abilities/{abilitySlotId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if isAuthenticated();
       }
     }
 
     match /players/{playerId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isAuthenticated();
     }
 
-    // Shared real-time game session: party position, music, etc.
-    // One document per campaign — any authenticated user in the session can read/write.
+    // Shared real-time game session
     match /game/{campaignId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isAuthenticated();
     }
   }
 }
