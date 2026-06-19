@@ -1,8 +1,7 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { db } from "../../firebase/firebaseConfig";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
 import { loadTexture, preloadImage, loadFirebaseAsset } from "../../firebase/services/assetLoader";
-import { getLoreByCampaign } from "../../firebase/services/encyclopediaService";
 
 function serializeFirestore(doc) {
     const data = doc.data();
@@ -111,21 +110,12 @@ export const loadWorld = createAsyncThunk(
             }
         });
 
-        const loreSnapshot = await getDocs(
-            query(
-                collection(db, "encyclopedia"), 
-                where("campaignId", "==", campaignId)
-            )
-        );
-        const lore = loreSnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...serializeFirestore(doc)
-        }));
+        const campaignSnap = await getDoc(doc(db, "campaigns", campaignId));
 
         return {
             map,
             locations,
-            lore
+            campaignName: campaignSnap.exists() ? campaignSnap.data().name ?? null : null,
         };
     }
 );
@@ -134,26 +124,31 @@ const worldSlice = createSlice({
     name: "world",
     initialState: {
         selectedCampaignId: null,
+        selectedCampaignName: null,
         map: null,
         locations: {},
-        lore: [],
         worldStatus: "idle",
         assetsStatus: "idle",
         error: null,
     },
     reducers: {
         setSelectedCampaign: (state, action) => {
-            state.selectedCampaignId = action.payload;
-            // Resetear estados de carga para forzar re-fetch en PixiRoot
+            const payload = action.payload;
+            if (typeof payload === "string") {
+                state.selectedCampaignId = payload;
+            } else {
+                state.selectedCampaignId = payload.id;
+                state.selectedCampaignName = payload.name ?? null;
+            }
             state.worldStatus = "idle";
             state.assetsStatus = "idle";
         },
         resetWorldState: (state) => {
             state.map = null;
             state.locations = {};
-            state.lore = [];
             state.worldStatus = "idle";
             state.selectedCampaignId = null;
+            state.selectedCampaignName = null;
         },
         updateLocationInState: (state, action) => {
             const { id, data } = action.payload;
@@ -176,8 +171,8 @@ const worldSlice = createSlice({
                 }
             }
         },
-        setLore(state, action) {
-            state.lore = action.payload;
+        setLore(state, _action) {
+            // Legacy: no-op post-migration. Lore is now in wikiEntities (entityType: cronica).
         },
         upsertLocationRealtime(state, action) {
             const location = action.payload;
@@ -236,7 +231,9 @@ const worldSlice = createSlice({
                 state.worldStatus = "succeeded";
                 state.map = action.payload.map;
                 state.locations = action.payload.locations;
-                state.lore = action.payload.lore;
+                if (action.payload.campaignName) {
+                    state.selectedCampaignName = action.payload.campaignName;
+                }
             })
             .addCase(loadWorld.rejected, (state, action) => {
                 state.worldStatus = "failed";

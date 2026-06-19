@@ -87,8 +87,16 @@ export default function MapViewportProvider({ children, onViewportReady }) {
 
         return () => {
             onViewportReady?.(null);
-            app.stage.removeChild(vp);
-            vp.destroy({ children: true });
+            try {
+                if (vp.parent) vp.parent.removeChild(vp);
+            } catch {
+                /* strict mode / teardown order: parent may already be gone */
+            }
+            try {
+                vp.destroy({ children: true });
+            } catch {
+                /* idem */
+            }
             viewportRef.current = null;
             setViewport(null);
             if (canvas) canvas.removeEventListener("contextmenu", handleContextMenu);

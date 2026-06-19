@@ -40,7 +40,7 @@ const CampaignSelector = () => {
                     <button 
                         key={camp.id}
                         className="submit-btn" // Reutilizamos tu clase CSS de la Landing
-                        onClick={() => dispatch(setSelectedCampaign(camp.id))}
+                        onClick={() => dispatch(setSelectedCampaign({ id: camp.id, name: camp.name }))}
                         style={{ 
                             width: '100%', 
                             textAlign: 'left', 

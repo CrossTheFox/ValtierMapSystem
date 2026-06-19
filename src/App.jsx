@@ -7,6 +7,7 @@ import { fetchPlayerData, clearPlayer } from "./store/playerSlice";
 import LandingPage from "./pages/LandingPage";
 import MainMapPage from "./pages/MainMapPage";
 import PopupDialogPage from "./pages/PopupDialogPage";
+import NarrativeArchivePage from "./pages/NarrativeArchivePage";
 
 export default function App() {
     const [user, setUser] = useState(null);
@@ -42,6 +43,12 @@ export default function App() {
                 <Route 
                     path="/map" 
                     element={user ? <MainMapPage /> : <Navigate to="/" />} 
+                />
+
+                {/* Archivo narrativo — pestaña dedicada del navegador */}
+                <Route
+                    path="/archive"
+                    element={user ? <NarrativeArchivePage /> : <Navigate to="/" />}
                 />
 
                 {/* Ventana emergente de diálogos (popup) */}

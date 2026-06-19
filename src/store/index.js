@@ -4,6 +4,7 @@ import uiReducer from "./uiSlice";
 import playerReducer from "./playerSlice";
 import characterReducer from "./characterSlice";
 import gameReducer from "./gameSlice";
+import wikiReducer from "./wikiSlice";
 
 export const store = configureStore({
     reducer: {
@@ -12,5 +13,6 @@ export const store = configureStore({
         player: playerReducer,
         characters: characterReducer,
         game: gameReducer,
+        wiki: wikiReducer,
     },
 });

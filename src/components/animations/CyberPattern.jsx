@@ -16,10 +16,11 @@ const CyberPattern = () => {
 
 const StyledWrapper = styled.div`
   position: fixed; // O absolute, pero fixed asegura que cubra toda la pantalla
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  min-width: 100vw;
+  min-height: 100dvh;
   z-index: 0; // Se mantiene en la base
   pointer-events: none; // Permite que los clics pasen a través de él al formulario
   overflow: hidden;
@@ -29,6 +30,28 @@ const StyledWrapper = styled.div`
     width: 100%;
     background: radial-gradient(ellipse at bottom, #000000 0%, #120113 100%);
     overflow: hidden;
+  }
+
+  #stars,
+  #stars2,
+  #stars3 {
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+
+  /* Duplicate stars to the right so ultra-wide screens don't show empty space */
+  #stars:before,
+  #stars2:before,
+  #stars3:before {
+    content: " ";
+    position: absolute;
+    left: 2000px;
+    top: 0;
+    width: inherit;
+    height: inherit;
+    background: transparent;
+    box-shadow: inherit;
   }
 
   #stars {

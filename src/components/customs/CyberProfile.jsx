@@ -3,7 +3,7 @@ import styled from "@emotion/styled";
 import { ROLES } from "../../constants/roles";
 import { loadFirebaseAsset } from "../../../firebase/services/assetLoader";
 
-export const CyberProfile = ({ profile, activeCharacter, accentColor, setAdminOpen, setCharactersOpen, handleLogout }) => {
+export const CyberProfile = ({ profile, activeCharacter, accentColor, setAdminOpen, setCharactersOpen, handleLogout, onWikiOpen }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [avatarUrl, setAvatarUrl] = useState(null);
 
@@ -52,6 +52,11 @@ export const CyberProfile = ({ profile, activeCharacter, accentColor, setAdminOp
                     {isDM && (
                         <button className="menu-item" onClick={() => setAdminOpen(true)}>
                             ADMIN_SETTINGS
+                        </button>
+                    )}
+                    {isDM && onWikiOpen && (
+                        <button className="menu-item" onClick={() => { setIsOpen(false); onWikiOpen(); }}>
+                            NARRATIVE_ARCHIVE
                         </button>
                     )}
 

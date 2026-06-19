@@ -1,21 +1,45 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { createLoreEntry } from '../../../../firebase/services/encyclopediaService'; // Si tienes un servicio específico para esto, úsalo
+import { useDispatch, useSelector } from 'react-redux';
+import { saveWikiEntity } from '../../../store/wikiSlice';
+import { slugify } from '../../../utils/wikiSlug';
 
 import { CyberText, CyberTitle } from '../../customs/CustomTexts';
 import { CyberTextField } from '../../customs/CyberTextField';
 import { CyberCheckbox } from '../../customs/CyberCheckbox';
 
-import { Button, Box, Typography, Alert, Paper, Divider, Grid } from '@mui/material'; 
+import { Button, Box, Alert, Paper, Divider, Grid, MenuItem, Select, FormControl, InputLabel } from '@mui/material';
+import { UI_COLORS } from '../../../constants/uiColors';
+
+const CATEGORY_OPTIONS = [
+    { value: "general", label: "General" },
+    { value: "historia", label: "Historia" },
+    { value: "mito", label: "Mito" },
+    { value: "leyenda", label: "Leyenda" },
+    { value: "documento", label: "Documento / texto" },
+    { value: "otro", label: "Otro" },
+];
+
+const selectSx = {
+    color: UI_COLORS.textPrimary,
+    fontFamily: "'Fira Sans', sans-serif",
+    fontSize: "0.9rem",
+    bgcolor: UI_COLORS.backgroundPrimary,
+    "& .MuiOutlinedInput-notchedOutline": { borderColor: UI_COLORS.border },
+    "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: `${UI_COLORS.accent}88` },
+    "&.Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: UI_COLORS.accent },
+    "& .MuiSvgIcon-root": { color: UI_COLORS.textSecondary },
+};
 
 export const CreateLoreTab = ({ campaignId, onLoreCreated }) => {
+    const dispatch = useDispatch();
+    const uid = useSelector((s) => s.player.profile?.uid);
+
     const [formData, setFormData] = useState({
         title: '',
-        category: 'Lore',
+        category: 'general',
         summary: '',
         content: '',
-        imageUrl: '',
-        audioUrl: '',
         isLocked: false,
         unlockGoal: ''
     });
@@ -24,9 +48,7 @@ export const CreateLoreTab = ({ campaignId, onLoreCreated }) => {
     const [statusMessage, setStatusMessage] = useState({ type: '', text: '' });
 
     const handleChange = (e) => {
-        // Fix para Checkbox: aseguramos que tome 'checked' si el type es checkbox
         const { name, value, type, checked } = e.target;
-        
         setFormData(prev => ({
             ...prev,
             [name]: type === 'checkbox' ? checked : value
@@ -37,14 +59,35 @@ export const CreateLoreTab = ({ campaignId, onLoreCreated }) => {
         e.preventDefault();
         setIsSubmitting(true);
 
-        console.log("Submitting Lore Entry:", formData); // Debug: Verificar datos antes de enviar
-
         try {
-            await createLoreEntry(campaignId, formData);
+            await dispatch(saveWikiEntity({
+                campaignId,
+                entityId: null,
+                uid,
+                data: {
+                    entityType: "cronica",
+                    title: formData.title,
+                    summary: formData.summary,
+                    body: formData.content,
+                    tags: [],
+                    visibility: formData.isLocked ? "dm_only" : "players",
+                    slug: slugify(formData.title),
+                    customFields: {
+                        cronica: {
+                            category: formData.category,
+                            isLocked: formData.isLocked,
+                            unlockGoal: formData.unlockGoal,
+                            legacyEncyclopediaId: null,
+                        },
+                    },
+                },
+            })).unwrap();
+
             setStatusMessage({ type: 'success', text: 'DATA_SAVED_SUCCESSFULLY' });
-            if(onLoreCreated) onLoreCreated();
+            setFormData({ title: '', category: 'general', summary: '', content: '', isLocked: false, unlockGoal: '' });
+            if (onLoreCreated) onLoreCreated();
         } catch (error) {
-            console.error("Error creating lore entry:", error);
+            console.error("Error creating chronicle entry:", error);
             setStatusMessage({ type: 'error', text: 'CRITICAL_ERROR_DATABASE_UNREACHABLE' });
         } finally {
             setIsSubmitting(false);
@@ -54,17 +97,15 @@ export const CreateLoreTab = ({ campaignId, onLoreCreated }) => {
     return (
         <Box component="form" onSubmit={handleSubmit} sx={{ p: 2 }}>
             <Grid container spacing={3}>
-                
-                {/* MENSAJES DE ESTADO */}
                 {statusMessage.text && (
                     <Grid size={12}>
-                        <Alert severity={statusMessage.type} variant="outlined" sx={{ borderColor: 'primary.main', color: 'primary.main' }}>
+                        <Alert severity={statusMessage.type} variant="outlined">
                             {statusMessage.text}
                         </Alert>
                     </Grid>
                 )}
 
-                {/* COLUMNA IZQUIERDA: FORMULARIO */}
+                {/* Left: form */}
                 <Grid size={{ xs: 12, md: 6 }}>
                     <Grid container spacing={2}>
                         <Grid size={12}>
@@ -72,76 +113,89 @@ export const CreateLoreTab = ({ campaignId, onLoreCreated }) => {
                         </Grid>
 
                         <Grid size={{ xs: 12, sm: 8 }}>
-                            <CyberTextField label="CATEGORY" name="category" value={formData.category} onChange={handleChange} fullWidth />
+                            <FormControl fullWidth>
+                                <InputLabel sx={{ color: UI_COLORS.textSecondary }}>CATEGORY</InputLabel>
+                                <Select
+                                    name="category"
+                                    value={formData.category}
+                                    onChange={handleChange}
+                                    label="CATEGORY"
+                                    sx={selectSx}
+                                >
+                                    {CATEGORY_OPTIONS.map((o) => (
+                                        <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
                         </Grid>
 
-                        <Grid size={{ xs: 12, sm: 4 }} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #333', borderRadius: '4px' }}>
-                            <CyberCheckbox 
-                                label="LOCKED" 
-                                name="isLocked" 
-                                checked={formData.isLocked} 
-                                onChange={handleChange} 
+                        <Grid size={{ xs: 12, sm: 4 }} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${UI_COLORS.border}`, borderRadius: '4px' }}>
+                            <CyberCheckbox
+                                label="LOCKED"
+                                name="isLocked"
+                                checked={formData.isLocked}
+                                onChange={handleChange}
                             />
                         </Grid>
 
                         {formData.isLocked && (
                             <Grid size={12}>
-                                <CyberTextField 
-                                    label="UNLOCK_GOAL" 
-                                    name="unlockGoal" 
-                                    value={formData.unlockGoal} 
-                                    onChange={handleChange} 
+                                <CyberTextField
+                                    label="UNLOCK_GOAL"
+                                    name="unlockGoal"
+                                    value={formData.unlockGoal}
+                                    onChange={handleChange}
                                     placeholder="Ej: Derrota al Rey Pollo..."
-                                    required 
-                                    fullWidth 
+                                    required
+                                    fullWidth
                                 />
                             </Grid>
                         )}
 
                         <Grid size={12}>
-                            <CyberTextField 
-                                label="SUMMARY" 
-                                name="summary" 
-                                value={formData.summary} 
-                                onChange={handleChange} 
-                                required 
-                                fullWidth 
-                                multiline 
-                                rows={2} 
+                            <CyberTextField
+                                label="SUMMARY"
+                                name="summary"
+                                value={formData.summary}
+                                onChange={handleChange}
+                                required
+                                fullWidth
+                                multiline
+                                rows={2}
                             />
                         </Grid>
 
                         <Grid size={12}>
-                            <CyberTextField 
-                                label="CONTENT (Markdown)" 
-                                name="content" 
-                                value={formData.content} 
-                                onChange={handleChange} 
-                                required 
-                                fullWidth 
-                                multiline 
-                                rows={10} 
+                            <CyberTextField
+                                label="CONTENT (Markdown)"
+                                name="content"
+                                value={formData.content}
+                                onChange={handleChange}
+                                required
+                                fullWidth
+                                multiline
+                                rows={10}
                             />
                         </Grid>
                     </Grid>
                 </Grid>
 
-                {/* COLUMNA DERECHA: PREVIEW REALTIME */}
+                {/* Right: preview */}
                 <Grid size={{ xs: 12, md: 6 }} sx={{ display: 'flex', flexDirection: 'column' }}>
                     <CyberTitle variant="overline" sx={{ mb: 1, color: '#666', display: 'block' }}>
                         MARKDOWN_PREVIEW_LIVE
                     </CyberTitle>
-                    <Paper variant="outlined" sx={{ 
-                        p: 3, 
+                    <Paper variant="outlined" sx={{
+                        p: 3,
                         flexGrow: 1,
                         minHeight: '400px',
-                        maxHeight: '650px', 
+                        maxHeight: '650px',
                         overflowY: 'auto',
                         backgroundColor: 'rgba(0,0,0,0.2)',
-                        borderColor: '#333',
-                        '& h1, h2, h3': { color: '#ff00ff', fontFamily: 'Orbitron, sans-serif' },
-                        '& p': { color: '#ccc', lineHeight: 1.6, fontFamily: 'Roboto, sans-serif' },
-                        '& code': { backgroundColor: '#1a1a1a', p: 0.5, borderRadius: 1, color: '#00f2ea' }
+                        borderColor: UI_COLORS.border,
+                        '& h1, h2, h3': { color: UI_COLORS.accent, fontFamily: 'Orbitron, sans-serif' },
+                        '& p': { color: '#ccc', lineHeight: 1.6, fontFamily: 'Fira Sans, sans-serif' },
+                        '& code': { backgroundColor: '#1a1a1a', p: 0.5, borderRadius: 1, color: UI_COLORS.anomaly }
                     }}>
                         {formData.content ? (
                             <ReactMarkdown>{formData.content}</ReactMarkdown>
@@ -152,34 +206,25 @@ export const CreateLoreTab = ({ campaignId, onLoreCreated }) => {
                 </Grid>
 
                 <Grid size={12}>
-                    <Divider sx={{ borderColor: '#333', my: 1 }} />
-                </Grid>
-
-                {/* MULTIMEDIA Y ACCIONES */}
-                <Grid size={{ xs: 12, md: 4 }}>
-                    <CyberTextField label="IMAGE_URL" name="imageUrl" value={formData.imageUrl} onChange={handleChange} fullWidth />
-                </Grid>
-                
-                <Grid size={{ xs: 12, md: 4 }}>
-                    <CyberTextField label="AUDIO_URL" name="audioUrl" value={formData.audioUrl} onChange={handleChange} fullWidth />
+                    <Divider sx={{ borderColor: UI_COLORS.border, my: 1 }} />
                 </Grid>
 
                 <Grid size={{ xs: 12, md: 4 }} sx={{ display: 'flex', alignItems: 'flex-start' }}>
-                    <Button 
-                        type="submit" 
-                        variant="outlined" 
+                    <Button
+                        type="submit"
+                        variant="outlined"
                         disabled={isSubmitting}
                         fullWidth
-                        sx={{ 
+                        sx={{
                             height: '56px',
-                            color: '#00f2ea', 
-                            borderColor: '#00f2ea',
+                            color: UI_COLORS.anomaly,
+                            borderColor: UI_COLORS.anomaly,
                             textTransform: 'uppercase',
                             fontFamily: 'Orbitron',
-                            '&:hover': { backgroundColor: 'rgba(0, 242, 234, 0.1)', borderColor: '#00f2ea' }
+                            '&:hover': { backgroundColor: `${UI_COLORS.anomaly}18`, borderColor: UI_COLORS.anomaly }
                         }}
                     >
-                        {isSubmitting ? 'UPLOADING...' : 'SAVE_LORE'}
+                        {isSubmitting ? 'UPLOADING...' : 'SAVE_CHRONICLE'}
                     </Button>
                 </Grid>
             </Grid>

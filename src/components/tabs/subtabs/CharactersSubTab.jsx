@@ -4,6 +4,7 @@ import { Box, Accordion, AccordionSummary, AccordionDetails, Stack, IconButton, 
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import AddIcon from '@mui/icons-material/Add';
 import QuestionMarkIcon from '@mui/icons-material/QuestionMark';
+import DeleteIcon from '@mui/icons-material/Delete';
 
 import { CyberTitle, CyberText } from '../../customs/CustomTexts';
 import { CyberAutocomplete } from '../../customs/CyberAutocomplete';
@@ -29,6 +30,10 @@ import {
 } from '../../../constants/statSystem';
 import { useStatSystem } from '../../../hooks/useStatSystem';
 import { normalizeCharacterDoc } from '../../../utils/normalizeCharacter';
+import { WIKI_ENTITY_TYPES } from '../../../constants/wikiEntityTypes';
+import { MEMBERSHIP_STATUS, MEMBERSHIP_STATUS_OPTIONS } from '../../../constants/wiki/entityFieldSchemas';
+import { upsertMembership, removeMembership } from '../../../utils/wikiCustomFields';
+import { reconcileCharacterMemberships } from '../../../../firebase/services/membershipService';
 
 function normalizeCharacterSheet(char, statDefs) {
     const base = normalizeCharacterDoc(char);
@@ -62,6 +67,9 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
     const [selectedItem, setSelectedItem] = useState(null);
     const [pendingDeletions, setPendingDeletions] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [wikiEntities, setWikiEntities] = useState([]);
+    const [newOrgId, setNewOrgId] = useState("");
+    const [newOrgStatus, setNewOrgStatus] = useState(MEMBERSHIP_STATUS.CONFIRMADO);
 
     // Fetch independiente para los personajes
     useEffect(() => {
@@ -75,6 +83,20 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
         return () => unsubChar();
     }, [currentCampaignId]);
 
+    // Wiki entities (species + organizations) for narrative integration
+    useEffect(() => {
+        if (!currentCampaignId) return;
+        const ref = collection(db, "campaigns", currentCampaignId, "wikiEntities");
+        const unsub = onSnapshot(ref, (snap) => {
+            setWikiEntities(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        });
+        return () => unsub();
+    }, [currentCampaignId]);
+
+    const speciesOptions = wikiEntities.filter((e) => e.entityType === WIKI_ENTITY_TYPES.ESPECIE);
+    const orgOptions = wikiEntities.filter((e) => e.entityType === WIKI_ENTITY_TYPES.ORGANIZACION);
+    const orgTitle = (id) => wikiEntities.find((e) => e.id === id)?.title || id;
+
     const handleAddNew = () => {
         setSelectedItem({
             name: "NEW_ENTRY_UNNAMED",
@@ -87,8 +109,30 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
             bond: emptyBond(),
             bondPowers: [],
             isLocked: true,
-            unlockGoal: ""
+            unlockGoal: "",
+            speciesEntityId: null,
+            organizationMemberships: []
         });
+    };
+
+    const handleAddOrg = () => {
+        if (!newOrgId) return;
+        setSelectedItem((prev) => ({
+            ...prev,
+            organizationMemberships: upsertMembership(prev.organizationMemberships, {
+                organizationEntityId: newOrgId,
+                status: newOrgStatus,
+            }),
+        }));
+        setNewOrgId("");
+        setNewOrgStatus(MEMBERSHIP_STATUS.CONFIRMADO);
+    };
+
+    const handleRemoveOrg = (orgId) => {
+        setSelectedItem((prev) => ({
+            ...prev,
+            organizationMemberships: removeMembership(prev.organizationMemberships, orgId),
+        }));
     };
 
     const handleUpdate = async () => {
@@ -104,6 +148,13 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
                 const docRef = await createCampaignElement('characters', newData);
                 setSelectedItem({ id: docRef.id, ...newData });
 
+                await reconcileCharacterMemberships(
+                    currentCampaignId,
+                    docRef.id,
+                    [],
+                    newData.organizationMemberships || []
+                );
+
                 dispatch(showSnackbar({
                     message: "PROTOCOL_EXECUTED: NEW_ENTRY_SECURED",
                     severity: "success"
@@ -111,6 +162,14 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
             } else {
                 const { id, effort: _e2, strain: _s2, ...updateData } = selectedItem;
                 await updateCampaignElement('characters', id, updateData);
+
+                const prevMemberships = characters.find((c) => c.id === id)?.organizationMemberships || [];
+                await reconcileCharacterMemberships(
+                    currentCampaignId,
+                    id,
+                    prevMemberships,
+                    updateData.organizationMemberships || []
+                );
 
                 dispatch(showSnackbar({
                     message: "DATABASE_OVERRIDE: SUCCESS",
@@ -222,6 +281,19 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
                                         value={selectedItem.age || ''} 
                                         onChange={(e) => setSelectedItem({...selectedItem, age: parseInt(e.target.value)})}
                                     />
+                                    <CyberInput
+                                        select
+                                        label="SPECIES_DESIGNATION"
+                                        value={selectedItem.speciesEntityId || ''}
+                                        onChange={(e) => setSelectedItem({...selectedItem, speciesEntityId: e.target.value || null})}
+                                    >
+                                        <option value="" style={{backgroundColor: '#000'}}>UNKNOWN_OR_UNASSIGNED</option>
+                                        {speciesOptions.map((sp) => (
+                                            <option key={sp.id} value={sp.id} style={{backgroundColor: '#000'}}>
+                                                {(sp.title || '').toUpperCase()}
+                                            </option>
+                                        ))}
+                                    </CyberInput>
                                     <Box sx={{ borderLeft: `2px solid ${UI_COLORS.accent}66`, pl: 2, mt: 1 }}>
                                         <CyberText variant="caption" sx={{ color: UI_COLORS.accent, mb: 1, display: 'block' }}>
                                             ACCESS_CONTROL_PROTOCOLS
@@ -512,6 +584,62 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
                                             </option>
                                         ))}
                                     </CyberInput>
+
+                                    {/* Organization affiliations (narrative wiki integration) */}
+                                    <Box sx={{ border: `1px solid ${UI_COLORS.accent}33`, p: 2, borderRadius: 0 }}>
+                                        <CyberText sx={{ color: UI_COLORS.accent, fontSize: '0.8rem', mb: 1.5, display: 'block' }}>
+                                            ORGANIZATION_AFFILIATIONS
+                                        </CyberText>
+
+                                        {(selectedItem.organizationMemberships || []).length > 0 && (
+                                            <Stack spacing={0.5} sx={{ mb: 1.5 }}>
+                                                {(selectedItem.organizationMemberships || []).map((m) => (
+                                                    <Box key={m.organizationEntityId} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        <CyberText sx={{ flex: 1, fontSize: '0.8rem' }}>{orgTitle(m.organizationEntityId)}</CyberText>
+                                                        <CyberText sx={{ fontSize: '0.7rem', color: m.status === MEMBERSHIP_STATUS.SOSPECHADO ? '#ff0055' : 'rgba(255,255,255,0.5)' }}>
+                                                            {m.status === MEMBERSHIP_STATUS.SOSPECHADO ? 'SOSPECHADO' : 'CONFIRMADO'}
+                                                        </CyberText>
+                                                        <IconButton size="small" onClick={() => handleRemoveOrg(m.organizationEntityId)} sx={{ color: 'rgba(255,255,255,0.4)', '&:hover': { color: '#ff0055' } }}>
+                                                            <DeleteIcon sx={{ fontSize: '0.9rem' }} />
+                                                        </IconButton>
+                                                    </Box>
+                                                ))}
+                                            </Stack>
+                                        )}
+
+                                        <Stack direction="row" spacing={1} alignItems="flex-end">
+                                            <CyberInput
+                                                select
+                                                label="ORGANIZATION"
+                                                value={newOrgId}
+                                                onChange={(e) => setNewOrgId(e.target.value)}
+                                                sx={{ flex: 1 }}
+                                            >
+                                                <option value="" style={{backgroundColor: '#000'}}>SELECT...</option>
+                                                {orgOptions.map((o) => (
+                                                    <option key={o.id} value={o.id} style={{backgroundColor: '#000'}}>
+                                                        {(o.title || '').toUpperCase()}
+                                                    </option>
+                                                ))}
+                                            </CyberInput>
+                                            <CyberInput
+                                                select
+                                                label="STATUS"
+                                                value={newOrgStatus}
+                                                onChange={(e) => setNewOrgStatus(e.target.value)}
+                                                sx={{ width: 160 }}
+                                            >
+                                                {MEMBERSHIP_STATUS_OPTIONS.map((s) => (
+                                                    <option key={s.value} value={s.value} style={{backgroundColor: '#000'}}>
+                                                        {s.label.toUpperCase()}
+                                                    </option>
+                                                ))}
+                                            </CyberInput>
+                                            <CyberButton onClick={handleAddOrg} sx={{ width: 'fit-content' }}>
+                                                + ADD
+                                            </CyberButton>
+                                        </Stack>
+                                    </Box>
                                 </Stack>
                             </Grid>
                         </Grid>
