@@ -1,35 +1,12 @@
-import { useState, useEffect } from "react";
 import { Box } from "@mui/material";
 import PersonIcon from "@mui/icons-material/Person";
-import { loadFirebaseAsset, getCachedUrl } from "../../../firebase/services/assetLoader";
+import { useAssetUrl } from "../../hooks/useAssetUrl";
 import { UI_COLORS } from "../../constants/uiColors";
 import { avatarBorderSx } from "./characterBadges";
+import { tokenCropCss } from "../../utils/tokenImageFit";
 
-async function resolveImageUrl(path) {
-    if (!path) return null;
-    if (path.startsWith("http://") || path.startsWith("https://")) return path;
-    return loadFirebaseAsset(path);
-}
-
-export default function CharAvatar({ imagePath, name, size = 48, status = "alive" }) {
-    const [url, setUrl] = useState(() => getCachedUrl(imagePath) || null);
-
-    useEffect(() => {
-        if (!imagePath) {
-            setUrl(null);
-            return;
-        }
-        const cached = getCachedUrl(imagePath);
-        if (cached) {
-            setUrl(cached);
-            return;
-        }
-        let cancelled = false;
-        resolveImageUrl(imagePath)
-            .then((resolved) => { if (!cancelled) setUrl(resolved); })
-            .catch(() => { if (!cancelled) setUrl(null); });
-        return () => { cancelled = true; };
-    }, [imagePath]);
+export default function CharAvatar({ imagePath, name, size = 48, status = "alive", crop = null }) {
+    const url = useAssetUrl(imagePath);
 
     return (
         <Box
@@ -51,7 +28,9 @@ export default function CharAvatar({ imagePath, name, size = 48, status = "alive
                     component="img"
                     src={url}
                     alt={name}
-                    sx={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    decoding="sync"
+                    loading="eager"
+                    sx={{ width: "100%", height: "100%", ...tokenCropCss(crop) }}
                 />
             ) : (
                 <PersonIcon sx={{ fontSize: size * 0.45, color: UI_COLORS.textSecondary }} />

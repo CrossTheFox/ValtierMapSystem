@@ -345,6 +345,46 @@ describe("validateCascadeResponse – entity_state_update", () => {
         assert.equal(change.valid, true);
     });
 
+    it("inherits impact entityTitle when fromEntityTitle is missing", () => {
+        const raw = {
+            ...cascadeBase,
+            impacts: [{
+                ...cascadeBase.impacts[0],
+                changes: [{
+                    kind: "entity_state_update",
+                    // no fromEntityTitle — Gemini often omits it
+                    field: "narrativeState",
+                    newValue: "quebrada",
+                    reason: "Colapso emocional.",
+                }],
+            }],
+        };
+        const r = validateCascadeResponse(raw, contextEntities);
+        const change = r.impacts[0].resolvedChanges[0];
+        assert.equal(change.valid, true);
+        assert.equal(change.fromEntityTitle, "Oni Margalous");
+    });
+
+    it("normalizes free-text narrativeState to enum", () => {
+        const raw = {
+            ...cascadeBase,
+            impacts: [{
+                ...cascadeBase.impacts[0],
+                changes: [{
+                    kind: "entity_state_update",
+                    fromEntityTitle: "Oni Margalous",
+                    field: "narrativeState",
+                    newValue: "Quebrantado por el dolor y la culpa",
+                    reason: "x",
+                }],
+            }],
+        };
+        const r = validateCascadeResponse(raw, contextEntities);
+        const change = r.impacts[0].resolvedChanges[0];
+        assert.equal(change.valid, true);
+        assert.equal(change.newValue, "quebrada");
+    });
+
     it("rejects entity_state_update with unknown narrativeState value", () => {
         const raw = {
             ...cascadeBase,
@@ -465,5 +505,102 @@ describe("validateCascadeResponse – collectiveImpacts", () => {
         const r = validateCascadeResponse(raw, contextWithGalathia);
         assert.equal(r.collectiveImpacts[0].valid, false);
         assert.match(r.collectiveImpacts[0].validationErrors[0], /entityKind inválido/i);
+    });
+
+    it("marks collective relation_* without relationType as invalid (not silently valid)", () => {
+        const raw = {
+            ...cascadeBase,
+            collectiveImpacts: [{
+                wave: 2,
+                entityTitle: "Galathia",
+                entityKind: "locacion",
+                collectiveReaction: "Tensión.",
+                narrativeHook: "x",
+                changes: [{
+                    kind: "relation_update",
+                    fromEntityTitle: "Zorgun Margalous",
+                    toEntityTitle: "Galathia",
+                    reason: "Abdicación.",
+                }],
+                confidence: "media",
+            }],
+        };
+        const r = validateCascadeResponse(raw, contextWithGalathia);
+        const ch = r.collectiveImpacts[0].resolvedChanges[0];
+        assert.equal(ch.valid, false);
+        assert.match(ch.validationError, /relationType/i);
+        assert.ok(r.invalidChangeTitles.includes("Galathia"));
+    });
+});
+
+describe("validateCascadeResponse – repair omissions", () => {
+    it("infers field=narrativeState when only newValue enum is present", () => {
+        const raw = {
+            ...cascadeBase,
+            impacts: [{
+                ...cascadeBase.impacts[0],
+                changes: [{
+                    kind: "entity_state_update",
+                    fromEntityTitle: "Oni Margalous",
+                    newValue: "quebrada",
+                    reason: "Colapso.",
+                }],
+            }],
+        };
+        const r = validateCascadeResponse(raw, contextEntities);
+        const ch = r.impacts[0].resolvedChanges[0];
+        assert.equal(ch.valid, true);
+        assert.equal(ch.field, "narrativeState");
+        assert.equal(ch.newValue, "quebrada");
+        assert.equal(ch.repaired, true);
+    });
+
+    it("infers field+newValue from personalityShift when state_update is bare", () => {
+        const raw = {
+            ...cascadeBase,
+            impacts: [{
+                ...cascadeBase.impacts[0],
+                personalityShift: { from: "estable", to: "furiosa", reason: "Ira." },
+                changes: [{
+                    kind: "entity_state_update",
+                    reason: "Estado.",
+                }],
+            }],
+        };
+        const r = validateCascadeResponse(raw, contextEntities);
+        const ch = r.impacts[0].resolvedChanges[0];
+        assert.equal(ch.valid, true);
+        assert.equal(ch.field, "narrativeState");
+        assert.equal(ch.newValue, "furiosa");
+        assert.equal(ch.fromEntityTitle, "Oni Margalous");
+    });
+
+    it("infers relationType from existing graph edge when omitted", () => {
+        const relations = [{
+            id: "r1",
+            fromEntityId: "o1",
+            toEntityId: "z1",
+            relationType: "descendiente_de",
+            strength: 9,
+        }];
+        const raw = {
+            ...cascadeBase,
+            impacts: [{
+                ...cascadeBase.impacts[0],
+                changes: [{
+                    kind: "relation_update",
+                    fromEntityTitle: "Oni Margalous",
+                    toEntityTitle: "Zorgun Margalous",
+                    strengthDelta: -5,
+                    reason: "Ruptura.",
+                }],
+            }],
+        };
+        const r = validateCascadeResponse(raw, contextEntities, null, { relations });
+        const ch = r.impacts[0].resolvedChanges[0];
+        assert.equal(ch.valid, true);
+        assert.equal(ch.relationType, "descendiente_de");
+        assert.equal(ch.repaired, true);
+        assert.deepEqual(r.invalidChangeTitles, []);
     });
 });

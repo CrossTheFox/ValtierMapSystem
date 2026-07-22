@@ -1,5 +1,6 @@
 import { Typography } from "@mui/material";
 import { useDialogFontSize } from "../../contexts/DialogFontSizeContext";
+import { UI_COLORS } from "../../constants/uiColors";
 
 const BASE_CYBER_TEXT_SIZE = 0.85; // rem
 const FONT_SIZE_STEP_REM = 0.18;   // added rem per step
@@ -15,6 +16,7 @@ export const CyberTitle = ({ children, sx = {}, ...props }) => (
             fontFamily: FONT_TITLE,
             textTransform: "uppercase",
             letterSpacing: "2px",
+            color: UI_COLORS.textPrimary,
             ...sx,
         }}
     >
@@ -32,6 +34,7 @@ export const CyberText = ({ children, sx = {}, ...props }) => {
                 fontFamily: FONT_BODY,
                 fontSize: scaledSize,
                 lineHeight: 1.8,
+                color: UI_COLORS.textPrimary,
                 WebkitFontSmoothing: "antialiased",
                 ...sx,
             }}

@@ -35,7 +35,7 @@ export function getStructuredGeminiModel(modelName, responseSchema, extraConfig 
             responseMimeType: "application/json",
             responseSchema,
             temperature: 0.8,
-            maxOutputTokens: 4096,
+            maxOutputTokens: 8192,
             // Gemini 2.5 reserva tokens para "thinking"; desactivar en JSON estructurado.
             thinkingConfig: { thinkingBudget: 0 },
             ...extraConfig,
@@ -52,7 +52,7 @@ export function getTextGeminiModel(modelName = "gemini-2.5-flash-lite") {
         model: modelName,
         generationConfig: {
             temperature: 0.7,
-            maxOutputTokens: 4096,
+            maxOutputTokens: 8192,
         },
     });
 }

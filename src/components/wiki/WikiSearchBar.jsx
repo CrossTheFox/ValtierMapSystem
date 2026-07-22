@@ -12,7 +12,7 @@ import { CyberText } from "../customs/CustomTexts";
 
 import { UI_COLORS } from "../../constants/uiColors";
 
-import { WIKI_ENTITY_TYPE_OPTIONS } from "../../constants/wikiEntityTypes";
+import { WIKI_ARCHIVE_TYPE_OPTIONS } from "../../constants/wikiEntityTypes";
 
 import {
 
@@ -78,9 +78,9 @@ export default function WikiSearchBar({
 
         const allowed = WIKI_AREA_ENTITY_TYPES[effectiveArea];
 
-        if (!allowed) return WIKI_ENTITY_TYPE_OPTIONS;
+        if (!allowed) return WIKI_ARCHIVE_TYPE_OPTIONS;
 
-        return WIKI_ENTITY_TYPE_OPTIONS.filter(({ value }) => allowed.includes(value));
+        return WIKI_ARCHIVE_TYPE_OPTIONS.filter(({ value }) => allowed.includes(value));
 
     }, [effectiveArea]);
 
@@ -252,7 +252,7 @@ export default function WikiSearchBar({
 
                         <CyberText sx={{ fontSize: compact ? "0.58rem" : "0.65rem", lineHeight: 1 }}>
 
-                            {compact ? label.slice(0, 4) : label}
+                            {label}
 
                         </CyberText>
 

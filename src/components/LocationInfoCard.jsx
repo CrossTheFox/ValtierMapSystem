@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { closeLocation, openWikiOverlay } from "../store/uiSlice";
 import { Box, IconButton } from "@mui/material";
@@ -16,6 +16,8 @@ import LocationMissionsTab             from "./tabs/LocationMissionsTab";
 import usePopout                       from "../hooks/usePopout";
 import { ROLES }                       from "../constants/roles";
 import { UI_COLORS }                   from "../constants/uiColors";
+import { useCampaignWikiEntities } from "../hooks/useCampaignWikiEntities";
+import { WIKI_ENTITY_TYPES } from "../constants/wikiEntityTypes";
 
 export default function LocationInfoCard({ popupMode = false }) {
     const location   = useSelector((s) => s.ui.selectedLocation);
@@ -30,6 +32,14 @@ export default function LocationInfoCard({ popupMode = false }) {
     const [open, setOpen] = useState(popupMode);
 
     const { isPopped, popout } = usePopout("location");
+    const wikiEntities = useCampaignWikiEntities(campaignId);
+
+    const locationWikiEntity = useMemo(() => {
+        if (!location?.id) return null;
+        return wikiEntities.find(
+            (e) => e.entityType === WIKI_ENTITY_TYPES.LOCACION && e.linkedVttLocationId === location.id
+        ) || null;
+    }, [wikiEntities, location?.id]);
 
     useEffect(() => {
         if (!popupMode && locationDialogOpen) setOpen(true);
@@ -52,12 +62,12 @@ export default function LocationInfoCard({ popupMode = false }) {
     };
 
     const handleOpenWiki = () => {
-        if (!location) return;
+        if (!locationWikiEntity?.id) return;
         dispatch(openWikiOverlay({
-            mode: "list",
+            mode: "detail",
+            entityId: locationWikiEntity.id,
             vttContext: {
                 linkedVttLocationId: location.id,
-                prefillType: "locacion",
             },
         }));
     };
@@ -68,8 +78,8 @@ export default function LocationInfoCard({ popupMode = false }) {
         { label: "Misiones",    icon: <AssignmentIcon /> },
     ];
 
-    // Both DM and players can open the wiki card for a location
-    const wikiAction = !popupMode ? (
+    // Wiki icon only when a linked archive entry exists
+    const wikiAction = !popupMode && locationWikiEntity ? (
         <CyberTooltip title={isDM ? "Ficha wiki de esta ubicación" : "Ver en el archivo"}>
             <IconButton
                 size="small"
@@ -96,12 +106,13 @@ export default function LocationInfoCard({ popupMode = false }) {
             onPopout={handlePopout}
             extraHeaderActions={wikiAction}
             sizePreset="lg"
+            dialogId="location"
         >
             <TabPanel isSelected={tab === 0}>
                 <LocationHistoryDescriptionTab location={location} campaignId={campaignId} />
             </TabPanel>
             <TabPanel isSelected={tab === 1} pValue={0}>
-                <LocationCharactersTab characters={location?.characters || []} campaignId={campaignId} />
+                <LocationCharactersTab characters={location?.characters || []} campaignId={campaignId} isDM={isDM} />
             </TabPanel>
             <TabPanel isSelected={tab === 2}>
                 <LocationMissionsTab location={location} campaignId={campaignId} />

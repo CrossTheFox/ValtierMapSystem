@@ -383,7 +383,7 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
 
                             <Grid size={12}>
                                 <CyberText sx={{ mb: 2, color: UI_COLORS.accent, fontSize: "0.8rem" }}>
-                                    SHEET_DATA (BOND / POWERS) — Effort & strain are session-only in the player dialog
+                                    SHEET_DATA (BOND / POWERS) — Effort is session-only in the player dialog
                                 </CyberText>
                                 <Grid container spacing={2}>
                                     <Grid size={6}>

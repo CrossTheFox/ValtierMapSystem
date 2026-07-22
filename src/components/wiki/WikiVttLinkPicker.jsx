@@ -1,32 +1,12 @@
-import { Box, FormControl, InputLabel, Select, MenuItem, FormHelperText } from "@mui/material";
+import { useMemo } from "react";
+import { Box, FormHelperText } from "@mui/material";
 import { useSelector } from "react-redux";
-import { CyberText } from "../customs/CustomTexts";
 import { UI_COLORS } from "../../constants/uiColors";
 import { WIKI_ENTITY_TYPES } from "../../constants/wikiEntityTypes";
-
-const selectSx = {
-    color: UI_COLORS.textPrimary,
-    fontFamily: "'Fira Sans', sans-serif",
-    fontSize: "0.82rem",
-    bgcolor: UI_COLORS.backgroundPrimary,
-    "& .MuiOutlinedInput-notchedOutline": { borderColor: UI_COLORS.border },
-    "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: `${UI_COLORS.accent}88` },
-    "&.Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: UI_COLORS.accent },
-    "& .MuiSvgIcon-root": { color: UI_COLORS.textSecondary },
-};
-
-const labelSx = {
-    color: UI_COLORS.textSecondary,
-    fontFamily: "'Fira Sans', sans-serif",
-    fontSize: "0.78rem",
-    "&.Mui-focused": { color: UI_COLORS.accent },
-};
+import WikiSearchableSelect from "./WikiSearchableSelect";
 
 /**
  * Enlaza una ficha wiki con un elemento del VTT (pin o personaje jugable).
- * Locación narrativa: solo pin del mapa (opcional). Personaje: solo token VTT.
- *
- * @param {{ entityType?: string, linkedVttLocationId?: string|null, linkedVttCharacterId?: string|null, onChange: Function }} props
  */
 export default function WikiVttLinkPicker({
     entityType,
@@ -35,86 +15,70 @@ export default function WikiVttLinkPicker({
     onChange,
 }) {
     const locations = useSelector((s) => s.world.locations);
+    const charactersById = useSelector((s) => s.world.charactersById ?? {});
 
-    const locationOptions = Object.values(locations || {});
-    const characterOptions = Object.values(locations || {}).flatMap((loc) =>
-        (loc.characters || []).map((c) => ({ ...c, locationName: loc.name }))
+    const locationOptions = useMemo(
+        () => Object.values(locations || {}).map((loc) => ({
+            value: loc.id,
+            label: loc.name,
+        })),
+        [locations]
+    );
+
+    const characterOptions = useMemo(
+        () => Object.values(charactersById || {}).map((c) => ({
+            value: c.id,
+            label: c.name,
+            sublabel: c.locationId && locations?.[c.locationId]?.name
+                ? locations[c.locationId].name
+                : "Sin locación",
+        })).sort((a, b) => (a.label || "").localeCompare(b.label || "", "es")),
+        [charactersById, locations]
     );
 
     const showLocation = entityType === WIKI_ENTITY_TYPES.LOCACION;
     const showCharacter = entityType === WIKI_ENTITY_TYPES.PERSONAJE;
 
-    const handleLocationChange = (e) => {
-        onChange({ linkedVttLocationId: e.target.value || null, linkedVttCharacterId: null });
+    const handleLocationChange = (v) => {
+        onChange({ linkedVttLocationId: v || null, linkedVttCharacterId: null });
     };
 
-    const handleCharacterChange = (e) => {
-        onChange({ linkedVttLocationId: null, linkedVttCharacterId: e.target.value || null });
+    const handleCharacterChange = (v) => {
+        onChange({ linkedVttLocationId: null, linkedVttCharacterId: v || null });
     };
 
     if (!showLocation && !showCharacter) return null;
 
     return (
-        <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
+        <Box sx={{ display: "flex", gap: 1.25, flexWrap: "wrap" }}>
             {showLocation && (
-                <FormControl size="small" sx={{ minWidth: 220, flex: 1 }}>
-                    <InputLabel sx={labelSx}>Pin del mapa VTT</InputLabel>
-                    <Select
+                <Box sx={{ minWidth: 200, flex: 1 }}>
+                    <WikiSearchableSelect
+                        label="Pin del mapa VTT"
                         value={linkedVttLocationId || ""}
                         onChange={handleLocationChange}
-                        label="Pin del mapa VTT"
-                        sx={selectSx}
-                        MenuProps={{ PaperProps: { sx: { bgcolor: UI_COLORS.backgroundSecondary } } }}
-                    >
-                        <MenuItem value="">
-                            <CyberText sx={{ fontSize: "0.8rem", color: UI_COLORS.textSecondary }}>
-                                (sin pin — solo narrativa)
-                            </CyberText>
-                        </MenuItem>
-                        {locationOptions.map((loc) => (
-                            <MenuItem key={loc.id} value={loc.id}>
-                                <CyberText sx={{ fontSize: "0.8rem", color: UI_COLORS.textPrimary }}>
-                                    {loc.name}
-                                </CyberText>
-                            </MenuItem>
-                        ))}
-                    </Select>
-                    <FormHelperText sx={{ color: UI_COLORS.textSecondary, fontFamily: "'Fira Sans', sans-serif", fontSize: "0.7rem" }}>
-                        Opcional. Regiones, países o ciudades sin pin pueden quedar solo en el archivo; enlaza después desde aquí o desde el editor de ubicaciones VTT.
+                        options={locationOptions}
+                        clearLabel="(sin pin)"
+                    />
+                    <FormHelperText sx={{ color: UI_COLORS.textSecondary, fontFamily: "'Fira Sans', sans-serif", fontSize: "0.65rem", m: 0, mt: 0.35 }}>
+                        Opcional. Enlaza después si aún no hay pin en el mapa.
                     </FormHelperText>
-                </FormControl>
+                </Box>
             )}
 
             {showCharacter && (
-                <FormControl size="small" sx={{ minWidth: 220, flex: 1 }}>
-                    <InputLabel sx={labelSx}>Personaje jugable (token)</InputLabel>
-                    <Select
+                <Box sx={{ minWidth: 200, flex: 1 }}>
+                    <WikiSearchableSelect
+                        label="Personaje jugable (token)"
                         value={linkedVttCharacterId || ""}
                         onChange={handleCharacterChange}
-                        label="Personaje jugable (token)"
-                        sx={selectSx}
-                        MenuProps={{ PaperProps: { sx: { bgcolor: UI_COLORS.backgroundSecondary } } }}
-                    >
-                        <MenuItem value="">
-                            <CyberText sx={{ fontSize: "0.8rem", color: UI_COLORS.textSecondary }}>
-                                (ninguno)
-                            </CyberText>
-                        </MenuItem>
-                        {characterOptions.map((char) => (
-                            <MenuItem key={char.id} value={char.id}>
-                                <CyberText sx={{ fontSize: "0.8rem", color: UI_COLORS.textPrimary }}>
-                                    {char.name}
-                                    <Box component="span" sx={{ color: UI_COLORS.textSecondary, fontSize: "0.7rem" }}>
-                                        {" "}({char.locationName})
-                                    </Box>
-                                </CyberText>
-                            </MenuItem>
-                        ))}
-                    </Select>
-                    <FormHelperText sx={{ color: UI_COLORS.textSecondary, fontFamily: "'Fira Sans', sans-serif", fontSize: "0.7rem" }}>
-                        Opcional. Personajes históricos pueden no tener token en el mapa.
+                        options={characterOptions}
+                        clearLabel="(ninguno)"
+                    />
+                    <FormHelperText sx={{ color: UI_COLORS.textSecondary, fontFamily: "'Fira Sans', sans-serif", fontSize: "0.65rem", m: 0, mt: 0.35 }}>
+                        Si está vinculado, su retrato VTT se usa como imagen de la ficha.
                     </FormHelperText>
-                </FormControl>
+                </Box>
             )}
         </Box>
     );

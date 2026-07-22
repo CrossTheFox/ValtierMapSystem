@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Box, TextField } from "@mui/material";
 import { CyberText } from "../customs/CustomTexts";
 import { UI_COLORS } from "../../constants/uiColors";
@@ -8,8 +8,8 @@ const segmentSx = {
     "& .MuiOutlinedInput-root": {
         bgcolor: UI_COLORS.backgroundPrimary,
         color: UI_COLORS.textPrimary,
-        fontFamily: "'Fira Sans', sans-serif",
-        fontSize: "0.85rem",
+        fontFamily: "'Fira Code', monospace",
+        fontSize: "0.9rem",
         "& fieldset": { borderColor: UI_COLORS.border },
         "&:hover fieldset": { borderColor: `${UI_COLORS.accent}88` },
         "&.Mui-focused fieldset": { borderColor: UI_COLORS.accent },
@@ -20,32 +20,48 @@ const segmentSx = {
         fontSize: "0.75rem",
     },
     "& .MuiInputLabel-root.Mui-focused": { color: UI_COLORS.accent },
-    // hide number spinners
-    "& input[type=number]": { MozAppearance: "textfield" },
-    "& input::-webkit-outer-spin-button, & input::-webkit-inner-spin-button": {
-        WebkitAppearance: "none",
-        margin: 0,
+    "& .MuiInputBase-input": {
+        color: UI_COLORS.textPrimary,
+        textAlign: "center",
+        letterSpacing: "0.04em",
     },
 };
 
+const FIELD_LIMITS = { d: 2, m: 2, y: 4 };
+
 /**
- * Segmented Día / Mes / Año date input (Latin American order). Emits a
- * year-first sortable storage string ("YYYY" | "YYYY-MM" | "YYYY-MM-DD") so the
- * timeline sort/group logic stays unchanged. Year is required; month optional;
- * day requires month.
- *
- * @param {{ value?: string, onChange: (storage: string) => void, required?: boolean }} props
+ * Segmented Día / Mes / Año (calendario D.Z.). Campos de texto numérico con
+ * estado local para evitar pérdida de dígitos al escribir. Emite strings
+ * year-first: "YYYY" | "YYYY-MM" | "YYYY-MM-DD".
  */
 export default function WikiDateInput({ value = "", onChange, required = false }) {
-    const seg = useMemo(() => formatDateForInput(value), [value]);
+    const [seg, setSeg] = useState(() => formatDateForInput(value));
+    const emittedRef = useRef(value ?? "");
 
-    const emit = (next) => {
-        onChange?.(parseInputToStorage(next));
+    useEffect(() => {
+        const external = value ?? "";
+        if (external !== emittedRef.current) {
+            setSeg(formatDateForInput(external));
+            emittedRef.current = external;
+        }
+    }, [value]);
+
+    const commit = (next) => {
+        setSeg(next);
+        const storage = parseInputToStorage(next);
+        emittedRef.current = storage;
+        onChange?.(storage);
     };
 
     const handle = (field) => (e) => {
-        const raw = e.target.value.replace(/[^\d]/g, "");
-        emit({ ...seg, [field]: raw });
+        const raw = e.target.value.replace(/[^\d]/g, "").slice(0, FIELD_LIMITS[field]);
+        commit({ ...seg, [field]: raw });
+    };
+
+    const handleKeyDown = (field) => (e) => {
+        if (e.key !== "Backspace" || e.target.value !== "") return;
+        if (field === "m" && seg.d) commit({ ...seg, d: "" });
+        if (field === "y" && seg.m) commit({ ...seg, m: "" });
     };
 
     return (
@@ -55,34 +71,43 @@ export default function WikiDateInput({ value = "", onChange, required = false }
                     label="Día"
                     value={seg.d}
                     onChange={handle("d")}
+                    onKeyDown={handleKeyDown("d")}
                     size="small"
-                    type="number"
-                    inputProps={{ min: 1, max: 31, "aria-label": "Día" }}
-                    sx={{ ...segmentSx, width: 64 }}
+                    type="text"
+                    inputMode="numeric"
+                    inputProps={{ maxLength: 2, "aria-label": "Día" }}
+                    placeholder="DD"
+                    sx={{ ...segmentSx, width: 58 }}
                 />
-                <CyberText sx={{ color: UI_COLORS.textSecondary, fontSize: "1rem" }}>/</CyberText>
+                <CyberText sx={{ color: UI_COLORS.textSecondary, fontSize: "1rem", userSelect: "none" }}>/</CyberText>
                 <TextField
                     label="Mes"
                     value={seg.m}
                     onChange={handle("m")}
+                    onKeyDown={handleKeyDown("m")}
                     size="small"
-                    type="number"
-                    inputProps={{ min: 1, max: 12, "aria-label": "Mes" }}
-                    sx={{ ...segmentSx, width: 64 }}
+                    type="text"
+                    inputMode="numeric"
+                    inputProps={{ maxLength: 2, "aria-label": "Mes" }}
+                    placeholder="MM"
+                    sx={{ ...segmentSx, width: 58 }}
                 />
-                <CyberText sx={{ color: UI_COLORS.textSecondary, fontSize: "1rem" }}>/</CyberText>
+                <CyberText sx={{ color: UI_COLORS.textSecondary, fontSize: "1rem", userSelect: "none" }}>/</CyberText>
                 <TextField
                     label={required ? "Año *" : "Año"}
                     value={seg.y}
                     onChange={handle("y")}
+                    onKeyDown={handleKeyDown("y")}
                     size="small"
-                    type="number"
-                    inputProps={{ min: 1, "aria-label": "Año" }}
-                    sx={{ ...segmentSx, width: 92 }}
+                    type="text"
+                    inputMode="numeric"
+                    inputProps={{ maxLength: 4, "aria-label": "Año" }}
+                    placeholder="AAAA"
+                    sx={{ ...segmentSx, width: 88 }}
                 />
             </Box>
-            <CyberText sx={{ color: UI_COLORS.textSecondary, fontSize: "0.65rem" }}>
-                Formato DD/MM/AAAA. El año es obligatorio; mes y día son opcionales (el día requiere mes).
+            <CyberText sx={{ color: UI_COLORS.textSecondary, fontSize: "0.65rem", lineHeight: 1.45 }}>
+                Calendario D.Z. · año obligatorio · mes y día opcionales
             </CyberText>
         </Box>
     );

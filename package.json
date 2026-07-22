@@ -15,6 +15,8 @@
     "migrate-encyclopedia": "node scripts/migrateEncyclopediaToWiki.mjs",
     "seed-valtia-wiki": "node scripts/seedValtiaWiki.mjs --campaignId=RfY23gcG7No5HcGddo1j",
     "seed-valtia-wiki:dry": "node scripts/seedValtiaWiki.mjs --campaignId=RfY23gcG7No5HcGddo1j --dry-run",
+    "link:vtt-wiki": "node scripts/linkVttToWiki.mjs --campaignId=RfY23gcG7No5HcGddo1j --apply",
+    "link:vtt-wiki:dry": "node scripts/linkVttToWiki.mjs --campaignId=RfY23gcG7No5HcGddo1j --dry",
     "test:wiki-graph": "node --test src/pixi/wikiGraph/wikiGraphCoords.test.mjs",
     "test:validate-ai": "node --test src/utils/validateAiResponse.test.mjs",
     "test:memoria": "node --test src/utils/validateAiResponse.test.mjs src/pixi/wikiGraph/wikiGraphCoords.test.mjs",

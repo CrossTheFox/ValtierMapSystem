@@ -1,42 +1,11 @@
+import { useMemo } from "react";
 import { Box } from "@mui/material";
-import FavoriteIcon from "@mui/icons-material/Favorite";
-import FavoriteBorderIcon from "@mui/icons-material/FavoriteBorder";
 import { CyberText } from "../customs/CustomTexts";
 import { useCharacterSessionPools } from "../../hooks/useCharacterSessionPools";
 import { UI_COLORS } from "../../constants/uiColors";
 import CyberTooltip from "../customs/CyberTooltip";
 
-function PoolPip({ filled, color, onClick, title }) {
-    return (
-        <CyberTooltip title={title} placement="bottom">
-            <Box
-                component="button"
-                type="button"
-                onClick={onClick}
-                sx={{
-                    border: "none",
-                    p: 0,
-                    m: 0,
-                    cursor: "pointer",
-                    bgcolor: "transparent",
-                    lineHeight: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    transition: "transform 0.12s",
-                    "&:hover": { transform: "scale(1.12)" },
-                }}
-            >
-                {filled ? (
-                    <FavoriteIcon sx={{ fontSize: "0.95rem", color, filter: `drop-shadow(0 0 4px ${color}88)` }} />
-                ) : (
-                    <FavoriteBorderIcon sx={{ fontSize: "0.95rem", color: "rgba(255,255,255,0.22)" }} />
-                )}
-            </Box>
-        </CyberTooltip>
-    );
-}
-
-function StrainSegment({ filled, onClick, title }) {
+function EffortSegment({ filled, onClick, title }) {
     const color = "#f97316";
     return (
         <CyberTooltip title={title} placement="bottom">
@@ -90,9 +59,13 @@ function StatePill({ label, active, onClick }) {
 }
 
 export default function SessionPoolHud({ characterId, resourceTracks = [] }) {
-    const { pools, setTrack } = useCharacterSessionPools(characterId, resourceTracks);
+    const tracks = useMemo(
+        () => (resourceTracks || []).filter((t) => t?.key && t.key !== "strain"),
+        [resourceTracks]
+    );
+    const { pools, setTrack } = useCharacterSessionPools(characterId, tracks);
 
-    if (!characterId || !resourceTracks.length) return null;
+    if (!characterId || !tracks.length) return null;
 
     return (
         <Box
@@ -105,11 +78,10 @@ export default function SessionPoolHud({ characterId, resourceTracks = [] }) {
                 px: 0.5,
             }}
         >
-            {resourceTracks.map((track) => {
-                const max = Math.max(track.maxDefault ?? (track.key === "strain" ? 5 : 3), 1);
+            {tracks.map((track) => {
+                const max = Math.max(track.maxDefault ?? 3, 1);
                 const pool = pools[track.key] || { current: 0 };
                 const current = Math.min(Math.max(pool.current ?? 0, 0), max);
-                const isStrain = track.key === "strain";
                 const stateKey = track.stateKey;
                 const flagged = stateKey ? !!pool[stateKey] : false;
                 const stateShort = track.stateLabel?.slice(0, 3).toUpperCase() || "???";
@@ -130,26 +102,14 @@ export default function SessionPoolHud({ characterId, resourceTracks = [] }) {
                             {track.label?.toUpperCase()}
                         </CyberText>
                         <Box sx={{ display: "flex", alignItems: "center", gap: 0.35 }}>
-                            {isStrain ? (
-                                Array.from({ length: max }, (_, i) => (
-                                    <StrainSegment
-                                        key={i}
-                                        filled={i < current}
-                                        title={`Strain ${i + 1}${i < current ? " (gastado)" : ""}`}
-                                        onClick={() => setCurrent(i < current ? i : i + 1)}
-                                    />
-                                ))
-                            ) : (
-                                Array.from({ length: max }, (_, i) => (
-                                    <PoolPip
-                                        key={i}
-                                        filled={i < current}
-                                        color={UI_COLORS.accent}
-                                        title={`Effort ${i + 1}${i < current ? " (gastado)" : ""}`}
-                                        onClick={() => setCurrent(i < current ? i : i + 1)}
-                                    />
-                                ))
-                            )}
+                            {Array.from({ length: max }, (_, i) => (
+                                <EffortSegment
+                                    key={i}
+                                    filled={i < current}
+                                    title={`${track.label || track.key} ${i + 1}${i < current ? " (gastado)" : ""}`}
+                                    onClick={() => setCurrent(i < current ? i : i + 1)}
+                                />
+                            ))}
                             <CyberText sx={{ fontFamily: "monospace", fontSize: "0.55rem", color: UI_COLORS.textSecondary, ml: 0.25 }}>
                                 {current}/{max}
                             </CyberText>

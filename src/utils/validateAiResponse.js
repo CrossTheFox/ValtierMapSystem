@@ -22,6 +22,7 @@ import { AI_MODES } from "../constants/wiki/narrativeAiSchemas.js";
 import {
     REACTION_ARCHETYPE_LABELS,
     NARRATIVE_STATE,
+    NARRATIVE_STATE_LABELS,
     COLLECTIVE_ARCHETYPE,
 } from "../constants/wiki/entityFieldSchemas.js";
 import {
@@ -32,6 +33,232 @@ import {
 
 const KNOWN_NARRATIVE_STATE_VALUES = new Set(Object.values(NARRATIVE_STATE));
 const KNOWN_COLLECTIVE_ARCHETYPE_VALUES = new Set(Object.values(COLLECTIVE_ARCHETYPE));
+
+/**
+ * Map free-text / label narrativeState from the LLM onto the enum key.
+ * Returns null if nothing matches.
+ */
+function normalizeNarrativeStateValue(raw) {
+    if (raw == null) return null;
+    const s = String(raw).trim();
+    if (!s) return null;
+    const lower = s.toLowerCase();
+    if (KNOWN_NARRATIVE_STATE_VALUES.has(lower)) return lower;
+    for (const [key, label] of Object.entries(NARRATIVE_STATE_LABELS)) {
+        if (label.toLowerCase() === lower) return key;
+    }
+    // Gemini often returns prose instead of the enum ("Quebrantado por el dolor…").
+    const KEYWORD_MAP = [
+        [/zarken|corrupt/, NARRATIVE_STATE.CORRUPTA_ZARKEN],
+        [/quebrant|disociad|colapso/, NARRATIVE_STATE.QUEBRADA],
+        [/furios|iracun|\bira\b/, NARRATIVE_STATE.FURIOSA],
+        [/duelo|deprim|apat[ií]a|triste/, NARRATIVE_STATE.DEPRIMIDA],
+        [/obses/, NARRATIVE_STATE.OBSESIVA],
+        [/paranoi/, NARRATIVE_STATE.PARANOICA],
+        [/indiferent|blindad/, NARRATIVE_STATE.INDIFERENTE],
+        [/estable|equilibrad/, NARRATIVE_STATE.ESTABLE],
+    ];
+    for (const [re, key] of KEYWORD_MAP) {
+        if (re.test(lower)) return key;
+    }
+    return null;
+}
+
+function nonempty(v) {
+    return typeof v === "string" ? v.trim() : v != null && v !== "" ? String(v).trim() : "";
+}
+
+/**
+ * Infer relationType from existing edges between two entities (strongest |strength|).
+ */
+function inferRelationTypeBetween(fromEntity, toEntity, relations = []) {
+    if (!fromEntity?.id || !toEntity?.id || !relations.length) return null;
+    const matches = relations.filter(
+        (r) =>
+            (r.fromEntityId === fromEntity.id && r.toEntityId === toEntity.id)
+            || (r.fromEntityId === toEntity.id && r.toEntityId === fromEntity.id)
+    );
+    if (!matches.length) return null;
+    if (matches.length === 1) return normalizeRelationType(matches[0].relationType) ?? matches[0].relationType;
+    matches.sort((a, b) => Math.abs(Number(b.strength ?? 0)) - Math.abs(Number(a.strength ?? 0)));
+    return normalizeRelationType(matches[0].relationType) ?? matches[0].relationType;
+}
+
+/**
+ * Repair common LLM omissions on a change object (mutates a shallow copy).
+ * Returns { change, repairs: string[] }.
+ */
+function repairCascadeChange(rawCh, {
+    impactEntityTitle = "",
+    personalityShift = null,
+    entityKind = null,
+    contextMap,
+    relations = [],
+} = {}) {
+    const ch = { ...rawCh };
+    const repairs = [];
+    const kind = ch.kind;
+
+    if (kind === "entity_state_update") {
+        if (!nonempty(ch.fromEntityTitle) && impactEntityTitle) {
+            ch.fromEntityTitle = impactEntityTitle;
+            repairs.push("fromEntityTitle←impacto");
+        }
+        if (!nonempty(ch.field)) {
+            const fromPs = personalityShift?.to
+                ? normalizeNarrativeStateValue(personalityShift.to)
+                : null;
+            const fromVal = normalizeNarrativeStateValue(ch.newValue);
+            if (fromVal || fromPs) {
+                ch.field = "narrativeState";
+                repairs.push("field←narrativeState");
+                if (!nonempty(ch.newValue) && fromPs) {
+                    ch.newValue = fromPs;
+                    repairs.push("newValue←personalityShift");
+                }
+            } else if (entityKind === "locacion" || entityKind === "organizacion") {
+                if (nonempty(ch.newValue)) {
+                    ch.field = "collectiveMood";
+                    repairs.push("field←collectiveMood");
+                }
+            }
+        }
+        if (ch.field === "narrativeState" && nonempty(ch.newValue)) {
+            const n = normalizeNarrativeStateValue(ch.newValue);
+            if (n && n !== ch.newValue) {
+                ch.newValue = n;
+                repairs.push("newValue←enum");
+            }
+        }
+    } else if (kind === "relation_add" || kind === "relation_update" || kind === "relation_remove") {
+        if (!nonempty(ch.fromEntityTitle) && impactEntityTitle) {
+            ch.fromEntityTitle = impactEntityTitle;
+            repairs.push("fromEntityTitle←impacto");
+        }
+        if (!nonempty(ch.relationType)) {
+            const fromE = nonempty(ch.fromEntityTitle) ? contextMap?.resolve(ch.fromEntityTitle) : null;
+            const toE = nonempty(ch.toEntityTitle) ? contextMap?.resolve(ch.toEntityTitle) : null;
+            const inferred = inferRelationTypeBetween(fromE, toE, relations);
+            if (inferred) {
+                ch.relationType = inferred;
+                repairs.push(`relationType←grafo(${inferred})`);
+            }
+        } else {
+            const n = normalizeRelationType(ch.relationType);
+            if (n && n !== ch.relationType) {
+                ch.relationType = n;
+                repairs.push("relationType←canon");
+            }
+        }
+    }
+
+    return { change: ch, repairs };
+}
+
+/**
+ * Validate + resolve one cascade change (personaje or colectivo).
+ */
+function validateCascadeChange(rawCh, j, {
+    impactEntityTitle,
+    personalityShift = null,
+    entityKind = null,
+    contextMap,
+    relations = [],
+    errorPrefix = `Cambio ${j}`,
+}) {
+    const { change: ch, repairs } = repairCascadeChange(rawCh, {
+        impactEntityTitle,
+        personalityShift,
+        entityKind,
+        contextMap,
+        relations,
+    });
+
+    let chErr = null;
+    let fromEntity = null;
+    let toEntity = null;
+    let resolvedEndpoints = null;
+    let relationType = nonempty(ch.relationType) ? normalizeRelationType(ch.relationType) : null;
+
+    if (ch.kind === "dm_note") {
+        // advisory only
+    } else if (ch.kind === "entity_state_update") {
+        const titleHint = nonempty(ch.fromEntityTitle) || impactEntityTitle;
+        const targetEntity = titleHint ? contextMap.resolve(titleHint) : null;
+        fromEntity = targetEntity;
+        ch.fromEntityTitle = titleHint || ch.fromEntityTitle;
+        if (!targetEntity) {
+            chErr = `${errorPrefix}: entidad "${titleHint}" no encontrada para state_update.`;
+        } else if (!nonempty(ch.field)) {
+            chErr = `${errorPrefix}: entity_state_update requiere "field".`;
+        } else if (!nonempty(ch.newValue)) {
+            chErr = `${errorPrefix}: entity_state_update requiere "newValue".`;
+        } else if (ch.field === "narrativeState") {
+            const normalized = normalizeNarrativeStateValue(ch.newValue);
+            if (!normalized) {
+                chErr = `${errorPrefix}: narrativeState desconocido "${ch.newValue}".`;
+            } else {
+                ch.newValue = normalized;
+            }
+        } else if (ch.field === "collectiveMood") {
+            // free text ok
+        } else if (ch.field === "collectiveArchetype" && !KNOWN_COLLECTIVE_ARCHETYPE_VALUES.has(ch.newValue)) {
+            chErr = `${errorPrefix}: collectiveArchetype desconocido "${ch.newValue}".`;
+        }
+    } else if (
+        ch.kind === "relation_add"
+        || ch.kind === "relation_update"
+        || ch.kind === "relation_remove"
+    ) {
+        fromEntity = nonempty(ch.fromEntityTitle) ? contextMap.resolve(ch.fromEntityTitle) : null;
+        toEntity = nonempty(ch.toEntityTitle) ? contextMap.resolve(ch.toEntityTitle) : null;
+
+        if (!nonempty(ch.fromEntityTitle) || !fromEntity) {
+            chErr = `${errorPrefix}: entidad origen "${ch.fromEntityTitle}" no encontrada.`;
+        } else if (!nonempty(ch.toEntityTitle) || !toEntity) {
+            chErr = `${errorPrefix}: entidad destino "${ch.toEntityTitle}" no encontrada.`;
+        } else if (!nonempty(ch.relationType)) {
+            chErr = `${errorPrefix}: relationType requerido para ${ch.kind}.`;
+        } else {
+            relationType = normalizeRelationType(ch.relationType);
+            if (!relationType) {
+                chErr = `${errorPrefix}: tipo de relación desconocido "${ch.relationType}".`;
+            } else if (ch.kind !== "relation_remove") {
+                const isValid = validateRelationCreate(fromEntity, toEntity, relationType);
+                if (!isValid) {
+                    chErr = `${errorPrefix}: "${relationType}" no válido entre `
+                        + `${fromEntity.entityType} y ${toEntity.entityType}.`;
+                } else {
+                    try {
+                        resolvedEndpoints = resolveRelationEndpoints(fromEntity, toEntity, relationType);
+                    } catch {
+                        resolvedEndpoints = { fromEntityId: fromEntity.id, toEntityId: toEntity.id };
+                    }
+                }
+            } else {
+                try {
+                    resolvedEndpoints = resolveRelationEndpoints(fromEntity, toEntity, relationType);
+                } catch {
+                    resolvedEndpoints = { fromEntityId: fromEntity.id, toEntityId: toEntity.id };
+                }
+            }
+        }
+    } else {
+        chErr = `${errorPrefix}: kind desconocido "${ch.kind}".`;
+    }
+
+    return {
+        ...ch,
+        relationType: relationType ?? (nonempty(ch.relationType) ? ch.relationType : undefined),
+        valid: !chErr,
+        validationError: chErr,
+        fromEntity,
+        toEntity,
+        resolvedEndpoints,
+        repaired: repairs.length > 0,
+        repairNotes: repairs,
+    };
+}
 
 // ── Parse helper ──────────────────────────────────────────────────────────────
 
@@ -51,7 +278,7 @@ function tryParseJson(raw) {
             return {
                 ok: false,
                 error: "La respuesta JSON está truncada (el modelo se quedó sin tokens de salida). "
-                    + "Reintenta; si persiste, usa thinkingBudget: 0 o sube maxOutputTokens.",
+                    + "Reintenta con 3–4 ondas; el pack ahora prioriza vínculos. Si sigue, en Config IA sube el techo de salida.",
             };
         }
         return { ok: false, error: "La respuesta no es JSON válido." };
@@ -343,6 +570,7 @@ export function validateCascadeResponse(raw, contextEntities = [], allEntities =
         expectedWaves = {},
         aiRules = null,
         explicitMentionIds = [],
+        relations = [],
     } = options;
     const rules = resolveNarrativeAiConfig({ aiRules }).rules;
     const explicitIds = new Set(explicitMentionIds);
@@ -351,6 +579,7 @@ export function validateCascadeResponse(raw, contextEntities = [], allEntities =
         eventTitle: "", eventSummary: "", impacts: [],
         proposedEvent: null, blockedSuggestions: [], dmNotes: "",
         missingImpacts: [], extraImpacts: [], waveMismatches: [],
+        invalidChangeTitles: [],
     };
 
     const errors = [];
@@ -386,88 +615,30 @@ export function validateCascadeResponse(raw, contextEntities = [], allEntities =
             );
         }
 
-        // Validate reaction archetype if provided
         if (imp.reactionArchetype
             && !REACTION_ARCHETYPE_LABELS[imp.reactionArchetype]
             && imp.reactionArchetype !== "sin_arquetipo") {
             impErrors.push(`Arquetipo desconocido: "${imp.reactionArchetype}".`);
         }
 
-        // Validate changes
-        const resolvedChanges = [];
-        for (const [j, ch] of (imp.changes ?? []).entries()) {
-            let chErr = null;
-            let fromEntity = null;
-            let toEntity   = null;
-            let resolvedEndpoints = null;
+        const personalityShift = (() => {
+            const ps = imp.personalityShift;
+            if (!ps?.to) return ps ?? null;
+            const normalized = normalizeNarrativeStateValue(ps.to);
+            if (!normalized) return ps;
+            return { ...ps, to: normalized };
+        })();
 
-            if (ch.kind === "dm_note") {
-                // No entity resolution needed
-            } else if (ch.kind === "entity_state_update") {
-                // Validate field and newValue for narrative state updates
-                const targetEntity = ch.fromEntityTitle ? contextMap.resolve(ch.fromEntityTitle) : null;
-                fromEntity = targetEntity;
-                if (!targetEntity) {
-                    chErr = `Cambio ${j}: entidad "${ch.fromEntityTitle}" no encontrada para state_update.`;
-                } else if (!ch.field) {
-                    chErr = `Cambio ${j}: entity_state_update requiere "field".`;
-                } else if (!ch.newValue) {
-                    chErr = `Cambio ${j}: entity_state_update requiere "newValue".`;
-                } else if (ch.field === "narrativeState" && !KNOWN_NARRATIVE_STATE_VALUES.has(ch.newValue)) {
-                    chErr = `Cambio ${j}: narrativeState desconocido "${ch.newValue}".`;
-                } else if (ch.field === "collectiveMood") {
-                    // Free text, no enum validation
-                } else if (ch.field === "collectiveArchetype" && !KNOWN_COLLECTIVE_ARCHETYPE_VALUES.has(ch.newValue)) {
-                    chErr = `Cambio ${j}: collectiveArchetype desconocido "${ch.newValue}".`;
-                }
-            } else {
-                fromEntity = ch.fromEntityTitle ? contextMap.resolve(ch.fromEntityTitle) : null;
-                toEntity   = ch.toEntityTitle   ? contextMap.resolve(ch.toEntityTitle)   : null;
-
-                if (!ch.fromEntityTitle || !fromEntity) {
-                    chErr = `Cambio ${j}: entidad origen "${ch.fromEntityTitle}" no encontrada.`;
-                } else if (!ch.toEntityTitle || !toEntity) {
-                    chErr = `Cambio ${j}: entidad destino "${ch.toEntityTitle}" no encontrada.`;
-                } else if (ch.relationType) {
-                    const relationType = normalizeRelationType(ch.relationType);
-                    if (!relationType) {
-                        chErr = `Cambio ${j}: tipo de relación desconocido "${ch.relationType}".`;
-                    } else if (ch.kind !== "relation_remove") {
-                        const isValid = validateRelationCreate(fromEntity, toEntity, relationType);
-                        if (!isValid) {
-                            chErr = `Cambio ${j}: "${relationType}" no válido entre `
-                                + `${fromEntity.entityType} y ${toEntity.entityType}.`;
-                        } else {
-                            try {
-                                resolvedEndpoints = resolveRelationEndpoints(fromEntity, toEntity, relationType);
-                            } catch {
-                                resolvedEndpoints = { fromEntityId: fromEntity.id, toEntityId: toEntity.id };
-                            }
-                        }
-                    }
-
-                    resolvedChanges.push({
-                        ...ch,
-                        relationType: relationType ?? ch.relationType,
-                        valid: !chErr,
-                        validationError: chErr,
-                        fromEntity,
-                        toEntity,
-                        resolvedEndpoints,
-                    });
-                    continue;
-                }
-            }
-
-            resolvedChanges.push({
-                ...ch,
-                valid: !chErr,
-                validationError: chErr,
-                fromEntity,
-                toEntity,
-                resolvedEndpoints,
-            });
-        }
+        const resolvedChanges = (imp.changes ?? []).map((ch, j) =>
+            validateCascadeChange(ch, j, {
+                impactEntityTitle: imp.entityTitle,
+                personalityShift,
+                entityKind: null,
+                contextMap,
+                relations,
+                errorPrefix: `Cambio ${j}`,
+            })
+        );
 
         const hasChErrors   = resolvedChanges.some((c) => !c.valid);
         const allChInvalid  = resolvedChanges.length > 0 && resolvedChanges.every((c) => !c.valid);
@@ -482,6 +653,7 @@ export function validateCascadeResponse(raw, contextEntities = [], allEntities =
             valid:           impErrors.length === 0,
             validationErrors: impErrors,
             resolvedChanges,
+            personalityShift,
         });
     }
 
@@ -515,7 +687,6 @@ export function validateCascadeResponse(raw, contextEntities = [], allEntities =
         );
     }
 
-    // Validate collectiveImpacts (locacion / organizacion reactions)
     const collectiveImpacts = [];
     for (const [i, ci] of (value.collectiveImpacts ?? []).entries()) {
         const ciErrors = [];
@@ -527,45 +698,16 @@ export function validateCascadeResponse(raw, contextEntities = [], allEntities =
             ciErrors.push(`collectiveImpact ${i}: entityKind inválido "${ci.entityKind}".`);
         }
 
-        const resolvedChanges = [];
-        for (const [j, ch] of (ci.changes ?? []).entries()) {
-            let chErr = null;
-            let fromEntity = null;
-            let toEntity   = null;
-            let resolvedEndpoints = null;
-
-            if (ch.kind === "dm_note" || ch.kind === "entity_state_update") {
-                // same lite validation as above
-                if (ch.kind === "entity_state_update" && ch.field === "narrativeState"
-                    && ch.newValue && !KNOWN_NARRATIVE_STATE_VALUES.has(ch.newValue)) {
-                    chErr = `collectiveImpact ${i} cambio ${j}: narrativeState desconocido "${ch.newValue}".`;
-                }
-            } else if (ch.relationType) {
-                fromEntity = ch.fromEntityTitle ? contextMap.resolve(ch.fromEntityTitle) : null;
-                toEntity   = ch.toEntityTitle   ? contextMap.resolve(ch.toEntityTitle)   : null;
-                const relationType = normalizeRelationType(ch.relationType);
-                if (!relationType) {
-                    chErr = `collectiveImpact ${i} cambio ${j}: relationType desconocido "${ch.relationType}".`;
-                } else if (fromEntity && toEntity) {
-                    try {
-                        resolvedEndpoints = resolveRelationEndpoints(fromEntity, toEntity, relationType);
-                    } catch {
-                        resolvedEndpoints = { fromEntityId: fromEntity.id, toEntityId: toEntity.id };
-                    }
-                }
-                resolvedChanges.push({
-                    ...ch,
-                    relationType: relationType ?? ch.relationType,
-                    valid: !chErr,
-                    validationError: chErr,
-                    fromEntity,
-                    toEntity,
-                    resolvedEndpoints,
-                });
-                continue;
-            }
-            resolvedChanges.push({ ...ch, valid: !chErr, validationError: chErr, fromEntity, toEntity, resolvedEndpoints });
-        }
+        const resolvedChanges = (ci.changes ?? []).map((ch, j) =>
+            validateCascadeChange(ch, j, {
+                impactEntityTitle: ci.entityTitle,
+                personalityShift: null,
+                entityKind: ci.entityKind,
+                contextMap,
+                relations,
+                errorPrefix: `collectiveImpact ${i} cambio ${j}`,
+            })
+        );
 
         collectiveImpacts.push({
             ...ci,
@@ -575,6 +717,17 @@ export function validateCascadeResponse(raw, contextEntities = [], allEntities =
             resolvedChanges,
         });
     }
+
+    const invalidChangeTitles = [
+        ...impacts
+            .filter((imp) => (imp.resolvedChanges ?? []).some((c) => !c.valid))
+            .map((imp) => imp.entityTitle)
+            .filter(Boolean),
+        ...collectiveImpacts
+            .filter((ci) => (ci.resolvedChanges ?? []).some((c) => !c.valid))
+            .map((ci) => ci.entityTitle)
+            .filter(Boolean),
+    ];
 
     return {
         ok: errors.length === 0 && impacts.every((im) => im.valid),
@@ -591,7 +744,44 @@ export function validateCascadeResponse(raw, contextEntities = [], allEntities =
         missingImpacts,
         extraImpacts,
         waveMismatches,
+        invalidChangeTitles,
     };
+}
+
+
+// ── Reflexion retry helper ────────────────────────────────────────────────────
+
+/**
+ * Build a correction user-prompt for the Reflexion-lite retry (Shinn et al., 2023).
+ *
+ * @param {string[]} missingTitles — entityTitles missing and/or with invalid changes
+ * @param {string}   originalContextText
+ * @param {string}   eventText
+ * @param {{ invalidChangeHints?: Array<{ entityTitle: string, errors: string[] }> }} [opts]
+ * @returns {string}
+ */
+export function buildReflexionPrompt(missingTitles, originalContextText, eventText, opts = {}) {
+    const titles = [...new Set([...(missingTitles ?? []), ...(opts.invalidChangeHints ?? []).map((h) => h.entityTitle)].filter(Boolean))];
+    if (!titles.length) return originalContextText;
+    const list = titles.join(", ");
+    const hintLines = (opts.invalidChangeHints ?? [])
+        .map((h) => `- ${h.entityTitle}: ${(h.errors ?? []).join("; ")}`)
+        .filter(Boolean);
+    const hintBlock = hintLines.length
+        ? `\nErrores concretos a corregir en changes:\n${hintLines.join("\n")}\n`
+        : "";
+    return `${originalContextText}
+
+Evento catalizador: "${eventText}"
+
+CORRECCIÓN REQUERIDA: Regenera SOLO los impactos para: ${list}.
+${hintBlock}
+Reglas de corrección (obligatorias):
+- Cada relation_* DEBE incluir relationType (snake_case), fromEntityTitle y toEntityTitle.
+- Cada entity_state_update DEBE incluir field ("narrativeState" o "collectiveMood") y newValue (enum, no prosa).
+- Usa el mismo formato JSON con "impacts" (y collectiveImpacts si aplica).
+- NO omitas campos: si no aplican, usa string vacío "".
+- NO repitas personajes fuera de esta lista.`;
 }
 
 // ── Unified entry point ───────────────────────────────────────────────────────

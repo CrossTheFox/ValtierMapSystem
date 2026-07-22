@@ -32,6 +32,23 @@ service cloud.firestore {
         allow read: if isAuthenticated();
         allow write: if isDM();
       }
+
+      match /aiThreads/{threadId} {
+        allow read, write: if isDM();
+        match /messages/{messageId} {
+          allow read, write: if isDM();
+        }
+      }
+
+      match /sessions/{sessionId} {
+        allow read: if isAuthenticated();
+        allow write: if isDM();
+      }
+
+      match /messages/{messageId} {
+        allow read, create: if isAuthenticated();
+        allow update, delete: if isDM();
+      }
     }
 
     match /maps/{mapId} {

@@ -8,6 +8,7 @@ import {
     setMeasurePointB,
     clearMeasureTool,
 } from "../store/uiSlice";
+import { resolveCellSize, snapToGridCenter } from "../utils/gridMath";
 
 const CYAN = "#00f2ea";
 const PINK = "#ff66ff";
@@ -15,8 +16,25 @@ const PINK = "#ff66ff";
 export default function MapContextMenu() {
     const dispatch = useDispatch();
     const { contextMenu, measureTool } = useSelector((s) => s.ui);
+    const map = useSelector((s) => s.world.map);
+    const gridConfig = useSelector((s) => s.world.gridConfig);
     const menuRef = useRef(null);
     const isMeasuring = !!measureTool.pointA;
+
+    const snapWorld = (x, y, label) => {
+        if (gridConfig?.snap === false) {
+            return { x, y, label };
+        }
+        const cell = resolveCellSize(map, gridConfig);
+        const snapped = snapToGridCenter(x, y, cell);
+        return {
+            x: snapped.x,
+            y: snapped.y,
+            label: label?.startsWith("(")
+                ? `(${Math.round(snapped.x)}, ${Math.round(snapped.y)})`
+                : label,
+        };
+    };
 
     // Close on outside click (ignore right-clicks to allow new menus to open)
     useEffect(() => {
@@ -45,20 +63,12 @@ export default function MapContextMenu() {
     };
 
     const handleMeasureFrom = () => {
-        dispatch(setMeasurePointA({
-            x: contextMenu.worldX,
-            y: contextMenu.worldY,
-            label: pointLabel,
-        }));
+        dispatch(setMeasurePointA(snapWorld(contextMenu.worldX, contextMenu.worldY, pointLabel)));
         dispatch(closeContextMenu());
     };
 
     const handleMeasureTo = () => {
-        dispatch(setMeasurePointB({
-            x: contextMenu.worldX,
-            y: contextMenu.worldY,
-            label: pointLabel,
-        }));
+        dispatch(setMeasurePointB(snapWorld(contextMenu.worldX, contextMenu.worldY, pointLabel)));
         dispatch(closeContextMenu());
     };
 

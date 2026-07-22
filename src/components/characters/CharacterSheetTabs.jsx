@@ -1,9 +1,6 @@
 import { Box } from "@mui/material";
-import ShowChartIcon from "@mui/icons-material/ShowChart";
-import ArticleIcon from "@mui/icons-material/Article";
-import BoltIcon from "@mui/icons-material/Bolt";
-import HubIcon from "@mui/icons-material/Hub";
-import FavoriteIcon from "@mui/icons-material/Favorite";
+import BadgeIcon from "@mui/icons-material/Badge";
+import ConstructionIcon from "@mui/icons-material/Construction";
 
 import CyberTooltip from "../customs/CyberTooltip";
 import { CyberText } from "../customs/CustomTexts";
@@ -11,12 +8,16 @@ import { UI_COLORS } from "../../constants/uiColors";
 import { CHARACTER_SHEET_TOKENS } from "../../constants/characterSheetTokens";
 
 export const SHEET_TABS = [
-    { id: "STATS", label: "STATS", short: "STAT", Icon: ShowChartIcon },
-    { id: "BIO", label: "BIO", short: "BIO", Icon: ArticleIcon },
-    { id: "SKILLS", label: "SKILLS", short: "SKL", Icon: BoltIcon },
-    { id: "SKILL_MATRIX", label: "SKILL_MATRIX", short: "MAT", Icon: HubIcon },
-    { id: "BOND", label: "BOND", short: "BND", Icon: FavoriteIcon },
+    { id: "IDENTIDAD", label: "IDENTIDAD", short: "ID", Icon: BadgeIcon },
+    { id: "KIT", label: "KIT", short: "KIT", Icon: ConstructionIcon },
 ];
+
+/** Map legacy tab ids from previous 5-tab sheet. */
+export function normalizeSheetTab(tabId) {
+    if (tabId === "IDENTIDAD" || tabId === "KIT") return tabId;
+    if (tabId === "SKILLS" || tabId === "SKILL_MATRIX") return "KIT";
+    return "IDENTIDAD";
+}
 
 export default function CharacterSheetTabs({ value, onChange }) {
     return (
@@ -40,7 +41,7 @@ export default function CharacterSheetTabs({ value, onChange }) {
                             onClick={() => onChange(tab.id)}
                             sx={{
                                 flex: 1,
-                                maxWidth: 120,
+                                maxWidth: 160,
                                 height: CHARACTER_SHEET_TOKENS.tabHeight,
                                 border: "none",
                                 borderBottom: active ? `2px solid ${UI_COLORS.anomaly}` : "2px solid transparent",
@@ -63,6 +64,7 @@ export default function CharacterSheetTabs({ value, onChange }) {
                                     fontSize: "0.5rem",
                                     letterSpacing: "0.08em",
                                     display: { xs: "none", sm: "block" },
+                                    color: "inherit",
                                 }}
                             >
                                 {tab.short}

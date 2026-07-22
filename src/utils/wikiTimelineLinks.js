@@ -1,7 +1,7 @@
 import { WIKI_RELATION_TYPES } from "../constants/wikiRelationTypes";
 import { WIKI_ENTITY_TYPES } from "../constants/wikiEntityTypes";
 import { EVENT_KIND_LABELS } from "../constants/wiki/entityFieldSchemas";
-import { getTimelineMeta } from "./wikiTimeline";
+import { getTimelineMeta, resolveEventArc } from "./wikiTimeline";
 
 const R = WIKI_RELATION_TYPES;
 const CHIP_TYPES = new Set([
@@ -68,8 +68,17 @@ export function buildEventCausalTargets(eventId, relations = [], entities = []) 
 
 /**
  * Opciones de filtro derivadas de relaciones existentes en la timeline.
+ * @param {object[]} timelineEntities
+ * @param {object[]} relations
+ * @param {object[]} allEntities
+ * @param {{ id: string, label: string }[]} [arcCatalog]
  */
-export function buildTimelineFilterOptions(timelineEntities = [], relations = [], allEntities = []) {
+export function buildTimelineFilterOptions(
+    timelineEntities = [],
+    relations = [],
+    allEntities = [],
+    arcCatalog = [],
+) {
     const eventIds = new Set(timelineEntities.map((e) => e.id));
     const byId = new Map(allEntities.map((e) => [e.id, e]));
     const locaciones = new Map();
@@ -78,11 +87,19 @@ export function buildTimelineFilterOptions(timelineEntities = [], relations = []
     const eventKinds = new Set();
     const narrativeArcs = new Map();
 
+    for (const a of arcCatalog) {
+        if (a?.id) narrativeArcs.set(a.id, a.label || a.id);
+    }
+
     for (const ent of timelineEntities) {
         const meta = getTimelineMeta(ent);
         if (meta.eventKind) eventKinds.add(meta.eventKind);
-        const arc = meta.narrativeArc?.trim();
-        if (arc) narrativeArcs.set(arc, arc);
+        const resolved = resolveEventArc(ent, arcCatalog);
+        if (resolved.arcId) {
+            narrativeArcs.set(resolved.arcId, resolved.label);
+        } else if (resolved.label) {
+            narrativeArcs.set(`label:${resolved.label}`, resolved.label);
+        }
     }
 
     for (const rel of relations) {
@@ -129,11 +146,11 @@ export function buildTimelineFilterOptions(timelineEntities = [], relations = []
 /**
  * @param {object[]} timelineEntities
  * @param {object[]} relations
- * @param {{ lens: TimelineFilterLens, targetId?: string|null }} filter
+ * @param {{ lens: TimelineFilterLens, targetId?: string|null, arcs?: { id: string, label: string }[] }} filter
  * @returns {Set<string>} event ids that match (empty = show all when lens is all)
  */
 export function getTimelineFilterMatchIds(timelineEntities, relations, filter) {
-    const { lens, targetId } = filter;
+    const { lens, targetId, arcs = [] } = filter;
     if (lens === "all" || !targetId) {
         return new Set(timelineEntities.map((e) => e.id));
     }
@@ -149,8 +166,14 @@ export function getTimelineFilterMatchIds(timelineEntities, relations, filter) {
     }
 
     if (lens === "arco") {
+        const legacyLabel = targetId.startsWith("label:") ? targetId.slice(6) : null;
         for (const ent of timelineEntities) {
-            if (getTimelineMeta(ent).narrativeArc === targetId) matched.add(ent.id);
+            const resolved = resolveEventArc(ent, arcs);
+            if (legacyLabel) {
+                if (resolved.label === legacyLabel) matched.add(ent.id);
+            } else if (resolved.arcId === targetId || resolved.label === targetId) {
+                matched.add(ent.id);
+            }
         }
         return matched;
     }

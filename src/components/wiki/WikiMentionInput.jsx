@@ -3,6 +3,7 @@ import { Box, TextField, Paper, List, ListItemButton, ListItemText, CircularProg
 import Fuse from "fuse.js";
 import { CyberText } from "../customs/CustomTexts";
 import { UI_COLORS } from "../../constants/uiColors";
+import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
 import { buildMentionToken } from "../../utils/wikiSlug";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"];
@@ -405,9 +406,17 @@ const textFieldSx = {
         fontSize: "0.8rem",
     },
     "& .MuiInputLabel-root.Mui-focused": { color: UI_COLORS.accent },
+    "& textarea": {
+        scrollbarWidth: "thin",
+        scrollbarColor: `${UI_COLORS.accent} #0d0d14`,
+        "&::-webkit-scrollbar": { width: "8px" },
+        "&::-webkit-scrollbar-track": { background: "#0d0d14" },
+        "&::-webkit-scrollbar-thumb": {
+            backgroundImage: `linear-gradient(180deg, ${UI_COLORS.accent} 0%, rgba(0, 242, 234, 0.2) 50%, ${UI_COLORS.accent} 100%)`,
+            border: `1px solid ${UI_COLORS.accent}`,
+            borderRadius: "4px",
+        },
+    },
 };
 
-const scrollbarSx = {
-    "&::-webkit-scrollbar": { width: "4px" },
-    "&::-webkit-scrollbar-thumb": { backgroundColor: `${UI_COLORS.accent}66`, borderRadius: "2px" },
-};
+const scrollbarSx = CYBER_SCROLL_STYLE;

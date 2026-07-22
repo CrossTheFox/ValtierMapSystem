@@ -89,6 +89,7 @@ export async function applyProposedWikiEvent({
                 eventKind: proposedEvent.eventKind || fallbackEventKind || "otro",
                 certainty: proposedEvent.certainty || "canon",
                 narrativeArc: "",
+                narrativeArcId: null,
             },
         },
     };

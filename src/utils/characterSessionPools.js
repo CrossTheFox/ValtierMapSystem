@@ -37,11 +37,16 @@ export function getSessionPools(characterId, resourceTracks) {
     const out = {};
     (resourceTracks || []).forEach((track) => {
         const max = Math.max(
-            track.maxDefault ?? (track.key === "strain" ? 5 : 3),
+            track.maxDefault ?? 3,
             1
         );
         const prev = stored[track.key] && typeof stored[track.key] === "object" ? stored[track.key] : {};
-        const current = Math.min(Math.max(Number(prev.current) || 0, 0), max);
+        const hasStoredCurrent = Object.prototype.hasOwnProperty.call(prev, "current");
+        const fallback = track.defaultFull ? max : 0;
+        const current = Math.min(
+            Math.max(hasStoredCurrent ? Number(prev.current) || 0 : fallback, 0),
+            max
+        );
         const pool = { ...defaultPoolForTrack(track), ...prev, current };
         if (track.stateKey) pool[track.stateKey] = !!prev[track.stateKey];
         out[track.key] = pool;

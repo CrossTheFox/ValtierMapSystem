@@ -7,7 +7,8 @@ import CharactersSettingsDialog from "./CharactersSettingsDialog";
 import { useDispatch, useSelector } from 'react-redux';
 import { resetWorldState } from '../store/worldSlice';
 import { fetchPlayerCharacters } from '../store/characterSlice';
-import { showSnackbar, openWikiOverlay, setWikiOverlayMinimized } from '../store/uiSlice';
+import { showSnackbar, openWikiOverlay, restoreDialog } from '../store/uiSlice';
+import { DIALOG_IDS } from '../constants/dialogIds';
 import { ROLES } from '../constants/roles';
 
 const FloatingProfile = ({ profile }) => {
@@ -50,7 +51,7 @@ const FloatingProfile = ({ profile }) => {
             }));
             return;
         }
-        dispatch(setWikiOverlayMinimized(false));
+        dispatch(restoreDialog(DIALOG_IDS.WIKI));
         dispatch(openWikiOverlay({ mode: "list" }));
     };
 

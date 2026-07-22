@@ -1,4 +1,5 @@
 import { createSlice } from "@reduxjs/toolkit";
+import { DIALOG_IDS, INITIAL_MINIMIZED_DIALOGS } from "../constants/dialogIds";
 
 const uiSlice = createSlice({
     name: "ui",
@@ -9,8 +10,7 @@ const uiSlice = createSlice({
         locationDialogTab: 0,
         selectedLore: null,
         isSelectingPosition: false,
-        isMinimized: false,
-        wikiOverlayMinimized: false,
+        minimizedDialogs: { ...INITIAL_MINIMIZED_DIALOGS },
         selectedWorldPosition: null,
         snackbar: {
             open: false,
@@ -44,6 +44,8 @@ const uiSlice = createSlice({
             settings: false,     // AdminSettingsDialog
             loreBrowser: false,  // LoreDialog en modo browse (sin selectedLore)
         },
+        /** IC speech bubbles over map tokens: characterId → { messageId, text, expiresAt } */
+        tokenSpeech: {},
     },
     reducers: {
         selectLocationPreview(state, action) {
@@ -65,12 +67,13 @@ const uiSlice = createSlice({
             }
             state.previewLocation = state.selectedLocation;
             state.locationDialogOpen = true;
-            state.isMinimized = false;
+            state.minimizedDialogs[DIALOG_IDS.LOCATION] = false;
         },
         closeLocation(state) {
             state.selectedLocation = null;
             state.locationDialogOpen = false;
             state.locationDialogTab = 0;
+            state.minimizedDialogs[DIALOG_IDS.LOCATION] = false;
         },
         setIsSelectingPosition(state, action) {
             state.isSelectingPosition = action.payload;
@@ -78,11 +81,28 @@ const uiSlice = createSlice({
         toggleIsSelectingPosition(state) {
             state.isSelectingPosition = !state.isSelectingPosition;
         },
-        setIsMinimized(state, action) {
-            state.isMinimized = action.payload;
+        setDialogMinimized(state, action) {
+            const { id, value } = action.payload;
+            if (id in state.minimizedDialogs) {
+                state.minimizedDialogs[id] = value;
+            }
         },
-        toggleIsMinimized(state) {
-            state.isMinimized = !state.isMinimized;
+        toggleDialogMinimized(state, action) {
+            const id = action.payload;
+            if (id in state.minimizedDialogs) {
+                state.minimizedDialogs[id] = !state.minimizedDialogs[id];
+            }
+        },
+        restoreDialog(state, action) {
+            const id = action.payload;
+            if (id in state.minimizedDialogs) {
+                state.minimizedDialogs[id] = false;
+            }
+        },
+        restoreAllDialogs(state) {
+            Object.keys(state.minimizedDialogs).forEach((id) => {
+                state.minimizedDialogs[id] = false;
+            });
         },
         setSelectedWorldPosition(state, action) {
             state.selectedWorldPosition = action.payload;
@@ -100,6 +120,9 @@ const uiSlice = createSlice({
         },
         setSelectedLore(state, action) {
             state.selectedLore = action.payload;
+            if (action.payload) {
+                state.minimizedDialogs[DIALOG_IDS.LORE] = false;
+            }
         },
 
         // ── Context Menu ──────────────────────────────────────────
@@ -131,7 +154,7 @@ const uiSlice = createSlice({
             state.wikiOverlay.entityId = entityId;
             state.wikiOverlay.vttContext = vttContext;
             state.wikiOverlay.areaFilter = areaFilter;
-            state.wikiOverlayMinimized = false;
+            state.minimizedDialogs[DIALOG_IDS.WIKI] = false;
         },
         closeWikiOverlay(state) {
             state.wikiOverlay.open = false;
@@ -139,13 +162,7 @@ const uiSlice = createSlice({
             state.wikiOverlay.entityId = null;
             state.wikiOverlay.vttContext = null;
             state.wikiOverlay.areaFilter = null;
-            state.wikiOverlayMinimized = false;
-        },
-        setWikiOverlayMinimized(state, action) {
-            state.wikiOverlayMinimized = action.payload;
-        },
-        toggleWikiOverlayMinimized(state) {
-            state.wikiOverlayMinimized = !state.wikiOverlayMinimized;
+            state.minimizedDialogs[DIALOG_IDS.WIKI] = false;
         },
         setWikiOverlayMode(state, action) {
             state.wikiOverlay.mode = action.payload;
@@ -163,8 +180,8 @@ const uiSlice = createSlice({
             const name = action.payload;
             if (name in state.openDialogs) {
                 state.openDialogs[name] = true;
-                if (name === "settings" || name === "sheet" || name === "characters" || name === "loreBrowser") {
-                    state.isMinimized = false;
+                if (name in state.minimizedDialogs) {
+                    state.minimizedDialogs[name] = false;
                 }
             }
         },
@@ -172,6 +189,32 @@ const uiSlice = createSlice({
             const name = action.payload;
             if (name in state.openDialogs) {
                 state.openDialogs[name] = false;
+            }
+            if (name in state.minimizedDialogs) {
+                state.minimizedDialogs[name] = false;
+            }
+        },
+        showTokenSpeech(state, action) {
+            const { characterId, text, messageId, durationMs = 8000 } = action.payload || {};
+            if (!characterId || !text) return;
+            state.tokenSpeech[characterId] = {
+                messageId: messageId ?? null,
+                text: String(text).slice(0, 280),
+                expiresAt: Date.now() + Math.max(3000, Number(durationMs) || 8000),
+            };
+        },
+        dismissTokenSpeech(state, action) {
+            const characterId = action.payload;
+            if (characterId && state.tokenSpeech[characterId]) {
+                delete state.tokenSpeech[characterId];
+            }
+        },
+        pruneExpiredTokenSpeech(state) {
+            const now = Date.now();
+            for (const id of Object.keys(state.tokenSpeech)) {
+                if ((state.tokenSpeech[id]?.expiresAt ?? 0) <= now) {
+                    delete state.tokenSpeech[id];
+                }
             }
         },
     },
@@ -184,8 +227,10 @@ export const {
     clearLocationPreview,
     setIsSelectingPosition,
     toggleIsSelectingPosition,
-    setIsMinimized,
-    toggleIsMinimized,
+    setDialogMinimized,
+    toggleDialogMinimized,
+    restoreDialog,
+    restoreAllDialogs,
     setSelectedWorldPosition,
     showSnackbar,
     hideSnackbar,
@@ -200,10 +245,11 @@ export const {
     setWikiOverlayMode,
     setWikiOverlayEntity,
     setWikiOverlayAreaFilter,
-    setWikiOverlayMinimized,
-    toggleWikiOverlayMinimized,
     openDialog,
     closeDialog,
+    showTokenSpeech,
+    dismissTokenSpeech,
+    pruneExpiredTokenSpeech,
 } = uiSlice.actions;
 
 export default uiSlice.reducer;

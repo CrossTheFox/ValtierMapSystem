@@ -24,9 +24,14 @@ import RemoveCircleOutlineIcon from "@mui/icons-material/RemoveCircleOutline";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import ErrorOutlineIcon      from "@mui/icons-material/ErrorOutline";
 import AutoAwesomeIcon       from "@mui/icons-material/AutoAwesome";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+import BlockIcon from "@mui/icons-material/Block";
+import CancelIcon from "@mui/icons-material/Cancel";
+import HistoryIcon from "@mui/icons-material/History";
+import LightbulbIcon from "@mui/icons-material/Lightbulb";
 import { useDispatch, useSelector } from "react-redux";
 import { CyberTitle, CyberText } from "../customs/CustomTexts";
-import { UI_COLORS } from "../../constants/uiColors";
+import { UI_COLORS, Z_INDEX } from "../../constants/designSystem";
 import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
 import {
     AI_MODES, AI_MODE_LABELS, AI_MODE_TOOLTIPS, SITUATION_INTENTS,
@@ -34,14 +39,25 @@ import {
     CONFIDENCE_TOOLTIPS, TONE_LABELS,
     GEMINI_MODELS,
     cascadeOptsForDepth,
+    CASCADE_SCOUT_THRESHOLD,
 } from "../../constants/wiki/narrativeAiSchemas";
 import {
     buildSituationContext,
     buildCascadeContext,
+    buildScoutContext,
     computePropagationWaves,
+    buildMultiAnchorSituationContext,
+    mergeContextWithExtras,
 } from "../../utils/buildSituationContext";
+import { estimateTokenCount, formatTokenEstimate } from "../../utils/estimateTokenCount";
+import {
+    createAiThread,
+    appendAiThreadMessage,
+    getAiThreadMessages,
+} from "../../../firebase/services/aiThreadService";
+import { listSessionLogs } from "../../../firebase/services/sessionLogService";
 import { resolveWikiMentions }   from "../../utils/resolveWikiMentions";
-import { validateAiResponse }    from "../../utils/validateAiResponse";
+import { validateAiResponse, buildReflexionPrompt } from "../../utils/validateAiResponse";
 import { generateNarrativeAi }   from "../../../firebase/services/narrativeAiService";
 import { addWikiRelation, removeWikiRelation } from "../../store/wikiSlice";
 import { showSnackbar } from "../../store/uiSlice";
@@ -53,6 +69,12 @@ import {
 } from "../../constants/wiki/narrativeAiConfig";
 import { filterGraphEntities } from "../../utils/wikiGraphEntities";
 import { hasGeminiApiKeyConfigured } from "../../utils/aiApiKeys";
+
+const INSPIRATION_PROMPTS = [
+    { label: "3 ganchos", intent: "hook", instruction: "Genera 3 ganchos de escena distintos y jugables." },
+    { label: "Complicar", intent: "complication", instruction: "Complica la situación actual con un giro inesperado pero coherente." },
+    { label: "NPC rápido", intent: "npc", instruction: "Sugiere un NPC memorable con motivación clara para esta escena." },
+];
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -118,6 +140,7 @@ const selectSx = {
 
 /**
  * Dropdown con Menu explícito — evita fallos de MUI Select junto al canvas Pixi.
+ * Backdrop invisible: cierra al clic fuera (como un Select) sin oscurecer el grafo.
  * @param {{ label: string, value: string, options: Array<{value:string,label:string,hint?:string,disabled?:boolean,suffix?:string}>, onChange: (v:string)=>void, helperText?: string }} props
  */
 function LabDropdown({ label, value, options, onChange, helperText }) {
@@ -136,7 +159,7 @@ function LabDropdown({ label, value, options, onChange, helperText }) {
                 fullWidth
                 size="small"
                 variant="outlined"
-                onClick={(e) => setAnchorEl(e.currentTarget)}
+                onClick={(e) => setAnchorEl((prev) => (prev ? null : e.currentTarget))}
                 endIcon={<ExpandMoreIcon sx={{ fontSize: "1rem !important", color: UI_COLORS.textSecondary }} />}
                 sx={labDropdownButtonSx}
             >
@@ -164,10 +187,13 @@ function LabDropdown({ label, value, options, onChange, helperText }) {
                 open={open}
                 onClose={() => setAnchorEl(null)}
                 disableScrollLock
-                hideBackdrop
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
                 anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
                 transformOrigin={{ vertical: "top", horizontal: "left" }}
                 slotProps={{
+                    backdrop: { invisible: true },
                     paper: {
                         sx: {
                             ...labMenuPaperSx,
@@ -175,7 +201,7 @@ function LabDropdown({ label, value, options, onChange, helperText }) {
                         },
                     },
                 }}
-                sx={{ zIndex: 1700 }}
+                sx={{ zIndex: Z_INDEX.wikiLabMenu }}
             >
                 {options.map((opt) => (
                     <MenuItem
@@ -225,16 +251,20 @@ function LabDropdown({ label, value, options, onChange, helperText }) {
 
 function MetaBadge({ label, value, warn }) {
     return (
-        <CyberText
-            component="span"
+        <Chip
+            size="small"
+            label={`${label}: ${value}`}
             sx={{
-                fontSize: "0.7rem",
+                height: 20,
+                fontSize: "0.62rem",
+                mr: 0.5,
+                mb: 0.5,
+                bgcolor: warn ? `${UI_COLORS.accentStrong}18` : `${UI_COLORS.backgroundPrimary}cc`,
                 color: warn ? UI_COLORS.accentStrong : UI_COLORS.textSecondary,
-                mr: 1.5,
+                border: `1px solid ${warn ? UI_COLORS.accentStrong : UI_COLORS.border}44`,
+                "& .MuiChip-label": { px: 0.75 },
             }}
-        >
-            {label}: <strong style={{ color: warn ? UI_COLORS.accentStrong : UI_COLORS.anomaly }}>{value}</strong>
-        </CyberText>
+        />
     );
 }
 
@@ -351,8 +381,8 @@ function SituationCard({ situation, index }) {
                 {situation._errors?.length > 0 && (
                     <Box sx={{ mt: 1, p: 1, bgcolor: `${UI_COLORS.accentStrong}18`, borderRadius: 1 }}>
                         {situation._errors.map((e, i) => (
-                            <CyberText key={i} sx={{ fontSize: "0.7rem", color: UI_COLORS.accentStrong }}>
-                                ⚠ {e}
+                            <CyberText key={i} sx={{ fontSize: "0.7rem", color: UI_COLORS.accentStrong, display: "flex", alignItems: "center", gap: 0.5 }}>
+                                <WarningAmberIcon sx={{ fontSize: "0.85rem" }} /> {e}
                             </CyberText>
                         ))}
                     </Box>
@@ -382,27 +412,34 @@ export default function WikiAiLabPanel({
     const aiRules = aiConfig.rules;
     const generationParams = aiConfig.generation;
 
-    // Controls — solo Gemini API via VITE_GEMINI_API_KEY
+    // Controls — Firebase AI Logic primary; REST fallback if API key in env
     const hasGeminiKey = hasGeminiApiKeyConfigured();
-    const provider = AI_PROVIDERS.GEMINI_DIRECT;
 
     const [mode, setMode]           = useState(AI_MODES.SITUATION);
     const [modelId, setModelId]     = useState(GEMINI_MODELS[0].value);
     const [intent, setIntent]       = useState("");
     const [instruction, setInstruction] = useState("");
     const [debouncedInstruction, setDebouncedInstruction] = useState("");
+    const [extraAnchorIds, setExtraAnchorIds] = useState([]);
+    const [activeThreadId, setActiveThreadId] = useState(null);
+    const [threadMessages, setThreadMessages] = useState([]);
+    const [sessionRecaps, setSessionRecaps] = useState([]);
+    const [estimatedTokens, setEstimatedTokens] = useState(null);
 
     // Cascade propagation depth (slider 1–8)
-    const [propagationDepth, setPropagationDepth] = useState(4);
+    const [propagationDepth, setPropagationDepth] = useState(3);
 
     // Cascade: live mention preview from instruction text
     const [mentionPreview, setMentionPreview] = useState(null);
 
     // Results
-    const [loading, setLoading]     = useState(false);
+    const [loading, setLoading]       = useState(false);
+    const [loadingLabel, setLoadingLabel] = useState("Generando…");
     const [error, setError]         = useState(null);
     const [result, setResult]       = useState(null);
     const [contextMeta, setContextMeta] = useState(null);
+    const [lastContextText, setLastContextText] = useState("");
+    const [showContextText, setShowContextText] = useState(false);
     const [tokenUsage, setTokenUsage]   = useState(null);
 
     // Apply confirmation dialog
@@ -410,7 +447,56 @@ export default function WikiAiLabPanel({
     const [applying, setApplying]       = useState(false);
 
     const modelOptions = GEMINI_MODELS;
-    const graphEntities = filterGraphEntities(entities);
+    const graphEntities = useMemo(() => filterGraphEntities(entities), [entities]);
+    const canonSummary = narrativeSettings?.canonSummary ?? narrativeSettings?.description ?? "";
+
+    useEffect(() => {
+        if (!campaignId) return;
+        listSessionLogs(campaignId, 5).then((rows) => {
+            setSessionRecaps(rows.map((r) => ({ title: r.title, recap: r.recap })));
+        }).catch(console.error);
+    }, [campaignId]);
+
+    useEffect(() => {
+        if (!campaignId || !activeThreadId) {
+            setThreadMessages((prev) => (prev.length === 0 ? prev : []));
+            return;
+        }
+        getAiThreadMessages(campaignId, activeThreadId).then((msgs) => {
+            setThreadMessages(msgs.map((m) => ({ role: m.role, content: m.content })));
+        }).catch(console.error);
+    }, [campaignId, activeThreadId]);
+
+    useEffect(() => {
+        const nextIds = selectedEntity?.id ? [selectedEntity.id] : [];
+        setExtraAnchorIds((prev) => {
+            if (prev.length === nextIds.length && prev.every((id, i) => id === nextIds[i])) {
+                return prev;
+            }
+            return nextIds;
+        });
+    }, [selectedEntity?.id]);
+
+    const neighborAnchorCandidates = useMemo(() => {
+        if (!selectedEntity?.id) return [];
+        const anchorId = selectedEntity.id;
+        const bestStrength = new Map();
+        for (const r of relations) {
+            let otherId = null;
+            if (r.fromEntityId === anchorId) otherId = r.toEntityId;
+            else if (r.toEntityId === anchorId) otherId = r.fromEntityId;
+            if (!otherId) continue;
+            const s = Math.abs(r.strength ?? 0);
+            bestStrength.set(otherId, Math.max(bestStrength.get(otherId) ?? 0, s));
+        }
+        const byId = new Map(graphEntities.map((e) => [e.id, e]));
+        return [...bestStrength.entries()]
+            .map(([id, strength]) => ({ entity: byId.get(id), strength }))
+            .filter((row) => row.entity)
+            .sort((a, b) => b.strength - a.strength || (a.entity.title ?? "").localeCompare(b.entity.title ?? ""))
+            .slice(0, 16)
+            .map((row) => row.entity);
+    }, [selectedEntity?.id, graphEntities, relations]);
 
     useEffect(() => {
         const t = setTimeout(() => setDebouncedInstruction(instruction), 350);
@@ -449,13 +535,61 @@ export default function WikiAiLabPanel({
 
     const handleGenerate = useCallback(async () => {
         setLoading(true);
+        setLoadingLabel("Generando…");
         setError(null);
         setResult(null);
         setContextMeta(null);
+        setLastContextText("");
+        setShowContextText(false);
         setTokenUsage(null);
+        setEstimatedTokens(null);
+
+        const callAi = async (params) => {
+            try {
+                return await generateNarrativeAi({ ...params, provider: AI_PROVIDERS.GEMINI });
+            } catch (firstErr) {
+                if (hasGeminiKey) {
+                    return await generateNarrativeAi({ ...params, provider: AI_PROVIDERS.GEMINI_DIRECT });
+                }
+                throw firstErr;
+            }
+        };
+
+        const wrapExtended = (ctx) => {
+            const merged = mergeContextWithExtras(ctx, {
+                canonSummary,
+                sessionRecaps,
+                threadMessages,
+            });
+            setEstimatedTokens(estimateTokenCount(merged.text));
+            return merged;
+        };
+
+        const persistThread = async (userContent, assistantContent, usage) => {
+            if (!campaignId) return;
+            let threadId = activeThreadId;
+            if (!threadId) {
+                threadId = await createAiThread(campaignId, {
+                    title: selectedEntity?.title ?? "Lab IA",
+                    anchorEntityId: selectedEntity?.id,
+                    mode,
+                });
+                setActiveThreadId(threadId);
+            }
+            await appendAiThreadMessage(campaignId, threadId, { role: "user", content: userContent, mode });
+            await appendAiThreadMessage(campaignId, threadId, {
+                role: "assistant",
+                content: assistantContent,
+                mode,
+                tokenUsage: usage,
+            });
+            const msgs = await getAiThreadMessages(campaignId, threadId);
+            setThreadMessages(msgs.map((m) => ({ role: m.role, content: m.content })));
+        };
 
         try {
             const anchorId = selectedEntity?.id;
+            const anchorIds = extraAnchorIds.length ? extraAnchorIds : [anchorId];
 
             if (mode === AI_MODES.CASCADE) {
                 const depthOpts = cascadeOptsForDepth(propagationDepth);
@@ -466,24 +600,62 @@ export default function WikiAiLabPanel({
                 });
                 onPropagationStart?.(waves);
 
-                // CASCADE: wider context, wave pre-computation, mention expansion
-                const ctx = buildCascadeContext(graphEntities, relations, {
+                const cascadeCtxRaw = buildCascadeContext(graphEntities, relations, {
                     anchorEntityId: anchorId,
                     eventText: instruction,
                     role: "dm",
                     aiRules,
                     ...depthOpts,
                 }, graphEntities);
+                const ctx = wrapExtended(cascadeCtxRaw);
                 setContextMeta(ctx.meta);
+                setLastContextText(ctx.text ?? "");
 
-                const { raw, usage } = await generateNarrativeAi({
+                // ── Two-pass Scout (Pasa 1) when expectedImpacts >= threshold ───
+                const expectedImpacts = ctx.meta.impactTargetCount ?? 0;
+                let contextTextForImpact = ctx.text;
+
+                if (expectedImpacts >= CASCADE_SCOUT_THRESHOLD) {
+                    setLoadingLabel("Analizando red de impacto…");
+                    try {
+                        const scoutCtxText = buildScoutContext(
+                            ctx.meta, anchorId, graphEntities, relations
+                        );
+                        const { raw: scoutRaw } = await callAi({
+                            mode: AI_MODES.CASCADE_SCOUT,
+                            contextText: scoutCtxText,
+                            instruction: instruction || null,
+                            generationParams,
+                            modelId,
+                        });
+                        // Parse Scout output (informational seed — no full validation needed)
+                        let scoutParsed = null;
+                        try { scoutParsed = JSON.parse(scoutRaw); } catch { /* ignore */ }
+                        if (scoutParsed?.impacts?.length) {
+                            const seedLines = [
+                                "# Reacciones previstas — Pasa 1 Scout (referencia para elaborar):",
+                                ...scoutParsed.impacts.map(
+                                    (si) => `- ONDA ${si.wave}: ${si.entityTitle} · ${si.emotionalKeyword} · ${si.topChangeType} — ${si.topChangeDesc}`
+                                ),
+                                "",
+                            ];
+                            contextTextForImpact = `${seedLines.join("\n")}---\n\n${ctx.text}`;
+                        }
+                    } catch (scoutErr) {
+                        // Scout failure is non-fatal: continue with single-pass
+                        console.warn("[Lab IA] Scout (Pasa 1) falló, continuando sin seed:", scoutErr);
+                    }
+                    setLoadingLabel("Generando impacto completo…");
+                }
+
+                // ── Pasa 2 / single-pass Impact ─────────────────────────────────
+                const { raw, usage } = await callAi({
                     mode,
-                    contextText:      ctx.text,
-                    instruction:      instruction || null,
+                    contextText: contextTextForImpact,
+                    instruction: instruction || null,
                     resolvedMentions: ctx.resolvedMentions,
-                    guardrailsText:   ctx.guardrailsText,
+                    guardrailsText: ctx.guardrailsText,
                     generationParams,
-                    provider,
                     modelId,
                 });
                 setTokenUsage(usage);
@@ -498,8 +670,120 @@ export default function WikiAiLabPanel({
                     expectedWaves,
                     aiRules,
                     explicitMentionIds,
+                    relations,
                 });
+
+                // ── Reflexion-lite retry (Shinn et al., 2023) ───────────────────
+                // Trigger: missing impacts, truncated JSON, or invalid changes. Cap: 1 retry.
+                const isTruncated  = validated.errors?.some((e) => e.includes("truncada") || e.includes("truncado"));
+                const missingCount = validated.missingImpacts?.length ?? 0;
+                const invalidTitles = validated.invalidChangeTitles ?? [];
+                if (missingCount > 0 || isTruncated || invalidTitles.length > 0) {
+                    const titlesToRetry = [
+                        ...new Set([
+                            ...(validated.missingImpacts ?? []),
+                            ...invalidTitles,
+                            ...(isTruncated && !(validated.missingImpacts?.length) && !invalidTitles.length
+                                ? (ctx.meta.impactTargets ?? [])
+                                : []),
+                        ].filter(Boolean)),
+                    ];
+                    if (titlesToRetry.length > 0) {
+                        const invalidHints = [];
+                        for (const imp of [...(validated.impacts ?? []), ...(validated.collectiveImpacts ?? [])]) {
+                            if (!titlesToRetry.some((t) => t.toLowerCase() === imp.entityTitle?.toLowerCase())) continue;
+                            const errs = (imp.resolvedChanges ?? [])
+                                .filter((c) => !c.valid)
+                                .map((c) => c.validationError)
+                                .filter(Boolean);
+                            if (errs.length) invalidHints.push({ entityTitle: imp.entityTitle, errors: errs });
+                        }
+                        setLoadingLabel(
+                            invalidTitles.length
+                                ? `Corrigiendo changes incompletos (${titlesToRetry.length})…`
+                                : `Completando impacts faltantes (${titlesToRetry.length})…`
+                        );
+                        try {
+                            const reflexionCtx = buildReflexionPrompt(
+                                titlesToRetry,
+                                ctx.text,
+                                instruction || "",
+                                { invalidChangeHints: invalidHints }
+                            );
+                            const { raw: retryRaw } = await callAi({
+                                mode,
+                                contextText: reflexionCtx,
+                                instruction: null,
+                                resolvedMentions: ctx.resolvedMentions,
+                                guardrailsText: ctx.guardrailsText,
+                                generationParams,
+                                modelId,
+                            });
+                            const retryValidated = validateAiResponse(mode, retryRaw, contextEntities, graphEntities, {
+                                requiredImpactTitles: titlesToRetry,
+                                aiRules,
+                                explicitMentionIds,
+                                relations,
+                            });
+                            // Upsert impacts / collectives by title (replace invalid, append missing).
+                            const upsertByTitle = (base, incoming) => {
+                                const out = [...(base ?? [])];
+                                for (const item of incoming ?? []) {
+                                    const key = item.entityTitle?.toLowerCase().trim();
+                                    if (!key) continue;
+                                    const idx = out.findIndex((x) => x.entityTitle?.toLowerCase().trim() === key);
+                                    if (idx >= 0) out[idx] = item;
+                                    else out.push(item);
+                                }
+                                return out;
+                            };
+                            if (retryValidated.impacts?.length > 0) {
+                                validated.impacts = upsertByTitle(validated.impacts, retryValidated.impacts);
+                            }
+                            if (retryValidated.collectiveImpacts?.length > 0) {
+                                validated.collectiveImpacts = upsertByTitle(
+                                    validated.collectiveImpacts,
+                                    retryValidated.collectiveImpacts
+                                );
+                            }
+                            const reportedSet = new Set(
+                                validated.impacts.map((i) => i.entityTitle?.toLowerCase().trim()).filter(Boolean)
+                            );
+                            validated.missingImpacts = (ctx.meta.impactTargets ?? []).filter(
+                                (t) => !reportedSet.has(t.toLowerCase().trim())
+                            );
+                            validated.invalidChangeTitles = [
+                                ...validated.impacts
+                                    .filter((imp) => (imp.resolvedChanges ?? []).some((c) => !c.valid))
+                                    .map((imp) => imp.entityTitle)
+                                    .filter(Boolean),
+                                ...(validated.collectiveImpacts ?? [])
+                                    .filter((ci) => (ci.resolvedChanges ?? []).some((c) => !c.valid))
+                                    .map((ci) => ci.entityTitle)
+                                    .filter(Boolean),
+                            ];
+                            validated.errors = (validated.errors ?? []).filter(
+                                (e) => !e.startsWith("Faltan impacts")
+                            );
+                            if (validated.missingImpacts.length === 0) {
+                                validated.ok = validated.impacts.every((im) => im.valid);
+                            }
+                        } catch (retryErr) {
+                            console.warn("[Lab IA] Reflexion retry falló:", retryErr);
+                        }
+                    }
+                }
+
                 setResult(validated);
+                try {
+                    await persistThread(instruction, validated.summary ?? "Evento cascada generado", usage);
+                } catch (persistErr) {
+                    console.warn("[Lab IA] No se pudo guardar el hilo:", persistErr);
+                    setError(
+                        `Generación OK, pero el hilo no se guardó: ${persistErr.message ?? persistErr}. `
+                        + "Si ves 'insufficient permissions', despliega firestore.rules (colección aiThreads)."
+                    );
+                }
             } else {
                 const { waves } = computePropagationWaves(anchorId, graphEntities, relations, {
                     strategy: "bfs",
@@ -508,21 +792,21 @@ export default function WikiAiLabPanel({
                 });
                 onPropagationStart?.(waves);
 
-                // SITUATION / NARRATIVE_IMPACT: standard flow
-                const ctx = buildSituationContext(graphEntities, relations, {
+                const ctx = wrapExtended(buildMultiAnchorSituationContext(graphEntities, relations, {
+                    anchorEntityIds: anchorIds,
                     anchorEntityId: anchorId,
                     intent,
                     role: "dm",
-                });
+                }));
                 setContextMeta(ctx.meta);
+                setLastContextText(ctx.text ?? "");
 
-                const { raw, usage } = await generateNarrativeAi({
+                const { raw, usage } = await callAi({
                     mode,
                     contextText: ctx.text,
-                    intent:      intent || null,
+                    intent: intent || null,
                     instruction: instruction || null,
                     generationParams,
-                    provider,
                     modelId,
                 });
                 setTokenUsage(usage);
@@ -530,6 +814,19 @@ export default function WikiAiLabPanel({
                 const contextEntities = graphEntities.filter((e) => ctx.meta.entityIds.includes(e.id));
                 const validated = validateAiResponse(mode, raw, contextEntities, graphEntities);
                 setResult(validated);
+
+                const assistantSummary = mode === AI_MODES.SITUATION
+                    ? (validated.situations ?? []).map((s) => s.title).join(" · ")
+                    : validated.summary ?? "Respuesta generada";
+                try {
+                    await persistThread(intent || instruction || mode, assistantSummary, usage);
+                } catch (persistErr) {
+                    console.warn("[Lab IA] No se pudo guardar el hilo:", persistErr);
+                    setError(
+                        `Generación OK, pero el hilo no se guardó: ${persistErr.message ?? persistErr}. `
+                        + "Si ves 'insufficient permissions', despliega firestore.rules (colección aiThreads)."
+                    );
+                }
             }
         } catch (err) {
             setError(err.message ?? "Error desconocido.");
@@ -541,10 +838,18 @@ export default function WikiAiLabPanel({
                 onPropagationEnd?.();
             }
         }
-    }, [mode, modelId, intent, instruction, selectedEntity, graphEntities, relations, aiRules, generationParams, propagationOpts, propagationDepth, onPropagationStart, onPropagationEnd, restoreCascadePreview]);
+    }, [
+        mode, modelId, intent, instruction, selectedEntity, graphEntities, relations,
+        aiRules, generationParams, propagationOpts, propagationDepth,
+        onPropagationStart, onPropagationEnd, restoreCascadePreview,
+        canonSummary, sessionRecaps, threadMessages, extraAnchorIds,
+        activeThreadId, campaignId, hasGeminiKey,
+    ]);
 
     // When the anchor entity or depth changes in cascade mode, update the static preview halo.
     // When leaving cascade mode, clear it.
+    // IMPORTANT: graphEntities must be referentially stable (memoized) or this loops forever
+    // via onPropagationStart → parent setState → re-render → new filterGraphEntities array.
     useEffect(() => {
         if (mode !== AI_MODES.CASCADE || !selectedEntity?.id || !onPropagationStart) {
             onPropagationEnd?.();
@@ -556,7 +861,16 @@ export default function WikiAiLabPanel({
             ...propagationOpts,
         });
         onPropagationStart(waves, { preview: true });
-    }, [mode, selectedEntity?.id, propagationDepth, graphEntities, relations, aiRules, instruction, onPropagationStart, onPropagationEnd]);
+    }, [
+        mode,
+        selectedEntity?.id,
+        propagationDepth,
+        graphEntities,
+        relations,
+        propagationOpts,
+        onPropagationStart,
+        onPropagationEnd,
+    ]);
 
     const handleApplyRelation = useCallback(async (rel) => {
         if (!rel.valid || !campaignId) return;
@@ -646,18 +960,27 @@ export default function WikiAiLabPanel({
                 />
             </Box>
 
-            {/* Controls (scrollable) */}
+            {/* Body: single scroll so controls + results are always reachable */}
             <Box
                 sx={{
                     flex: 1,
                     minHeight: 0,
                     overflowY: "auto",
+                    display: "flex",
+                    flexDirection: "column",
+                    ...CYBER_SCROLL_STYLE,
+                }}
+            >
+            {/* Controls */}
+            <Box
+                sx={{
+                    flexShrink: 0,
                     px: 1.5,
                     py: 1.5,
                     display: "flex",
                     flexDirection: "column",
                     gap: 1.5,
-                    ...CYBER_SCROLL_STYLE,
+                    borderBottom: `1px solid ${UI_COLORS.border}`,
                 }}
             >
                 {/* Mode — narrative_impact is hidden from UI (kept for CLI regression only) */}
@@ -716,12 +1039,13 @@ export default function WikiAiLabPanel({
                             bgcolor: hasGeminiKey ? `${UI_COLORS.anomaly}08` : `${UI_COLORS.accentStrong}10`,
                         }}
                     >
-                        <CyberText sx={{ fontSize: "0.72rem", color: hasGeminiKey ? UI_COLORS.anomaly : UI_COLORS.accentStrong }}>
-                            Gemini API · <code style={{ fontSize: "0.68rem" }}>VITE_GEMINI_API_KEY</code>
+                        <CyberText sx={{ fontSize: "0.72rem", color: UI_COLORS.anomaly }}>
+                            Firebase AI Logic (primario)
+                            {hasGeminiKey && " · REST fallback disponible"}
                         </CyberText>
                         {!hasGeminiKey && (
                             <CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.textSecondary, mt: 0.35, lineHeight: 1.4 }}>
-                                Key no detectada en el build. Añádela al <code>.env</code> local o en Cloudflare Pages → Settings → Environment variables.
+                                Si Firebase AI Logic falla, añade <code>VITE_GEMINI_API_KEY</code> al <code>.env</code> como respaldo.
                             </CyberText>
                         )}
                     </Box>
@@ -750,7 +1074,12 @@ export default function WikiAiLabPanel({
                                 bgcolor: `${UI_COLORS.accent}18`,
                                 color: UI_COLORS.accent,
                                 border: `1px solid ${UI_COLORS.accent}44`,
-                                maxWidth: 160,
+                                maxWidth: 220,
+                                "& .MuiChip-label": {
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                },
                             }}
                         />
                     ) : (
@@ -758,6 +1087,87 @@ export default function WikiAiLabPanel({
                             Selecciona una entidad en el wiki
                         </CyberText>
                     )}
+                </Box>
+
+                {/* Multi-ancla + hilo — neighbors of current selection */}
+                <Box>
+                    <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary, mb: 0.5, letterSpacing: 0.5 }}>
+                        CONTEXTO (MULTI-ANCLA)
+                    </CyberText>
+                    {!selectedEntity ? (
+                        <CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.textSecondary }}>
+                            Selecciona un nodo para ver vecinos y añadir anclas extra.
+                        </CyberText>
+                    ) : (
+                        <>
+                            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mb: 0.5 }}>
+                                <Chip
+                                    label={`Ancla · ${selectedEntity.title}`}
+                                    size="small"
+                                    sx={{
+                                        height: 20,
+                                        fontSize: "0.6rem",
+                                        bgcolor: `${UI_COLORS.accent}22`,
+                                        color: UI_COLORS.accent,
+                                        border: `1px solid ${UI_COLORS.accent}66`,
+                                        maxWidth: 180,
+                                        "& .MuiChip-label": { overflow: "hidden", textOverflow: "ellipsis" },
+                                    }}
+                                />
+                            </Box>
+                            {neighborAnchorCandidates.length === 0 ? (
+                                <CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.textSecondary }}>
+                                    Sin vecinos directos en el grafo.
+                                </CyberText>
+                            ) : (
+                                <>
+                                    <CyberText sx={{ fontSize: "0.58rem", color: UI_COLORS.textSecondary, mb: 0.35, letterSpacing: 0.5 }}>
+                                        VECINOS (click = ancla extra · máx. 3)
+                                    </CyberText>
+                                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                                        {neighborAnchorCandidates.map((e) => {
+                                            const active = extraAnchorIds.includes(e.id);
+                                            return (
+                                                <Chip
+                                                    key={e.id}
+                                                    label={e.title}
+                                                    size="small"
+                                                    onClick={() => setExtraAnchorIds((prev) => {
+                                                        const primary = selectedEntity.id;
+                                                        const without = prev.filter((id) => id !== e.id && id !== primary);
+                                                        if (active) return [primary, ...without];
+                                                        return [primary, ...without, e.id].slice(0, 4);
+                                                    })}
+                                                    sx={{
+                                                        height: 20,
+                                                        fontSize: "0.6rem",
+                                                        cursor: "pointer",
+                                                        bgcolor: active ? `${UI_COLORS.anomaly}22` : "transparent",
+                                                        color: active ? UI_COLORS.anomaly : UI_COLORS.textSecondary,
+                                                        border: `1px solid ${active ? UI_COLORS.anomaly : UI_COLORS.border}55`,
+                                                        maxWidth: 140,
+                                                        "& .MuiChip-label": { overflow: "hidden", textOverflow: "ellipsis" },
+                                                    }}
+                                                />
+                                            );
+                                        })}
+                                    </Box>
+                                </>
+                            )}
+                        </>
+                    )}
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mt: 0.75 }}>
+                        <HistoryIcon sx={{ fontSize: "0.85rem", color: UI_COLORS.textSecondary }} />
+                        <CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.textSecondary, flex: 1 }}>
+                            {activeThreadId ? `Hilo activo · ${threadMessages.length} msgs` : "Nuevo hilo al generar"}
+                        </CyberText>
+                        {activeThreadId && (
+                            <Button size="small" onClick={() => setActiveThreadId(null)}
+                                sx={{ fontSize: "0.58rem", color: UI_COLORS.textSecondary, minWidth: 0, py: 0 }}>
+                                NUEVO
+                            </Button>
+                        )}
+                    </Box>
                 </Box>
 
                 {/* Intent (situation only) */}
@@ -839,8 +1249,9 @@ export default function WikiAiLabPanel({
                                 {mentionPreview.ambiguous.length > 0 && (
                                     <Box>
                                         {mentionPreview.ambiguous.map((a, i) => (
-                                            <CyberText key={i} sx={{ fontSize: "0.63rem", color: "#ffa726" }}>
-                                                ⚠ "{a.text}" es ambiguo ({a.candidates.map((c) => c.title).join(", ")})
+                                            <CyberText key={i} sx={{ fontSize: "0.63rem", color: "#ffa726", display: "flex", alignItems: "center", gap: 0.5 }}>
+                                                <WarningAmberIcon sx={{ fontSize: "0.8rem" }} />
+                                                &quot;{a.text}&quot; es ambiguo ({a.candidates.map((c) => c.title).join(", ")})
                                             </CyberText>
                                         ))}
                                     </Box>
@@ -901,8 +1312,37 @@ export default function WikiAiLabPanel({
                             }}
                         />
                         <CyberText sx={{ fontSize: "0.6rem", color: UI_COLORS.textSecondary }}>
-                            {`~${12000 + propagationDepth * 2500} tokens · ${20 + propagationDepth * 10} fichas máx`}
+                            {estimatedTokens != null
+                                ? `${formatTokenEstimate(estimatedTokens)} tokens estimados`
+                                : `recom. 3–4 ondas · núcleo ~${12 + propagationDepth * 6} fichas`}
+                            {" · depth alta gasta salida JSON"}
                         </CyberText>
+                    </Box>
+                )}
+
+                {/* Inspiración rápida */}
+                {mode === AI_MODES.SITUATION && (
+                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                        {INSPIRATION_PROMPTS.map((p) => (
+                            <Button
+                                key={p.label}
+                                size="small"
+                                variant="outlined"
+                                startIcon={<LightbulbIcon sx={{ fontSize: "0.9rem !important" }} />}
+                                onClick={() => {
+                                    setIntent(p.intent);
+                                    setInstruction(p.instruction);
+                                }}
+                                sx={{
+                                    fontSize: "0.62rem",
+                                    borderColor: `${UI_COLORS.anomaly}55`,
+                                    color: UI_COLORS.anomaly,
+                                    py: 0.25,
+                                }}
+                            >
+                                {p.label}
+                            </Button>
+                        ))}
                     </Box>
                 )}
 
@@ -913,7 +1353,6 @@ export default function WikiAiLabPanel({
                     fullWidth
                     disabled={
                         loading
-                        || !hasGeminiKey
                         || !selectedEntity
                         || ((mode === AI_MODES.NARRATIVE_IMPACT || mode === AI_MODES.CASCADE) && !instruction.trim())
                     }
@@ -929,30 +1368,100 @@ export default function WikiAiLabPanel({
                         "&:disabled": { borderColor: UI_COLORS.border, color: UI_COLORS.textSecondary },
                     }}
                 >
-                    {loading ? "Generando…" : "Generar"}
+                    {loading ? loadingLabel : "Generar"}
                 </Button>
 
                 {/* Context meta */}
-                {contextMeta && (
-                    <Box>
-                        <MetaBadge label="fichas" value={contextMeta.entityCount} />
-                        <MetaBadge label="relaciones" value={contextMeta.relationCount} />
-                        {contextMeta.waveCount != null && (
-                            <MetaBadge label="ondas" value={contextMeta.waveCount} />
-                        )}
-                        {contextMeta.impactTargetCount != null && (
-                            <MetaBadge label="impactos" value={contextMeta.impactTargetCount} />
-                        )}
-                        {contextMeta.truncated && <MetaBadge label="truncado" value="SÍ" warn />}
-                        {tokenUsage && (
-                            <MetaBadge
-                                label="tokens"
-                                value={`${tokenUsage.promptTokenCount ?? tokenUsage.prompt_tokens ?? "?"} in / ${tokenUsage.candidatesTokenCount ?? tokenUsage.completion_tokens ?? "?"} out`}
-                            />
-                        )}
+                {(contextMeta || estimatedTokens != null) && (
+                    <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+                        <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 0.25 }}>
+                            {contextMeta && (
+                                <>
+                                    <MetaBadge label="fichas" value={contextMeta.entityCount} />
+                                    <MetaBadge label="relaciones" value={contextMeta.relationCount} />
+                                    {contextMeta.waveCount != null && (
+                                        <MetaBadge label="ondas" value={contextMeta.waveCount} />
+                                    )}
+                                    {contextMeta.impactTargetCount != null && (
+                                        <MetaBadge label="impactos" value={contextMeta.impactTargetCount} />
+                                    )}
+                                    {contextMeta.truncated && <MetaBadge label="truncado" value="SÍ" warn />}
+                                </>
+                            )}
+                            {estimatedTokens != null && (
+                                <MetaBadge label="ctx est." value={formatTokenEstimate(estimatedTokens)} />
+                            )}
+                            {tokenUsage && (
+                                <MetaBadge
+                                    label="tokens"
+                                    value={`${tokenUsage.promptTokenCount ?? tokenUsage.prompt_tokens ?? "?"} in / ${tokenUsage.candidatesTokenCount ?? tokenUsage.completion_tokens ?? "?"} out`}
+                                />
+                            )}
+                            {lastContextText && (
+                                <Button
+                                    size="small"
+                                    onClick={() => setShowContextText((v) => !v)}
+                                    sx={{
+                                        ml: 0.5,
+                                        minWidth: 0,
+                                        fontSize: "0.55rem",
+                                        fontFamily: "'Orbitron', sans-serif",
+                                        letterSpacing: 0.5,
+                                        color: UI_COLORS.anomaly,
+                                        border: `1px solid ${UI_COLORS.anomaly}44`,
+                                        py: 0.1,
+                                        px: 0.75,
+                                    }}
+                                >
+                                    {showContextText ? "Ocultar contexto" : "Ver lo que vio la IA"}
+                                </Button>
+                            )}
+                        </Box>
+                        <Collapse in={showContextText && Boolean(lastContextText)}>
+                            <Box
+                                sx={{
+                                    mt: 0.5,
+                                    p: 1,
+                                    maxHeight: 220,
+                                    overflow: "auto",
+                                    bgcolor: `${UI_COLORS.backgroundPrimary}ee`,
+                                    border: `1px solid ${UI_COLORS.border}`,
+                                    borderRadius: 1,
+                                    ...CYBER_SCROLL_STYLE,
+                                }}
+                            >
+                                <CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.textSecondary, mb: 0.5 }}>
+                                    Texto exacto enviado como contexto (subgrafo + fichas). Si falta alguien
+                                    o salió "truncado", baja las ondas o ajusta anclas/leyenda.
+                                </CyberText>
+                                <Box
+                                    component="pre"
+                                    sx={{
+                                        m: 0,
+                                        whiteSpace: "pre-wrap",
+                                        wordBreak: "break-word",
+                                        fontSize: "0.62rem",
+                                        fontFamily: "'Fira Sans', monospace",
+                                        color: UI_COLORS.textPrimary,
+                                        lineHeight: 1.45,
+                                    }}
+                                >
+                                    {lastContextText}
+                                </Box>
+                            </Box>
+                        </Collapse>
                     </Box>
                 )}
+            </Box>
 
+            {/* Results */}
+            <Box
+                sx={{
+                    flexShrink: 0,
+                    px: 1.5,
+                    py: 1.5,
+                }}
+            >
                 {/* Error */}
                 {error && (
                     <Box sx={{ p: 1.5, bgcolor: `${UI_COLORS.accentStrong}18`, border: `1px solid ${UI_COLORS.accentStrong}44`, borderRadius: 1 }}>
@@ -1072,8 +1581,8 @@ export default function WikiAiLabPanel({
                                 </CyberText>
 
                                 {rel.validationError && (
-                                    <CyberText sx={{ fontSize: "0.7rem", color: UI_COLORS.accentStrong, mb: 0.75 }}>
-                                        ✗ {rel.validationError}
+                                    <CyberText sx={{ fontSize: "0.7rem", color: UI_COLORS.accentStrong, mb: 0.75, display: "flex", alignItems: "center", gap: 0.5 }}>
+                                        <CancelIcon sx={{ fontSize: "0.85rem" }} /> {rel.validationError}
                                     </CyberText>
                                 )}
 
@@ -1106,8 +1615,9 @@ export default function WikiAiLabPanel({
                                 </CyberTitle>
                                 {result.blockedSuggestions.map((b, i) => (
                                     <Box key={i} sx={{ p: 1, mb: 0.75, bgcolor: `${UI_COLORS.backgroundPrimary}cc`, border: `1px solid ${UI_COLORS.border}`, borderRadius: 1 }}>
-                                        <CyberText sx={{ fontSize: "0.75rem", color: UI_COLORS.textPrimary, mb: 0.25 }}>
-                                            🚫 {b.description}
+                                        <CyberText sx={{ fontSize: "0.75rem", color: UI_COLORS.textPrimary, mb: 0.25, display: "flex", alignItems: "flex-start", gap: 0.5 }}>
+                                            <BlockIcon sx={{ fontSize: "0.9rem", mt: 0.1, flexShrink: 0 }} />
+                                            {b.description}
                                         </CyberText>
                                         <CyberText sx={{ fontSize: "0.7rem", color: UI_COLORS.textSecondary }}>
                                             {b.reason}
@@ -1137,12 +1647,13 @@ export default function WikiAiLabPanel({
                     />
                 )}
             </Box>
+            </Box>
 
             {/* ── Confirm apply dialog ── */}
             <Dialog
                 open={Boolean(applyTarget)}
                 onClose={() => setApplyTarget(null)}
-                sx={{ zIndex: 1500 }}
+                sx={{ zIndex: Z_INDEX.wikiDialog }}
                 PaperProps={{
                     sx: { bgcolor: UI_COLORS.backgroundSecondary, border: `1px solid ${UI_COLORS.border}`, minWidth: 340 },
                 }}

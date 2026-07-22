@@ -160,7 +160,9 @@ export function layoutSectorBranch(bisectorDeg, halfSpanDeg, treeData, classRoot
     const rLb = rOut * f.lb;
 
     if (classRoot?.key) {
-        add(classRoot, rClass, bisectorDeg);
+        // Full-orbit (halfSpan ~180°): park class root at true center so labels/nodes don't collide
+        const classR = halfSpanDeg >= 179 ? 0 : rClass;
+        add(classRoot, classR, bisectorDeg);
     }
 
     const traits = [...(treeData?.traits || [])].slice(0, 6);

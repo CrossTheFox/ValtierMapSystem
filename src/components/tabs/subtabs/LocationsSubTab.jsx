@@ -18,15 +18,17 @@ import { useCampaignWikiEntities } from '../../../hooks/useCampaignWikiEntities'
 import { linkWikiLocacionToVtt } from '../../../../firebase/services/wikiVttLinkService';
 import { fetchWikiEntities } from '../../../store/wikiSlice';
 import AutoStoriesIcon from '@mui/icons-material/AutoStories';
+import { VttToWikiLinkBadge } from '../../wiki/VttWikiLinkBadge';
 import { UI_COLORS } from '../../../constants/uiColors';
 import { EntityImageManager } from '../../EntityImageManager';
 import useDialogActions from '../../../hooks/useDialogActions';
+import { DIALOG_IDS } from '../../../constants/dialogIds';
 
 export default function LocationsSubTab({ currentCampaignId, locations, maps }) {
     const dispatch = useDispatch();
     const { isSelectingPosition, selectedWorldPosition } = useSelector((state) => state.ui);
     const uid = useSelector((state) => state.player.profile?.uid);
-    const { forceMinimize } = useDialogActions();
+    const { forceMinimize } = useDialogActions(DIALOG_IDS.LOCATION);
     const wikiEntities = useCampaignWikiEntities(currentCampaignId);
 
     const [selectedItem, setSelectedItem] = useState(null);
@@ -249,9 +251,14 @@ export default function LocationsSubTab({ currentCampaignId, locations, maps }) 
 
                                     <Box sx={{ border: `1px solid ${UI_COLORS.accent}33`, p: 2, borderRadius: 0 }}>
                                         <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
-                                            <CyberText sx={{ color: UI_COLORS.accent, fontSize: '0.75rem' }}>
-                                                NARRATIVE_ARCHIVE_LINK
-                                            </CyberText>
+                                            <Stack direction="row" alignItems="center" gap={1}>
+                                                <CyberText sx={{ color: UI_COLORS.accent, fontSize: '0.75rem' }}>
+                                                    NARRATIVE_ARCHIVE_LINK
+                                                </CyberText>
+                                                {linkedNarrativeEntity && (
+                                                    <VttToWikiLinkBadge wikiEntity={linkedNarrativeEntity} compact />
+                                                )}
+                                            </Stack>
                                             <Tooltip title={selectedItem.id ? "Abrir o crear ficha en el archivo" : "Guarda la ubicación primero"}>
                                                 <span>
                                                     <IconButton

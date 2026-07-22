@@ -19,7 +19,6 @@ const CAMPAIGN_ID = "RfY23gcG7No5HcGddo1j"; // Tu UUID real
 
 const resourceTracks = [
     { key: "effort", label: "Effort", maxDefault: 3, stateKey: "exhausted", stateLabel: "Exhausted" },
-    { key: "strain", label: "Strain", maxDefault: 5, stateKey: "broken", stateLabel: "Broken" }
 ];
 
 const statsDefinition = [ //TODO: NO HARDCODEAR, se debe poder configurar por campaña.

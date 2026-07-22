@@ -8,15 +8,17 @@ import { safeDestroy } from "./pixiCleanup";
 import { loadTexture } from "../../firebase/services/assetLoader";
 import {
     setIsSelectingPosition,
-    toggleIsMinimized,
+    restoreDialog,
     setSelectedWorldPosition,
     openContextMenu,
     closeContextMenu,
     setMeasurePointB,
     clearMeasureTool,
 } from "../store/uiSlice";
+import { DIALOG_IDS } from "../constants/dialogIds";
 import locationIconPath from "../assets/LocationNode.svg";
 import { UI_COLORS } from "../constants/uiColors";
+import { resolveCellSize, snapToGridCenter } from "../utils/gridMath";
 
 const RIGHT_CLICK_DRAG_THRESHOLD = 5; // px — below this → treat as click, not drag
 
@@ -24,8 +26,12 @@ export default function MapViewportProvider({ children, onViewportReady }) {
     const { app } = useApplication();
     const dispatch = useDispatch();
 
-    const { map, assetsStatus } = useSelector((state) => state.world);
+    const { map, assetsStatus, gridConfig } = useSelector((state) => state.world);
     const { isSelectingPosition, measureTool } = useSelector((state) => state.ui);
+    const gridConfigRef = useRef(gridConfig);
+    const mapRef = useRef(map);
+    useEffect(() => { gridConfigRef.current = gridConfig; }, [gridConfig]);
+    useEffect(() => { mapRef.current = map; }, [map]);
 
     const [viewport, setViewport] = useState(null);
     const viewportRef = useRef(null);
@@ -195,7 +201,15 @@ export default function MapViewportProvider({ children, onViewportReady }) {
             if (e.button !== 0) return;
             // Don't interfere if position-selection mode is also active
             if (isSelectingRef.current) return;
-            const worldPos = viewport.toWorld(e.global.x, e.global.y);
+            let worldPos = viewport.toWorld(e.global.x, e.global.y);
+            const gc = gridConfigRef.current;
+            if (gc?.snap !== false) {
+                worldPos = snapToGridCenter(
+                    worldPos.x,
+                    worldPos.y,
+                    resolveCellSize(mapRef.current, gc),
+                );
+            }
             dispatch(setMeasurePointB({
                 x:     worldPos.x,
                 y:     worldPos.y,
@@ -244,7 +258,7 @@ export default function MapViewportProvider({ children, onViewportReady }) {
             const wp = viewport.toWorld(e.global.x, e.global.y);
             dispatch(setSelectedWorldPosition({ x: wp.x, y: wp.y }));
             dispatch(setIsSelectingPosition(false));
-            dispatch(toggleIsMinimized());
+            dispatch(restoreDialog(DIALOG_IDS.LOCATION));
         };
 
         viewport.on("pointermove", onMove);

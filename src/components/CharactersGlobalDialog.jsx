@@ -7,6 +7,9 @@ import { useSelector, useDispatch } from "react-redux";
 import { openWikiOverlay } from "../store/uiSlice";
 import { UI_COLORS } from "../constants/uiColors";
 import { CyberTitle, CyberText } from "./customs/CustomTexts";
+import { useCampaignWikiEntities } from "../hooks/useCampaignWikiEntities";
+import { buildWikiVttLinkIndex, getWikiEntityForCharacter } from "../utils/wikiVttLinkLookup";
+import { VttToWikiLinkBadge } from "./wiki/VttWikiLinkBadge";
 import VttDialogShell from "./VttDialogShell";
 import CharAvatar from "./characters/CharAvatar";
 import { CYBER_SCROLL_STYLE } from "../constants/cyberScrollStyle";
@@ -15,6 +18,7 @@ import {
     CharacterTypeBadge,
     statusLineColor,
 } from "./characters/characterBadges";
+import { listCampaignCharactersWithLocation } from "../utils/characterCombat";
 
 const TYPE_FILTERS = ["ALL", "PC", "NPC", "DEAD", "DEITY", "UNASSIGNED"];
 const SORT_OPTIONS = [
@@ -24,7 +28,7 @@ const SORT_OPTIONS = [
     { id: "location", label: "Locación" },
 ];
 
-function CharCard({ char, locationName, isSelected, onClick, showLocation }) {
+function CharCard({ char, locationName, isSelected, onClick, showLocation, wikiEntity }) {
     const status = char.status || "alive";
     return (
         <Box
@@ -74,9 +78,10 @@ function CharCard({ char, locationName, isSelected, onClick, showLocation }) {
                     >
                         {char.name || "???"}
                     </CyberTitle>
-                    <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
+                    <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", alignItems: "center" }}>
                         <CharacterTypeBadge type={char.type} />
                         <CharacterStatusBadge status={status} />
+                        <VttToWikiLinkBadge wikiEntity={wikiEntity} compact />
                     </Box>
                 </Box>
             </Box>
@@ -89,7 +94,7 @@ function CharCard({ char, locationName, isSelected, onClick, showLocation }) {
     );
 }
 
-function DetailPanel({ char, locationName, onClose, onWiki }) {
+function DetailPanel({ char, locationName, onClose, onWiki, wikiEntity }) {
     if (!char) {
         return (
             <Box
@@ -145,9 +150,10 @@ function DetailPanel({ char, locationName, onClose, onWiki }) {
             </Box>
 
             <Box sx={{ flex: 1, overflow: "auto", p: 2, minHeight: 0, ...CYBER_SCROLL_STYLE }}>
-                <Box sx={{ mb: 2, display: "flex", gap: 0.5 }}>
+                <Box sx={{ mb: 2, display: "flex", gap: 0.5, flexWrap: "wrap", alignItems: "center" }}>
                     <CharacterTypeBadge type={char.type} />
                     <CharacterStatusBadge status={char.status || "alive"} />
+                    <VttToWikiLinkBadge wikiEntity={wikiEntity} />
                 </Box>
 
                 {char.bio && (
@@ -206,7 +212,7 @@ function DetailPanel({ char, locationName, onClose, onWiki }) {
                     }}
                 >
                     <OpenInNewIcon sx={{ fontSize: "0.9rem" }} />
-                    VER EN WIKI
+                    {wikiEntity ? "VER FICHA ANEXADA" : "VER EN ARCHIVE"}
                 </Box>
             </Box>
         </Box>
@@ -260,6 +266,10 @@ function SidebarItem({ label, active, color, onClick }) {
 export default function CharactersGlobalDialog({ open, onClose }) {
     const dispatch = useDispatch();
     const locations = useSelector((s) => s.world.locations);
+    const charactersById = useSelector((s) => s.world.charactersById ?? {});
+    const campaignId = useSelector((s) => s.world.selectedCampaignId);
+    const wikiEntities = useCampaignWikiEntities(open ? campaignId : null);
+    const wikiLinkIndex = useMemo(() => buildWikiVttLinkIndex(wikiEntities), [wikiEntities]);
 
     const [selectedLocId, setSelectedLocId] = useState("GLOBAL");
     const [activeFilter, setActiveFilter] = useState("ALL");
@@ -267,20 +277,26 @@ export default function CharactersGlobalDialog({ open, onClose }) {
     const [searchQuery, setSearchQuery] = useState("");
     const [sortBy, setSortBy] = useState("name");
 
-    const allCharsWithLoc = useMemo(() => {
-        return Object.values(locations).flatMap((loc) =>
-            (loc.characters || []).map((c) => ({
-                ...c,
-                _locationId: loc.id,
-                _locationName: loc.name,
-            }))
-        );
-    }, [locations]);
+    // Campaign-wide roster (not only characters nested under the active map's pins).
+    const allCharsWithLoc = useMemo(
+        () => listCampaignCharactersWithLocation(charactersById, locations),
+        [charactersById, locations],
+    );
 
     const unassigned = useMemo(
         () => allCharsWithLoc.filter((c) => !c._locationId),
         [allCharsWithLoc]
     );
+
+    const charsByLocationId = useMemo(() => {
+        const map = {};
+        for (const c of allCharsWithLoc) {
+            if (!c._locationId) continue;
+            if (!map[c._locationId]) map[c._locationId] = [];
+            map[c._locationId].push(c);
+        }
+        return map;
+    }, [allCharsWithLoc]);
 
     const locFilteredChars = useMemo(() => {
         if (selectedLocId === "GLOBAL") return allCharsWithLoc;
@@ -290,8 +306,17 @@ export default function CharactersGlobalDialog({ open, onClose }) {
 
     const filteredChars = useMemo(() => {
         let list = locFilteredChars;
-        if (activeFilter === "PC") list = list.filter((c) => (c.type || "").toLowerCase() === "pc");
-        else if (activeFilter === "NPC") list = list.filter((c) => !c.type || (c.type || "").toLowerCase() === "npc");
+        if (activeFilter === "PC") {
+            list = list.filter((c) => {
+                const t = (c.type || "").toLowerCase();
+                return t === "pc" || t === "player" || Boolean(c.ownerPlayerId);
+            });
+        } else if (activeFilter === "NPC") {
+            list = list.filter((c) => {
+                const t = (c.type || "").toLowerCase();
+                return !t || t === "npc" || c.isNpc || c.isEnemy;
+            });
+        }
         else if (activeFilter === "DEAD") list = list.filter((c) => c.status === "dead");
         else if (activeFilter === "DEITY") list = list.filter((c) => c.status === "deity");
         else if (activeFilter === "UNASSIGNED") list = list.filter((c) => !c._locationId);
@@ -313,13 +338,17 @@ export default function CharactersGlobalDialog({ open, onClose }) {
     }, [locFilteredChars, activeFilter, searchQuery, sortBy]);
 
     const selectedChar = filteredChars.find((c) => c.id === selectedCharId) || null;
+    const selectedWikiEntity = selectedChar
+        ? getWikiEntityForCharacter(wikiLinkIndex, selectedChar.id)
+        : null;
     const locList = useMemo(() => Object.values(locations), [locations]);
     const showLocationOnCards = selectedLocId === "GLOBAL" || selectedLocId === "UNASSIGNED";
 
     const handleWiki = () => {
         if (!selectedChar) return;
         dispatch(openWikiOverlay({
-            mode: "detail",
+            mode: selectedWikiEntity ? "detail" : "list",
+            entityId: selectedWikiEntity?.id || null,
             vttContext: { linkedVttCharacterId: selectedChar.id },
         }));
         onClose();
@@ -332,6 +361,7 @@ export default function CharactersGlobalDialog({ open, onClose }) {
             title="PERSONAJES"
             subtitle="Vista global · por locación"
             sizePreset="xl"
+            dialogId="characters"
         >
             <Box sx={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden" }}>
                 <Box
@@ -357,19 +387,17 @@ export default function CharactersGlobalDialog({ open, onClose }) {
                     {locList.map((loc) => (
                         <SidebarItem
                             key={loc.id}
-                            label={`${loc.name} · ${loc.characters?.length ?? 0}`}
+                            label={`${loc.name} · ${charsByLocationId[loc.id]?.length ?? 0}`}
                             active={selectedLocId === loc.id}
                             onClick={() => { setSelectedLocId(loc.id); setSelectedCharId(null); }}
                         />
                     ))}
-                    {unassigned.length > 0 && (
-                        <SidebarItem
-                            label={`◎ Sin asignar · ${unassigned.length}`}
-                            active={selectedLocId === "UNASSIGNED"}
-                            color="#f97316"
-                            onClick={() => { setSelectedLocId("UNASSIGNED"); setSelectedCharId(null); }}
-                        />
-                    )}
+                    <SidebarItem
+                        label={`◎ Sin asignar · ${unassigned.length}`}
+                        active={selectedLocId === "UNASSIGNED"}
+                        color="#f97316"
+                        onClick={() => { setSelectedLocId("UNASSIGNED"); setSelectedCharId(null); }}
+                    />
                 </Box>
 
                 <Box sx={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
@@ -467,6 +495,7 @@ export default function CharactersGlobalDialog({ open, onClose }) {
                                         locationName={char._locationName}
                                         showLocation={showLocationOnCards}
                                         isSelected={char.id === selectedCharId}
+                                        wikiEntity={getWikiEntityForCharacter(wikiLinkIndex, char.id)}
                                         onClick={() => setSelectedCharId((prev) => (prev === char.id ? null : char.id))}
                                     />
                                 ))
@@ -477,6 +506,7 @@ export default function CharactersGlobalDialog({ open, onClose }) {
                             <DetailPanel
                                 char={selectedChar}
                                 locationName={selectedChar._locationName}
+                                wikiEntity={selectedWikiEntity}
                                 onClose={() => setSelectedCharId(null)}
                                 onWiki={handleWiki}
                             />

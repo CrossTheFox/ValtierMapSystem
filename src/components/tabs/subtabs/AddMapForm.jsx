@@ -1,112 +1,185 @@
-import React, { useState } from 'react';
-import { Box, Stack, Grid, Button, CircularProgress } from '@mui/material';
-import { CyberInput, CyberButton } from '../../customs/CyberInputs';
-import { CyberTitle, CyberText } from '../../customs/CustomTexts';
-import { createMapDoc } from '../../../../firebase/services/mapService';
-import { UI_COLORS } from '../../../constants/uiColors';
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Box, Stack, Grid } from "@mui/material";
+import { useDispatch } from "react-redux";
+import { CyberInput, CyberButton } from "../../customs/CyberInputs";
+import { CyberText } from "../../customs/CustomTexts";
+import { UI_COLORS } from "../../../constants/uiColors";
+import { createMapDoc } from "../../../../firebase/services/mapService";
+import {
+    uploadMapImage,
+    deleteStorageFile,
+} from "../../../../firebase/services/assetLoader";
+import { showSnackbar } from "../../../store/uiSlice";
+import WikiImageUpload from "../../wiki/WikiImageUpload";
 
-export default function AddMapForm({ currentCampaignId }) {
-    const [loading, setLoading] = useState(false);
-    const [formData, setFormData] = useState({
-        name: '',
-        description: '',
-        imageUrl: '',
-        width: 2048,
-        height: 2048,
-        metersPerPixel: 1,
-        unit: 'm'
+const DEFAULT_MAP = {
+    name: "",
+    description: "",
+    imageUrl: "",
+    width: 2048,
+    height: 2048,
+    metersPerPixel: 1,
+    unit: "m",
+};
+
+function readImageDimensions(file) {
+    return new Promise((resolve) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+            const width = img.naturalWidth || 2048;
+            const height = img.naturalHeight || 2048;
+            URL.revokeObjectURL(url);
+            resolve({ width, height });
+        };
+        img.onerror = () => {
+            URL.revokeObjectURL(url);
+            resolve({ width: 2048, height: 2048 });
+        };
+        img.src = url;
     });
+}
 
-    const handleChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({
+export default function AddMapForm({ campaignId, onCreated }) {
+    const dispatch = useDispatch();
+    const [loading, setLoading] = useState(false);
+    const [formData, setFormData] = useState(DEFAULT_MAP);
+
+    const pendingPathRef = useRef(null);
+    const committedRef = useRef(false);
+
+    const discardPending = useCallback(async () => {
+        const path = pendingPathRef.current;
+        pendingPathRef.current = null;
+        if (!path || committedRef.current) return;
+        try {
+            await deleteStorageFile(path);
+        } catch (e) {
+            console.warn("No se pudo borrar imagen de mapa pendiente:", e);
+        }
+    }, []);
+
+    useEffect(() => () => {
+        if (!committedRef.current) {
+            discardPending();
+        }
+    }, [discardPending]);
+
+    const handleChange = (field) => (e) => {
+        const value = e.target.value;
+        setFormData((prev) => ({
             ...prev,
-            [name]: (name === 'width' || name === 'height' || name === 'metersPerPixel') 
-                ? Number(value) 
-                : value
+            [field]: ["width", "height", "metersPerPixel"].includes(field) ? Number(value) : value,
         }));
     };
 
+    const handleUpload = useCallback(
+        async (file) => {
+            if (!campaignId) throw new Error("Sin campaña");
+            const dims = await readImageDimensions(file);
+            const result = await uploadMapImage(campaignId, file);
+            if (pendingPathRef.current && pendingPathRef.current !== result.path) {
+                await deleteStorageFile(pendingPathRef.current).catch(() => {});
+            }
+            pendingPathRef.current = result.path;
+            setFormData((prev) => ({
+                ...prev,
+                imageUrl: result.path,
+                width: dims.width,
+                height: dims.height,
+            }));
+            return result;
+        },
+        [campaignId]
+    );
+
+    const handleImageChange = useCallback(
+        async (url) => {
+            if (!url) {
+                await discardPending();
+                setFormData((prev) => ({ ...prev, imageUrl: "" }));
+                return;
+            }
+            // Prefer Storage path (set in upload) over download URL from WikiImageUpload
+            setFormData((prev) => ({
+                ...prev,
+                imageUrl: pendingPathRef.current || url,
+            }));
+        },
+        [discardPending]
+    );
+
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (!campaignId) return;
+        if (!formData.imageUrl?.trim()) {
+            dispatch(showSnackbar({ message: "Sube una imagen del mapa.", severity: "warning" }));
+            return;
+        }
+        if (!formData.name?.trim()) {
+            dispatch(showSnackbar({ message: "Indica un nombre para el mapa.", severity: "warning" }));
+            return;
+        }
         setLoading(true);
         try {
-            const finalData = {
+            await createMapDoc({
                 ...formData,
-                campaignId: currentCampaignId,
-                createdAt: new Date() // Firestore lo convertirá a Timestamp
-            };
-            await createMapDoc(finalData);
-            alert("MAP_DATA_UPLOAD_SUCCESSFUL");
-            // Opcional: limpiar form
+                campaignId,
+                createdAt: new Date(),
+            });
+            committedRef.current = true;
+            pendingPathRef.current = null;
+            dispatch(showSnackbar({ message: "Mapa registrado correctamente.", severity: "success" }));
+            setFormData(DEFAULT_MAP);
+            onCreated?.();
         } catch (error) {
             console.error("Error adding map:", error);
-            alert("CRITICAL_ERROR: UPLOAD_FAILED");
+            dispatch(showSnackbar({ message: "Error al crear el mapa.", severity: "error" }));
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <Box component="form" onSubmit={handleSubmit} className="login-box" sx={{ p: 3, maxWidth: '800px' }}>
-            <CyberTitle variant="h5" sx={{ mb: 3 }}>REGISTER_NEW_MAP_MODULE</CyberTitle>
-
-            <Stack spacing={3}>
-                <div className="user-box">
-                    <input required name="name" type="text" value={formData.name} onChange={handleChange} placeholder=" " />
-                    <label><CyberText>MAP_IDENTIFIER</CyberText></label>
-                </div>
-
-                <div className="user-box">
-                    <input required name="imageUrl" type="text" value={formData.imageUrl} onChange={handleChange} placeholder=" " />
-                    <label><CyberText>IMAGE_SOURCE_PATH (e.g. maps/Valtia.jpg)</CyberText></label>
-                </div>
-
-                <div className="user-box">
-                    <textarea 
-                        required 
-                        name="description" 
-                        value={formData.description} 
-                        onChange={handleChange} 
-                        placeholder=" "
-                        style={{ background: 'transparent', border: 'none', borderBottom: '1px solid #fff', color: '#fff', width: '100%', outline: 'none', marginTop: '20px' }}
-                    />
-                    <label><CyberText>MAP_DESCRIPTION_ENCODING</CyberText></label>
-                </div>
-
+        <Box component="form" onSubmit={handleSubmit} sx={{ maxWidth: 640, pt: 1.5 }}>
+            <Stack spacing={2}>
+                <CyberInput label="NOMBRE DEL MAPA" value={formData.name} onChange={handleChange("name")} required />
+                <WikiImageUpload
+                    value={formData.imageUrl || null}
+                    onChange={handleImageChange}
+                    uploadImage={handleUpload}
+                    label="Imagen del mapa"
+                    helperText="Arrastra o selecciona un archivo. Si cancelas sin crear el mapa, la imagen se elimina."
+                    variant="banner"
+                    maxMb={40}
+                />
+                <CyberInput
+                    label="DESCRIPCIÓN"
+                    value={formData.description}
+                    onChange={handleChange("description")}
+                    multiline
+                    rows={2}
+                />
                 <Grid container spacing={2}>
-                    <Grid item xs={6}>
-                        <div className="user-box">
-                            <input required name="width" type="number" value={formData.width} onChange={handleChange} placeholder=" " />
-                            <label><CyberText>PIXEL_WIDTH</CyberText></label>
-                        </div>
+                    <Grid size={{ xs: 6 }}>
+                        <CyberInput label="ANCHO (px)" type="number" value={formData.width} onChange={handleChange("width")} required />
                     </Grid>
-                    <Grid item xs={6}>
-                        <div className="user-box">
-                            <input required name="height" type="number" value={formData.height} onChange={handleChange} placeholder=" " />
-                            <label><CyberText>PIXEL_HEIGHT</CyberText></label>
-                        </div>
+                    <Grid size={{ xs: 6 }}>
+                        <CyberInput label="ALTO (px)" type="number" value={formData.height} onChange={handleChange("height")} required />
                     </Grid>
-                    <Grid item xs={6}>
-                        <div className="user-box">
-                            <input required name="metersPerPixel" type="number" value={formData.metersPerPixel} onChange={handleChange} placeholder=" " />
-                            <label><CyberText>METERS_PER_PIXEL</CyberText></label>
-                        </div>
+                    <Grid size={{ xs: 6 }}>
+                        <CyberInput label="METROS / PÍXEL" type="number" value={formData.metersPerPixel} onChange={handleChange("metersPerPixel")} required />
                     </Grid>
-                    <Grid item xs={6}>
-                        <div className="user-box">
-                            <input required name="unit" type="text" value={formData.unit} onChange={handleChange} placeholder=" " />
-                            <label><CyberText>SCALE_UNIT (m/km)</CyberText></label>
-                        </div>
+                    <Grid size={{ xs: 6 }}>
+                        <CyberInput label="UNIDAD (m/km)" value={formData.unit} onChange={handleChange("unit")} required />
                     </Grid>
                 </Grid>
-
-                <button type="submit" className="submit-btn" disabled={loading}>
-                    <span /><span /><span /><span />
-                    <CyberTitle sx={{ fontSize: '1rem' }}>
-                        {loading ? <CircularProgress size={20} sx={{ color: UI_COLORS.accent }} /> : "INITIALIZE_MAP_SEQUENCE"}
-                    </CyberTitle>
-                </button>
+                <CyberText sx={{ fontSize: "0.65rem", color: UI_COLORS.textSecondary }}>
+                    Ancho/alto se rellenan al subir la imagen; puedes ajustarlos si hace falta.
+                </CyberText>
+                <Box>
+                    <CyberButton loading={loading}>CREAR MAPA</CyberButton>
+                </Box>
             </Stack>
         </Box>
     );

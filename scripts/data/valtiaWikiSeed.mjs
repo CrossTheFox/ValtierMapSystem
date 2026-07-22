@@ -174,6 +174,25 @@ export const ENTITIES = [
         tags: ["mirage"],
         meta: { ideologyKind: "filosofia", spread: "local" },
     },
+    {
+        slug: "pecado-totalidad",
+        entityType: "ideologia",
+        title: "Pecado de la Totalidad (Acedia)",
+        summary: "Ideología mirageana: el individuo debe fundirse en la masa para corregir los errores de los dioses.",
+        body: `Doctrina espiritual y política dominante en @[mirage], articulada en torno a **@[zero]** y las maldiciones de @[zerynhya].
+
+Sostiene que la **Acedia** — el «pecado de la totalidad» — no es pereza sino **renuncia voluntaria al yo** en favor de la conciencia colectiva. El individuo que resiste la fusión «repite el error de los antiguos dioses»: orgullo, separación, traición a la herencia Zarken.
+
+Manifestaciones cotidianas:
+
+- Contrato pactado al llegar a la mayoría de edad (vincula al ciudadano con Zero).
+- Vigilancia mutua: reportar disidencia es deber cívico.
+- Los **Siete Pecados Capitales** encarnan la furia correctiva cuando la masa falla.
+
+Relacionada con @[veneracion-zarken] y @[subdito-poder-superior], pero más metafísica: no solo obediencia, sino **disolución del yo**.`,
+        tags: ["mirage", "zero", "pecados", "acedia"],
+        meta: { ideologyKind: "religion", spread: "local" },
+    },
 
     // ── Locaciones ────────────────────────────────────────────────────────────
     {
@@ -210,7 +229,7 @@ export const ENTITIES = [
         entityType: "locacion",
         title: "Valtia",
         summary: "Civilización en el interior exclusivo del domo.",
-        body: "Seis metrópolis de millones bajo un mismo cielo artificial. Calendario unificado D.Z. (Después del Diluvio).",
+        body: "Seis metrópolis de millones bajo un mismo cielo artificial — **núcleos sociopolíticos** que reflejan la fragmentación del mundo tras la desaparición de los Zarken puros: @[galathia] (monarquía flotante), @[techia] (tecnocracia), @[mirage] (dictadura de Zero), @[lorven] (democracia montañosa), @[germa] (maritimez cruda) y @[arvek] (anarquía feudal). Calendario unificado D.Z. (Después del Diluvio).",
         tags: ["valtia", "region"],
         refs: {
             parentLocationEntityId: "domo-fucsia",
@@ -224,9 +243,27 @@ export const ENTITIES = [
         slug: "galathia",
         entityType: "locacion",
         title: "Galathia",
-        summary: "Capital imperial flotante; monarquía Margalous.",
-        body: "Ciudad siempre flotante sostenida por tech Zarken. @[zorgun] reina desde aquí. Motor de disuasión apuntado históricamente a @[mirage].",
-        tags: ["ciudad", "galathia"],
+        summary: "Sede del Reino: ciudad flotante elevada tras el Diluvio Rojo; corazón político y comercial de Valtia bajo la corona Margalous.",
+        body: `Erigida tras el **Diluvio Rojo** cuando los supervivientes Zarken y sus aliados levantaron una metrópolis en el aire usando tech imperial casi inagotable — el @[sistema-flotante-galathia]. Desde entonces es la **sede de la soberanía** y el centro político-comercial de @[valtia]; incluso ciudades hostiles como @[mirage] dependen de sus rutas para comercio internacional.
+
+## Sociedad y cultura
+
+La cultura galathiana está unida al **respeto absoluto a la corona** y a la **magia tradicional**. Existe un sentimiento de confianza perpetua en la familia real — especialmente en @[zorgun] — a pesar de que el estado oculta realidades oscuras: mano de obra forzada extraída de encarcelados, cárceles atenuadoras y el silencio en torno al @[motor-zarken].
+
+Los ciudadanos comunes veneran la estabilidad dinástica más que la transparencia. La corte en @[capital-galathia] concentra el poder simbóico; fuera de ella, los distritos flotantes mezclan nobleza, gremios mercantiles y academias de magia.
+
+## Geopolítica
+
+- **Rival histórico:** @[mirage] (guerras pasadas, disuasión nuclear mágica).
+- **Aliado cordial:** @[germa] (ciudad hermana fundada por un rey abdicante).
+- **Relación tensa:** @[techia] (contrapeso tecnocrático), @[arvek] (anti-imperialismo), @[lorven] (uso de Nightmares en guerras tempranas).
+
+## Infraestructura distintiva
+
+- Ciudad **siempre flotante**; no descansa sobre suelo domo.
+- @[red-teletransporte] intraurbana densa; conexiones interciudad reguladas políticamente.
+- @[academias-magia] de élite y escuelas privadas para linajes con sangre Zarken.`,
+        tags: ["ciudad", "galathia", "capital", "monarquia", "flotante"],
         refs: {
             parentLocationEntityId: "valtia",
             dominantLanguageEntityId: "espanol",
@@ -236,8 +273,10 @@ export const ENTITIES = [
         meta: {
             locationKind: "ciudad",
             populationOrder: "metropoli",
+            climate: "Controlado por tech flotante; brisas artificiales bajo el domo",
+            isSettlement: true,
             collectiveArchetype: "leal_dinastia",
-            collectiveMood: "Estabilidad orgullosa bajo la corona Margalous; cualquier amenaza al trono activa cierre de filas automático.",
+            collectiveMood: "Estabilidad orgullosa bajo la corona Margalous; cualquier amenaza al trono activa cierre de filas automático. La población confía en la corona aunque ignore (o prefiera ignorar) las sombras del estado.",
         },
     },
     {
@@ -254,23 +293,61 @@ export const ENTITIES = [
         slug: "techia",
         entityType: "locacion",
         title: "Techia",
-        summary: "Metrópoli cyberpunk; Gabinete Central electo.",
-        body: "Contrapunto histórico a Galathia. Centro de tech-magia, lectura de impacto y @[clinicas-reakta] legales.",
-        tags: ["ciudad", "techia", "cyberpunk"],
+        summary: "Metrópolis cyberpunk del Progreso Sistémico: magia y sangre Zarken despojadas de misticismo, gobernadas por un Consejo meritocrático piramidal.",
+        body: `**Techia: la metrópolis del Progreso Sistémico.** Estética **cyberpunk** — neones, torres de datos, callejones húmedos y laboratorios abiertos al cielo del domo. Su pensamiento «alternativo» trata la magia y la sangre Zarken como **fenómenos científicos explicables**, no como misterio sagrado.
+
+## Origen e historia
+
+Techia nació del **robo masivo de tecnología y naves Zarken** a @[galathia] tras la muerte de los últimos miembros **puros** de esa especie. Los fundadores buscaban un «entendimiento del todo» y establecieron desde el principio una **neutralidad política y religiosa absoluta**: la ciudad se mueve por avances tecnológicos, no por lealtades dinásticas ni cultos imperiales.
+
+## Sistema de gobierno: el Consejo
+
+El @[gabinete-techia] — conocido popularmente como **el Consejo** — es estrictamente **piramidal y meritocrático**:
+
+1. **Selección por capas:** cada empresa, gremio u organización elige **19 representantes** para velar por sus intereses.
+2. **El miembro 20:** esos 19 eligen un **vigésimo miembro**, quien ocupa el asiento real en el Consejo y puede actuar por **voluntad propia** (no solo como vocero).
+3. **Reelección:** los consejeros pueden ser reelegidos cada **2 años**.
+4. **Destitución interna:** los 19 representantes originales tienen **2 años** para intentar destituir a su consejero si no cumple expectativas.
+5. **Rotación de bloques:** cada **4 años**, el gremio u organización que ostenta un asiento puede ser **reemplazado por otro grupo** diferente.
+
+La sede física del aparato legislativo-administrativo está en @[gabinete-central].
+
+## Facciones dominantes
+
+Casi siempre repiten representación en el Consejo:
+
+- El **gremio militar** (contratos de defensa, simulacros, inteligencia).
+- El **gremio científico** (@[tech-magia-eterea], @[dispositivos-lectura-impacto], @[clinicas-reakta]).
+
+Otros bloques (comercio, transporte, magia civil) rotan con más frecuencia.
+
+## Vida urbana
+
+- Centro de **tech-magia**, resurrección legal ([@tecnologia-reakta]) y lectura de impacto del @[intercambio-equivalente].
+- Idioma principal: @[espanol], con capas de @[aleman] en círculos tech-imperiales heredados del botín Zarken.
+- Relación con @[galathia]: rival histórico pero no beligerante abierto; intercambio comercial pragmático.`,
+        tags: ["ciudad", "techia", "cyberpunk", "consejo", "tecnocracia"],
         refs: {
             parentLocationEntityId: "valtia",
             dominantLanguageEntityId: "espanol",
             dominantIdeologyEntityId: "intercambio-equivalente",
         },
-        meta: { locationKind: "ciudad", populationOrder: "metropoli" },
+        meta: {
+            locationKind: "ciudad",
+            populationOrder: "metropoli",
+            climate: "Húmedo urbano bajo domo; microclimas industriales",
+            isSettlement: true,
+            collectiveArchetype: "comercial_pragmatica",
+            collectiveMood: "Pragmatismo tecnocrático: la ciudad valora resultados medibles. La política existe, pero el prestigio lo ganan quienes demuestran avance científico o militar verificable.",
+        },
     },
     {
         slug: "gabinete-central",
         entityType: "locacion",
         title: "Gabinete Central",
-        summary: "Sede del gobierno electo de Techia.",
-        body: "Edificio administrativo donde el @[gabinete-techia] regula resurrección legal y política tech.",
-        tags: ["techia", "gobierno"],
+        summary: "Sede física del Consejo meritocrático de Techia.",
+        body: "Complejo administrativo en el corazón de @[techia] donde se reúne el **Consejo** (@[gabinete-techia]): cámaras de los 19+1 por bloque gremial, salas de destitución, archivos de contratos Reakta y búnkeres de inteligencia. Desde aquí se regula @[tecnologia-reakta] y la política tech de la metrópoli.",
+        tags: ["techia", "gobierno", "consejo"],
         refs: { parentLocationEntityId: "techia" },
         meta: { locationKind: "edificio", populationOrder: "ciudad" },
     },
@@ -278,15 +355,48 @@ export const ENTITIES = [
         slug: "mirage",
         entityType: "locacion",
         title: "Mirage",
-        summary: "Metrópoli gótica gobernada públicamente por los Pecados.",
-        body: "Ciudad de inteligencia y militarismo. Veneración Zarken abierta. Tensión histórica con @[galathia].",
-        tags: ["ciudad", "mirage"],
+        summary: "Fortaleza de la Conciencia Colectiva: metrópoli gótica dictatorial donde Zero gobierna a través de un contrato pactado con todos los habitantes.",
+        body: `**Mirage: la fortaleza de la conciencia colectiva.** Fundada por @[zerynhya], hija de @[zaakhiel], quien abandonó el proyecto galathiano al considerar la unión de su padre con la mortalidad (**@[juuhndy]**) una traición a la herencia divina Zarken. Prefirió fundar una ciudad donde los dioses no se rebajaran mezclándose con mortales — aunque luego aceptó a @[elekhias] como regente enviado por su madre.
+
+## Cultura y orden social
+
+Sociedad **dictatorial y sumamente ordenada**. Los mirageanos ven a los Zarken como **señores inalcanzables**. Consideran a los reyes de @[galathia] «falsos» — no por culpa personal de @[zorgun] u otros, sino porque su sangre está **diluida** y su trono descansa sobre compromisos mortales.
+
+La estética urbana es **gótica-industrial**: torres negras, estandartes, procesiones y vigilancia constante. El @[aleman] es lengua de honor y devoción; quien lo domina mal puede ser sospechoso de disidencia.
+
+## Zero y el contrato pactado
+
+Mirage **no está gobernada por un individuo físico visible**, sino por **@[zero]** — una **conciencia colectiva** que habita dentro de todos los habitantes mediante un **contrato pactado** (término legal y espiritual a la vez). Zero puede tomar control total de cualquier ciudadano en cualquier momento; cuando lo hace, sus ojos brillan con un **fucsia intenso** reconocible al instante.
+
+En público, la ciudad obedece a @[los-pecados] — los siete cargos malditos creados por Zerynhya. Zero opera **detrás** de ese telón.
+
+## Poder militar: los Siete Pecados Capitales
+
+Mirage alberga las **Siete Pecados Capitales** — unidades de combate de élite inspiradas en los *Kamen Riders*, diseñadas como **«máquinas de combate Zarken»** capaces de canalizar maldición y furia ritual. No son un ejército conscripto: son pocos, temidos y simbólicos.
+
+## Ideología: Pecado de la Totalidad
+
+El pensamiento dominante gira en torno al **Pecado de la Totalidad** (también llamado **Acedia** en textos teológicos mirageanos): el individuo debe **fundirse en la masa** para corregir los errores de los antiguos dioses. La disidencia no es solo ilegal — es **impura**.
+
+Ver también: @[pecado-totalidad], @[veneracion-zarken], @[subdito-poder-superior].
+
+## Comercio y geopolítica
+
+A pesar de la hostilidad ideológica, Mirage **usa rutas comerciales galathianas** para comercio internacional — pragmatismo económico bajo retórica sagrada. El @[torreon-mirage] sigue siendo símbolo de resistencia frente al @[motor-zarken].`,
+        tags: ["ciudad", "mirage", "zero", "pecados", "dictadura", "germanico"],
         refs: {
             parentLocationEntityId: "valtia",
             dominantLanguageEntityId: "aleman",
             dominantIdeologyEntityId: "veneracion-zarken",
         },
-        meta: { locationKind: "ciudad", populationOrder: "metropoli" },
+        meta: {
+            locationKind: "ciudad",
+            populationOrder: "metropoli",
+            climate: "Frío gótico; brumas artificiales en distritos altos",
+            isSettlement: true,
+            collectiveArchetype: "fanatica",
+            collectiveMood: "Orden absoluto bajo Zero. Los ciudadanos se vigilan mutuamente; un brillo fucsia en los ojos silencia cualquier calle. La disidencia se siente antes de articularse.",
+        },
     },
     {
         slug: "torreon-mirage",
@@ -302,42 +412,126 @@ export const ENTITIES = [
         slug: "lorven",
         entityType: "locacion",
         title: "Lorven",
-        summary: "Metrópoli montañosa dieselpunk; teocracia.",
-        body: "Menor población de las seis capitales. Minería, magia espiritual y presidente teocrático.",
-        tags: ["ciudad", "lorven"],
+        summary: "Metrópoli montañosa dieselpunk nacida de un insurgimiento contra Mirage; democracia visible con lealtad secreta al régimen fucsia.",
+        body: `**Lorven** surgió de un **insurgimiento rebelde contra @[mirage]** en las montañas del domo. Sus fundadores rechazaron la dictadura de Zero y los Pecados, pero el resultado no fue libertad pura sino una **sociedad dieselpunk** de minas, trenes de vapor-magia y templos en altura.
+
+## Gobierno aparente
+
+Lorven se presenta como una **sociedad democrática** de personajes trabajadores: sindicatos mineros, asambleas barriales, presidente electo y @[teocracia-lorven] como marco espiritual. El @[italiano] convive con el @[espanol] en la administración.
+
+## Secreto político (solo DM / inteligencia)
+
+**Secretamente**, el presidente de Lorven es **fiel a Mirage** a cambio de recursos, armas y Nightmares en épocas de guerra. La democracia funciona en lo cotidiano, pero las decisiones de estado críticas tienen un **segundo circuito** mirageano. Esto explica por qué Lorven empleó @[nightmares] masivamente en las @[guerras-galathia-mirage] pese a retórica anti-dictadura.
+
+## Cultura y economía
+
+- Menor población de las seis metrópolis, pero densidad industrial alta.
+- Minería de cristales de impacto y rutas ferroviarias interurbanas.
+- Magia espiritual y rituales de montaña; fe @[religion-valtiense] muy visible.
+- Cuna operativa de figuras como @[engel]; nodos de @[circulos-militares] y @[los-martires].
+
+## Geopolítica
+
+- Enemigo declarado de Mirage en propaganda interna; **aliado oculto** en la práctica.
+- Tensión con @[galathia] por atrocidades mutuas en guerras pasadas.
+- Interpretación del @[diluvio-rojo] cercana a @[lectura-envidia-diluvio].`,
+        tags: ["ciudad", "lorven", "dieselpunk", "montana", "democracia", "secreto"],
         refs: {
             parentLocationEntityId: "valtia",
             dominantLanguageEntityId: "italiano",
             dominantIdeologyEntityId: "religion-valtiense",
         },
-        meta: { locationKind: "ciudad", populationOrder: "metropoli" },
+        meta: {
+            locationKind: "ciudad",
+            populationOrder: "metropoli",
+            climate: "Alpino bajo domo; niebla industrial en valles",
+            isSettlement: true,
+            collectiveArchetype: "fragmentada",
+            collectiveMood: "Dualidad nerviosa: orgullo minero y fe pública por un lado; susurros de que el presidente negocia con Mirage por la noche. Los trabajadores creen en la democracia; la élite sabe que hay dos banderas.",
+        },
     },
     {
         slug: "germa",
         entityType: "locacion",
         title: "Germa",
-        summary: "Metrópoli marítima; reyes y democracia.",
-        body: "Ciudad hermana de Galathia. Economía pesquera, caza de @[nightmares] y rutas del @[mar-interior-domo].",
-        tags: ["ciudad", "germa"],
+        summary: "Ciudadela costera marítima y cruda; cultura de cazadores nacida de un asentamiento galathiano con convención de nombres Von Germa.",
+        body: `**Germa** es una **ciudadela costera** nacida de un asentamiento de cazadores enviado desde @[galathia]. Con el tiempo creció hasta metrópoli independiente, gobernada por el @[reino-germa]: monarquía hereditaria con **democracia popular paralela** (el pueblo elige representantes mientras los reyes heredan el trono).
+
+## Cultura marítima
+
+Economía centrada en:
+
+- Pesca y navegación en el @[mar-interior-domo].
+- Caza de @[nightmares] y fauna mutada — @[cazadores-nightmares] es gremio influyente.
+- Exportación de carne, aceites y trofeos rituales.
+
+La cultura es **marítima y cruda**: supervivencia, honor del barco, tabús sobre desperdiciar presas grandes.
+
+## Convención de nombres: «Von Germa»
+
+Particularidad social única en Valtia: **nadie comparte apellido**. Todos usan su **nombre de pila** seguido del sufijo **«Von Germa»** (ej.: «Klaus Von Germa», «Mira Von Germa»). Esto refuerza identidad ciudadana sobre linaje familiar — irónico en una monarquía hereditaria.
+
+## Idioma e identidad
+
+- @[aleman] como lengua de honor y tradición Zarken costera.
+- Relación **cordial** con @[galathia] (ciudad hermana; rey fundador abdicó del trono principal).
+- Menos dogmática que @[mirage], pero más marcial que @[techia].`,
+        tags: ["ciudad", "germa", "maritima", "caza", "von-germa"],
         refs: {
             parentLocationEntityId: "valtia",
             dominantLanguageEntityId: "aleman",
         },
-        meta: { locationKind: "ciudad", populationOrder: "metropoli" },
+        meta: {
+            locationKind: "ciudad",
+            populationOrder: "metropoli",
+            climate: "Costero ventoso; tormentas de marea bajo domo",
+            isSettlement: true,
+            collectiveArchetype: "comercial_pragmatica",
+            collectiveMood: "Orgullo de tripulación: duro con el mar, leal con la corona germana, desconfiado de forasteros que no entienden Von Germa. La caza es religión laica.",
+        },
     },
     {
         slug: "arvek",
         entityType: "locacion",
         title: "Arvek",
-        summary: "Mayor territorio y población; estética feudal japonesa.",
-        body: "Feudalismo fragmentado sin mando global. Desprecio abierto hacia imperio y realeza.",
-        tags: ["ciudad", "arvek"],
+        summary: "Mayor territorio de Valtia: bastión anarquista feudal y epicentro de la resistencia cultural anti-imperial.",
+        body: `**Arvek: el bastión de la anarquía.** Formada como respuesta directa al autoritarismo de @[mirage] y la monarquía de @[galathia]. Ocupa la **mayor extensión territorial y población** bajo el domo, pero **sin mando global unificado**.
+
+## Estructura política
+
+Sociedad **independiente y anarquista** organizada en múltiples comunidades o **«feudalismos»** autónomos que colaboran en una zona rural extensa:
+
+- Cada feudo tiene señor local, código propio y milicia.
+- La @[confederacion-arvek] coordina tratados y defensa mutua, **no obedece** a un solo trono.
+- Estética **feudal japonesa** (castillos de madera reforzada, armerías rituales, campos de arroz bajo domo).
+
+## Identidad cultural
+
+Epicentro de la resistencia cultural contra el legado Zarken imperial:
+
+- **@[zarkenfall]** — banda de metal extremo cuyas letras denuncian la mentira del sistema y el sufrimiento que genera el poder Zarken — es voz no oficial de millones de arvekanos.
+- Desprecio abierto hacia realeza, Pecados y veneración Zarken.
+- Idioma principal: @[japones]; @[espanol] como lengua franca comercial.
+
+## Relaciones
+
+- Hostilidad ideológica hacia @[reino-galathia] y @[los-pecados].
+- Pragmatismo comercial con @[techia] en ferias fronterizas.
+- Algunos feudos toleran @[los-martires]; otros los expulsan.`,
+        tags: ["ciudad", "arvek", "anarquia", "feudal", "zarkenfall", "japones"],
         refs: {
             parentLocationEntityId: "valtia",
             dominantLanguageEntityId: "japones",
             dominantIdeologyEntityId: "desprecio-anti-imperial",
         },
-        meta: { locationKind: "ciudad", populationOrder: "metropoli" },
+        meta: {
+            locationKind: "ciudad",
+            populationOrder: "metropoli",
+            climate: "Rural templado; estaciones simuladas por valle",
+            isSettlement: true,
+            collectiveArchetype: "anarquica",
+            collectiveMood: "Orgullo local fragmentado: cada valle desconfía del vecino, pero todos desprecian Galathia y Mirage. La música de Zarkenfall une más que cualquier bandera.",
+        },
     },
     {
         slug: "mar-interior-domo",
@@ -437,10 +631,17 @@ export const ENTITIES = [
     {
         slug: "gabinete-techia",
         entityType: "organizacion",
-        title: "Gabinete Central de Techia",
-        summary: "Gobierno electo y transparente de Techia.",
-        body: "Cada miembro debe representar un grupo de impacto real. Regula @[tecnologia-reakta] y política tech.",
-        tags: ["techia", "gobierno"],
+        title: "Consejo de Techia",
+        summary: "Gobierno meritocrático piramidal: 19 representantes eligen al consejero; gremio militar y científico dominan.",
+        body: `El **Consejo** (oficialmente Gabinete Central de Techia) gobierna @[techia] con estructura **piramidal y meritocrática**:
+
+- Cada empresa, gremio u organización elige **19 representantes**.
+- Esos 19 eligen un **miembro 20** con asiento en el Consejo y facultad de actuar por voluntad propia.
+- Reelección cada **2 años**; destitución posible por los 19 en el mismo plazo.
+- Rotación de bloques gremiales cada **4 años**.
+
+**Facciones que casi siempre repiten:** gremio **militar** y gremio **científico**. Regula @[tecnologia-reakta], @[tech-magia-eterea] y contratos con @[clinicas-reakta]. Mantiene neutralidad religiosa y política explícita.`,
+        tags: ["techia", "gobierno", "consejo"],
         meta: { organizationKind: "estatal", organizationSize: "regional" },
         refs: { headquartersEntityId: "gabinete-central" },
     },
@@ -448,15 +649,17 @@ export const ENTITIES = [
         slug: "los-pecados",
         entityType: "organizacion",
         title: "Los Pecados",
-        summary: "Siete cargos gobernantes de Mirage (+ Zero oculto).",
-        body: "Maldiciones transferibles creadas por Zarken. Los cargos se disputan en pruebas dolorosas. Gobernan @[mirage] en público.",
-        tags: ["mirage", "pecados"],
+        summary: "Siete cargos malditos gobernantes de Mirage (+ Zero oculto); incluyen las unidades Siete Pecados Capitales.",
+        body: `Maldiciones transferibles creadas por @[zerynhya]. Los cargos se disputan en pruebas dolorosas y **no son heredables**. Gobernan @[mirage] **en público** mientras **@[zero]** opera como conciencia suprema.
+
+Las **Siete Pecados Capitales** son unidades de combate de élite (estética *Kamen Rider*) — «máquinas de combate Zarken» al servicio del régimen. Los titulares de cargo (@[eins], @[zwei], etc.) no siempre son los mismos operadores de las unidades Capitales, pero el mito los fusiona en la propaganda.`,
+        tags: ["mirage", "pecados", "zero"],
         meta: { organizationKind: "religioso", organizationSize: "regional" },
         refs: { headquartersEntityId: "mirage" },
         members: [
             { kind: "wiki", slug: "eins", status: "confirmado", role: "Pecado" },
             { kind: "wiki", slug: "zwei", status: "confirmado", role: "Pecado de la Ira" },
-            { kind: "wiki", slug: "zero", status: "confirmado", role: "Pecado original" },
+            { kind: "wiki", slug: "zero", status: "confirmado", role: "Pecado original / Zero" },
         ],
     },
     {
@@ -476,9 +679,9 @@ export const ENTITIES = [
         slug: "teocracia-lorven",
         entityType: "organizacion",
         title: "Teocracia de Lorven",
-        summary: "Gobierno espiritual y civil de Lorven.",
-        body: "Presidente teocrático y estructura eclesiástica montañosa.",
-        tags: ["lorven", "gobierno"],
+        summary: "Gobierno espiritual y civil de Lorven; democracia visible con lealtad presidencial secreta a Mirage.",
+        body: "Presidente teocrático, asambleas mineras y estructura eclesiástica montañosa. **Secreto de estado:** el presidente actual mantiene lealtad a @[mirage] a cambio de recursos — la democracia lorveniana es real en lo cotidiano, pero no en decisiones de guerra o alianzas mayores.",
+        tags: ["lorven", "gobierno", "secreto"],
         meta: { organizationKind: "religioso", organizationSize: "regional" },
         refs: { headquartersEntityId: "lorven" },
     },
@@ -496,10 +699,22 @@ export const ENTITIES = [
         slug: "confederacion-arvek",
         entityType: "organizacion",
         title: "Confederación Feudal de Arvek",
-        summary: "Zonas feudales sin mando global.",
-        body: "Cada región se defiende y gobierna de forma autónoma.",
-        tags: ["arvek", "feudalismo"],
+        summary: "Zonas feudales autónomas sin mando global; epicentro de resistencia cultural.",
+        body: "Coordina tratados entre feudos de @[arvek] pero **no manda sobre ellos**. Cada señor local guarda milicia y leyes propias. Voz cultural: @[zarkenfall].",
+        tags: ["arvek", "feudalismo", "anarquia"],
         meta: { organizationKind: "estatal", organizationSize: "regional" },
+        refs: { headquartersEntityId: "arvek" },
+    },
+    {
+        slug: "zarkenfall",
+        entityType: "organizacion",
+        title: "Zarkenfall",
+        summary: "Banda de metal extremo; voz simbólica de la resistencia anti-imperial arveka.",
+        body: `Colectivo musical y cultural nacido en @[arvek]. Sus letras denuncian la **mentira del sistema**, el sufrimiento que genera el poder Zarken y la hipocresía de monarcas «diluidos» y dictaduras «sagradas».
+
+No es un partido ni un ejército, pero sus conciertos congregan a miles y sus símbolos aparecen en muros de feudos enteros. @[reino-galathia] y @[los-pecados] los consideran agitadores; @[desprecio-anti-imperial] los celebra como profetas laicos.`,
+        tags: ["arvek", "musica", "resistencia", "cultura"],
+        meta: { organizationKind: "otro", organizationSize: "regional" },
         refs: { headquartersEntityId: "arvek" },
     },
     {
@@ -727,13 +942,17 @@ export const ENTITIES = [
         slug: "zero",
         entityType: "personaje",
         title: "Zero",
-        summary: "Pecado original de Mirage (información restringida).",
-        body: "Figura de máximo rango entre los Pecados. Detalles de su influencia real no son de dominio público.",
+        summary: "Conciencia colectiva que gobierna Mirage; Pecado original; se manifiesta con brillo fucsia en los ojos.",
+        body: `**Zero** no es un gobernante físico único, sino una **conciencia colectiva** que habita en todos los habitantes de @[mirage] mediante un **contrato pactado**. Puede tomar control total de cualquier ciudadano en cualquier momento; cuando lo hace, sus ojos brillan con un **fucsia intenso**.
+
+En público, @[mirage] obedece a @[los-pecados]; Zero opera detrás de ese telón como **Pecado original** y núcleo del @[pecado-totalidad]. Detalles de su origen exacto son clasificados — se rumorea vínculo directo con @[zerynhya] y las maldiciones fundacionales.
+
+**Información restringida (DM):** Zero puede hablar con muchas bocas a la vez. Anular un huésped no mata a Zero; solo lo expulsa temporalmente de ese cuerpo.`,
         visibility: "dm_only",
-        tags: ["pecados", "mirage", "secreto"],
+        tags: ["pecados", "mirage", "secreto", "zero", "conciencia-colectiva"],
         refs: { speciesEntityId: "zarken", birthPlaceEntityId: "mirage" },
         meta: { characterKind: "legendario" },
-        organizations: [{ slug: "los-pecados", status: "confirmado", role: "Pecado original" }],
+        organizations: [{ slug: "los-pecados", status: "confirmado", role: "Pecado original / Conciencia suprema" }],
     },
     {
         slug: "madre-zorgun",
@@ -1208,6 +1427,16 @@ export const RELATIONS = [
     { from: "tabu-necromancia", to: "tecnologia-reakta", relationType: "relacionado_con", strength: -5, label: "tabú moral" },
     { from: "subdito-poder-superior", to: "veneracion-zarken", relationType: "relacionado_con", strength: 8, label: "manifestación ética de" },
     { from: "subdito-poder-superior", to: "mirage", relationType: "relacionado_con", strength: 8 },
+    { from: "pecado-totalidad", to: "mirage", relationType: "relacionado_con", strength: 9 },
+    { from: "pecado-totalidad", to: "veneracion-zarken", relationType: "relacionado_con", strength: 7 },
+    { from: "zero", to: "pecado-totalidad", relationType: "profesa", strength: 10 },
+    { from: "los-pecados", to: "pecado-totalidad", relationType: "relacionado_con", strength: 8 },
+    { from: "zarkenfall", to: "arvek", relationType: "sede_en", strength: 0 },
+    { from: "zarkenfall", to: "desprecio-anti-imperial", relationType: "profesa", strength: 8 },
+    { from: "zarkenfall", to: "reino-galathia", relationType: "enemigo_de", strength: -5 },
+    { from: "zarkenfall", to: "los-pecados", relationType: "enemigo_de", strength: -6 },
+    { from: "teocracia-lorven", to: "los-pecados", relationType: "relacionado_con", strength: 4, label: "lealtad secreta presidencial" },
+    { from: "galathia", to: "mirage", relationType: "colinda_con", strength: -3, label: "comercio internacional pese a hostilidad" },
     { from: "lectura-envidia-diluvio", to: "mirage", relationType: "relacionado_con", strength: 4 },
     { from: "lectura-envidia-diluvio", to: "lorven", relationType: "relacionado_con", strength: 4 },
     { from: "humanos", to: "zarken", relationType: "enemigo_de", strength: -9 },

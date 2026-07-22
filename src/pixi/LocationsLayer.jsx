@@ -2,7 +2,6 @@ import { useEffect, useRef } from "react";
 import * as PIXI from "pixi.js";
 import { useSelector, useDispatch } from "react-redux";
 import {
-    selectLocationPreview,
     openContextMenu,
     setMeasurePointB,
     clearMeasureTool,
@@ -85,7 +84,19 @@ function createLocationMarker(locId, texture, dispatch, measureRef, locationsRef
         tooltip.hide();
     });
 
-    let rightStart = null;
+    let pressStart = null;
+
+    const openLocationMenu = (event, loc) => {
+        dispatch(openContextMenu({
+            screenX:  event.global.x,
+            screenY:  event.global.y,
+            worldX:   loc.position.x,
+            worldY:   loc.position.y,
+            type:     "location",
+            location: loc,
+        }));
+        tooltip.hide();
+    };
 
     locationContainer.on("pointerdown", (event) => {
         event.stopPropagation();
@@ -99,7 +110,7 @@ function createLocationMarker(locId, texture, dispatch, measureRef, locationsRef
             if (isMeasuring) {
                 dispatch(clearMeasureTool());
             } else {
-                rightStart = { x: event.global.x, y: event.global.y };
+                pressStart = { x: event.global.x, y: event.global.y, button: 2 };
             }
             return;
         }
@@ -115,33 +126,27 @@ function createLocationMarker(locId, texture, dispatch, measureRef, locationsRef
             return;
         }
 
-        dispatch(selectLocationPreview(loc));
-        tooltip.hide();
+        pressStart = { x: event.global.x, y: event.global.y, button: 0 };
     });
 
     locationContainer.on("pointerup", (event) => {
         event.stopPropagation();
         const loc = locationsRef.current?.[locId];
-        if (!loc) return;
-        if (event.button !== 2 || !rightStart) return;
+        if (!loc || !pressStart) return;
+        if (event.button !== pressStart.button) return;
         const dist = Math.hypot(
-            event.global.x - rightStart.x,
-            event.global.y - rightStart.y,
+            event.global.x - pressStart.x,
+            event.global.y - pressStart.y,
         );
-        rightStart = null;
+        const button = pressStart.button;
+        pressStart = null;
         if (dist >= RIGHT_CLICK_DRAG_THRESHOLD) return;
+        if (button !== 0 && button !== 2) return;
 
-        dispatch(openContextMenu({
-            screenX:  event.global.x,
-            screenY:  event.global.y,
-            worldX:   loc.position.x,
-            worldY:   loc.position.y,
-            type:     "location",
-            location: loc,
-        }));
+        openLocationMenu(event, loc);
     });
 
-    locationContainer.on("pointerupoutside", () => { rightStart = null; });
+    locationContainer.on("pointerupoutside", () => { pressStart = null; });
 
     locationContainer.addChild(tooltip.container, icon);
 
@@ -150,6 +155,9 @@ function createLocationMarker(locId, texture, dispatch, measureRef, locationsRef
 
 function syncLocationMarker(entry, loc) {
     const { container, tooltip } = entry;
+    const hasPosition = loc.position?.x != null && loc.position?.y != null;
+    container.visible = hasPosition;
+    if (!hasPosition) return;
     container.x = loc.position.x;
     container.y = loc.position.y;
     tooltip.setText(loc.name);
@@ -236,7 +244,7 @@ export default function LocationsLayer() {
         }
 
         return () => { cancelled = true; };
-    }, [locations, dispatch]);
+    }, [viewport, locations, dispatch]);
 
     return null;
 }

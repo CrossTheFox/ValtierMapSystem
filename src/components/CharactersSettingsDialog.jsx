@@ -5,6 +5,8 @@ import { Dialog, DialogContent, Box, CircularProgress } from "@mui/material";
 import { fetchPlayerCharacters } from "../store/characterSlice";
 import { setActiveCharacterId, persistActiveCharacter } from "../store/playerSlice";
 import { UI_COLORS } from "../constants/uiColors";
+import { DIALOG_IDS } from "../constants/dialogIds";
+import useDialogActions from "../hooks/useDialogActions";
 import { useStatSystem } from "../hooks/useStatSystem";
 import { useCampaignWikiEntities } from "../hooks/useCampaignWikiEntities";
 import DraggableResizablePaper from "./DraggableResizablePaper";
@@ -14,7 +16,9 @@ import CharacterSheetBody from "./characters/CharacterSheetBody";
 import CharacterAvatarPicker from "./characters/CharacterAvatarPicker";
 import CharacterSheetHeaderTitle from "./characters/CharacterSheetHeaderTitle";
 import SessionPoolHud from "./characters/SessionPoolHud";
+import SheetHpHud from "./characters/SheetHpHud";
 import { VttDialogHeaderControls } from "./VttDialogHeader";
+import { normalizeSheetTab } from "./characters/CharacterSheetTabs";
 
 export default function CharactersSettingsDialog({ open, onClose, popupMode = false }) {
     const dispatch = useDispatch();
@@ -25,14 +29,22 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
 
     const [selectedCharId, setSelectedCharId] = useState(null);
     const [selectedCharacter, setSelectedCharacter] = useState(null);
-    const [activeTab, setActiveTab] = useState("STATS");
-    const [isMinimized, setIsMinimized] = useState(false);
+    const [activeTab, setActiveTab] = useState("IDENTIDAD");
+    const { isMinimized, toggleMinimize, forceMinimize } = useDialogActions(DIALOG_IDS.SHEET);
 
     const { isPopped, popout } = usePopout("characters");
 
     const handleToggleMinimize = (e) => {
         e.stopPropagation();
-        setIsMinimized((v) => !v);
+        toggleMinimize();
+    };
+
+    const handleDialogClose = (event, reason) => {
+        if (reason === "backdropClick") {
+            forceMinimize();
+            return;
+        }
+        onClose();
     };
 
     const handlePopout = (e) => {
@@ -77,8 +89,12 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
     }, [selectedCharId, characters]);
 
     useEffect(() => {
-        setActiveTab("STATS");
+        setActiveTab("IDENTIDAD");
     }, [selectedCharId]);
+
+    const handleTabChange = (tabId) => {
+        setActiveTab(normalizeSheetTab(tabId));
+    };
 
     const campaignForRules = selectedCharacter?.campaignId || profile?.currentCampaignId;
     const { stats: statDefinitions, resourceTracks } = useStatSystem(open ? campaignForRules : null);
@@ -97,10 +113,8 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
 
     const sheetHeader = (
         <VttDialogHeaderBar
-            isMinimized={isMinimized}
-            onMinimizedClick={handleToggleMinimize}
             left={
-                !isMinimized && characters.length > 0 ? (
+                characters.length > 0 ? (
                     <CharacterAvatarPicker
                         characters={characters}
                         selectedId={selectedCharId}
@@ -111,14 +125,12 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                 ) : null
             }
             center={
-                <CharacterSheetHeaderTitle
-                    character={selectedCharacter}
-                    isMinimized={isMinimized}
-                />
+                <CharacterSheetHeaderTitle character={selectedCharacter} />
             }
             right={
-                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexShrink: 0 }}>
-                    {!isMinimized && selectedCharacter && (
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, flexShrink: 0 }}>
+                    {selectedCharacter && <SheetHpHud character={selectedCharacter} />}
+                    {selectedCharacter && (
                         <SessionPoolHud
                             characterId={selectedCharacter.id}
                             resourceTracks={resourceTracks}
@@ -134,8 +146,9 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
         <CharacterSheetBody
             character={selectedCharacter}
             activeTab={activeTab}
-            onTabChange={setActiveTab}
+            onTabChange={handleTabChange}
             statDefinitions={statDefinitions}
+            maxStat={6}
             wikiEntities={campaignWikiEntities}
         />
     );
@@ -157,15 +170,14 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
         );
     }
 
+    if (!popupMode && (!open || isMinimized)) return null;
+
     return (
         <Dialog
             open={open}
-            onClose={!isMinimized ? onClose : undefined}
+            onClose={handleDialogClose}
             fullWidth
             maxWidth={false}
-            hideBackdrop={isMinimized}
-            disableEnforceFocus={isMinimized}
-            style={isMinimized ? { pointerEvents: "none" } : {}}
             sx={{
                 "& .MuiDialog-container": {
                     alignItems: { xs: "flex-end", sm: "center" },
@@ -173,39 +185,22 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
             }}
             PaperComponent={DraggableResizablePaper}
             PaperProps={{
-                dragKey: isMinimized ? "min" : "max",
-                sx: isMinimized
-                    ? {
-                          pointerEvents: "auto",
-                          bgcolor: "#0d0d14",
-                          color: "#fff",
-                          border: `1px solid ${UI_COLORS.accent}`,
-                          transition: "border 0.3s, box-shadow 0.3s",
-                          borderRadius: 2,
-                          boxShadow: `0 0 20px ${UI_COLORS.accent}44`,
-                          position: "fixed",
-                          bottom: { xs: 82, sm: 24 },
-                          right: { xs: 8, sm: 215 },
-                          m: 0,
-                          width: { xs: "calc(100vw - 16px)", sm: "300px" },
-                          maxHeight: "60px",
-                          overflow: "hidden",
-                      }
-                    : {
-                          pointerEvents: "auto",
-                          bgcolor: "#0d0d14",
-                          color: "#fff",
-                          border: `1px solid ${UI_COLORS.accent}44`,
-                          transition: "border 0.3s, box-shadow 0.3s",
-                          borderRadius: { xs: "12px 12px 0 0", sm: 3 },
-                          boxShadow: "0 0 40px rgba(255,0,255,0.2)",
-                          display: "flex",
-                          flexDirection: "column",
-                          m: 0,
-                          height: { xs: "90vh", sm: "85vh" },
-                          width: { xs: "100%", sm: "90%" },
-                          overflow: "hidden",
-                      },
+                dragKey: "max",
+                sx: {
+                    pointerEvents: "auto",
+                    bgcolor: "#0d0d14",
+                    color: "#fff",
+                    border: `1px solid ${UI_COLORS.accent}44`,
+                    transition: "border 0.3s, box-shadow 0.3s",
+                    borderRadius: { xs: "12px 12px 0 0", sm: 3 },
+                    boxShadow: "0 0 40px rgba(255,0,255,0.2)",
+                    display: "flex",
+                    flexDirection: "column",
+                    m: 0,
+                    height: { xs: "90vh", sm: "85vh" },
+                    width: { xs: "100%", sm: "90%" },
+                    overflow: "hidden",
+                },
             }}
         >
             {sheetHeader}
@@ -213,7 +208,7 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
             <DialogContent
                 className="dialog-no-drag"
                 sx={{
-                    display: isMinimized ? "none" : "flex",
+                    display: "flex",
                     flexDirection: "column",
                     p: 0,
                     flex: 1,

@@ -21,20 +21,37 @@ export const VTT_HUD = {
     scaleFontSize: "10px",
     profilePadding: "6px",
     profileAvatarSize: 36,
+    profilePillHeight: 40,
+    /** Above right dock (chat/tokens @ 1250) so SYSTEM_SESSIONS is never covered. */
+    profileZIndex: 1600,
     glassBg: "rgba(10, 10, 15, 0.88)",
     glassBorder: "rgba(255, 102, 255, 0.2)",
     borderRadius: 10,
 };
 
+/** Right-side VTT dock: fills space between profile pill and zoom controls. */
+export const VTT_RIGHT_DOCK = {
+    width: 340,
+    gap: 8,
+    /** top inset + profile height + gap */
+    get top() {
+        return VTT_HUD.inset + VTT_HUD.profilePillHeight + VTT_HUD.inset / 2;
+    },
+    /** mapControls inset + control row (~40) + gap */
+    bottom: 64,
+    tokenPanelMaxHeight: 220,
+};
+
 export const VTT_DIALOG_SIZE = {
+    /** Near full-bleed on 1080p / 1440p / ultrawide (no hard 1100–1280 caps). */
     lg: {
-        width: "min(90%, 1100px)",
-        height: "min(85vh, 820px)",
+        width: "min(96vw, 100%)",
+        height: "min(90vh, 100%)",
         borderRadius: 3,
     },
     xl: {
-        width: "min(94%, 1280px)",
-        height: "min(88vh, 900px)",
+        width: "min(97vw, 100%)",
+        height: "min(92vh, 100%)",
         borderRadius: 2,
     },
     fullscreen: {

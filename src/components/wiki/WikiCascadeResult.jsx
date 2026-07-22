@@ -36,14 +36,20 @@ import BlockIcon              from "@mui/icons-material/Block";
 import { useDispatch, useSelector } from "react-redux";
 import { CyberTitle, CyberText } from "../customs/CustomTexts";
 import { UI_COLORS } from "../../constants/uiColors";
+import { Z_INDEX } from "../../constants/designSystem";
 import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
 import { REACTION_ARCHETYPE_LABELS, REACTION_ARCHETYPE_TOOLTIPS } from "../../constants/wiki/entityFieldSchemas";
-import { WIKI_RELATION_TYPE_LABELS, defaultStrengthForRelationType } from "../../constants/wikiRelationTypes";
-import { addWikiRelation, removeWikiRelation, saveWikiEntity } from "../../store/wikiSlice";
+import { WIKI_RELATION_TYPE_LABELS } from "../../constants/wikiRelationTypes";
+import { addWikiRelation, updateWikiRelation, removeWikiRelation, saveWikiEntity } from "../../store/wikiSlice";
 import { showSnackbar } from "../../store/uiSlice";
 import { applyProposedWikiEvent } from "../../utils/applyProposedWikiEvent";
 import { applyProposedImpact } from "../../utils/applyProposedImpact";
+import { normalizeCollectiveImpactForApply } from "../../utils/aiImpactBlocks";
 import { NARRATIVE_STATE_LABELS } from "../../constants/wiki/entityFieldSchemas";
+import {
+    enrichRelationStrengthChange,
+    formatStrengthChangeLabel,
+} from "../../utils/resolveRelationStrengthChange";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -131,10 +137,53 @@ function ArchetypeBadge({ archetype }) {
     );
 }
 
+function StrengthBadge({ change }) {
+    const label = formatStrengthChangeLabel(change);
+    if (!label) return null;
+    const delta = change.strengthDeltaResolved;
+    const noChange = delta === 0
+        || (change.currentStrength != null
+            && change.proposedStrength != null
+            && change.currentStrength === change.proposedStrength);
+    const up = typeof delta === "number" && delta > 0;
+    const down = typeof delta === "number" && delta < 0;
+    const color = noChange
+        ? UI_COLORS.textSecondary
+        : up
+            ? UI_COLORS.anomaly
+            : down
+                ? UI_COLORS.accentStrong
+                : UI_COLORS.anomaly;
+
+    return (
+        <Chip
+            label={label}
+            size="small"
+            sx={{
+                height: 18,
+                mt: 0.35,
+                fontSize: "0.58rem",
+                fontFamily: "'Orbitron', sans-serif",
+                letterSpacing: 0.4,
+                bgcolor: `${color}18`,
+                color,
+                border: `1px solid ${color}55`,
+                "& .MuiChip-label": { px: 0.75 },
+            }}
+        />
+    );
+}
+
 function ChangeRow({ change, applying, onApply }) {
     const relLabel = change.relationType
         ? (WIKI_RELATION_TYPE_LABELS[change.relationType] ?? change.relationType)
         : null;
+    const isRelation = change.kind === "relation_add"
+        || change.kind === "relation_update"
+        || change.kind === "relation_remove";
+    const stateLabel = change.kind === "entity_state_update" && change.field === "narrativeState"
+        ? (NARRATIVE_STATE_LABELS[change.newValue] ?? change.newValue)
+        : change.newValue;
 
     const canApply = change.valid && change.kind !== "dm_note";
 
@@ -158,29 +207,27 @@ function ChangeRow({ change, applying, onApply }) {
                 {KIND_ICONS[change.kind] ?? <EditIcon sx={{ fontSize: "0.85rem" }} />}
             </Box>
             <Box sx={{ flex: 1, minWidth: 0 }}>
+                <CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.textSecondary, letterSpacing: 0.6, mb: 0.15 }}>
+                    {KIND_LABELS[change.kind] ?? change.kind}
+                </CyberText>
                 <CyberText sx={{ fontSize: "0.72rem", color: UI_COLORS.textPrimary, lineHeight: 1.4 }}>
                     {change.kind === "dm_note" ? (
                         <em style={{ color: UI_COLORS.textSecondary }}>{change.noteText}</em>
                     ) : change.kind === "entity_state_update" ? (
                         <>
                             <strong>{change.fromEntityTitle}</strong>
-                            <span style={{ color: UI_COLORS.textSecondary }}> → {change.field}: </span>
-                            <strong style={{ color: UI_COLORS.anomaly }}>{change.newValue}</strong>
+                            <span style={{ color: UI_COLORS.textSecondary }}>
+                                {" · "}{change.field || "(field?)"}{": "}
+                            </span>
+                            <strong style={{ color: UI_COLORS.anomaly }}>{stateLabel || "—"}</strong>
                         </>
                     ) : (
                         <>
-                            <strong>{change.fromEntityTitle}</strong>
-                            {relLabel && (
-                                <span style={{ color: UI_COLORS.textSecondary }}>
-                                    {" → [" + relLabel + "] → "}
-                                </span>
-                            )}
-                            <strong>{change.toEntityTitle}</strong>
-                            {change.strengthDelta != null && change.strengthDelta !== 0 && (
-                                <span style={{ color: change.strengthDelta > 0 ? UI_COLORS.anomaly : UI_COLORS.accentStrong }}>
-                                    {" (" + (change.strengthDelta > 0 ? "+" : "") + change.strengthDelta + ")"}
-                                </span>
-                            )}
+                            <strong>{change.fromEntityTitle || "?"}</strong>
+                            <span style={{ color: UI_COLORS.textSecondary }}>
+                                {" → ["}{relLabel || change.relationType || "?"}{"] → "}
+                            </span>
+                            <strong>{change.toEntityTitle || "?"}</strong>
                             {change.newLabel && (
                                 <span style={{ color: UI_COLORS.textSecondary }}>
                                     {" · \"" + change.newLabel + "\""}
@@ -189,6 +236,7 @@ function ChangeRow({ change, applying, onApply }) {
                         </>
                     )}
                 </CyberText>
+                {isRelation && <StrengthBadge change={change} />}
                 <CyberText sx={{ fontSize: "0.65rem", color: UI_COLORS.textSecondary, mt: 0.25 }}>
                     {change.reason}
                 </CyberText>
@@ -224,13 +272,21 @@ function ChangeRow({ change, applying, onApply }) {
     );
 }
 
-function ImpactCard({ impact, applying, onApplyChange, onApplyImpact }) {
+function ImpactCard({ impact, applying, onApplyChange, onApplyImpact, relations = [] }) {
     const [expanded, setExpanded] = useState(false);
     const wave  = impact.wave ?? 1;
     const waveColor = WAVE_COLORS[wave] ?? UI_COLORS.textSecondary;
     const conf  = impact.confidence ?? "media";
-    const validChanges = (impact.resolvedChanges ?? []).filter((c) => c.valid);
+    const enrichedChanges = (impact.resolvedChanges ?? []).map((ch) =>
+        enrichRelationStrengthChange(ch, relations)
+    );
+    const validChanges = enrichedChanges.filter((c) => c.valid && c.kind !== "dm_note");
     const hasPersonalityShift = Boolean(impact.personalityShift?.to);
+    const canApplyImpact = Boolean(impact.entityResolved)
+        && (validChanges.length > 0
+            || hasPersonalityShift
+            || Boolean(impact.emotionalReaction?.trim())
+            || Boolean(impact.collectiveReaction?.trim()));
 
     return (
         <Box
@@ -350,9 +406,13 @@ function ImpactCard({ impact, applying, onApplyChange, onApplyImpact }) {
                                 CAMBIO DE ESTADO NARRATIVO
                             </CyberText>
                             <CyberText sx={{ fontSize: "0.72rem", color: UI_COLORS.textPrimary }}>
-                                <span style={{ color: UI_COLORS.textSecondary }}>{impact.personalityShift.from}</span>
+                                <span style={{ color: UI_COLORS.textSecondary }}>
+                                    {NARRATIVE_STATE_LABELS[impact.personalityShift.from] ?? impact.personalityShift.from}
+                                </span>
                                 {" → "}
-                                <strong style={{ color: UI_COLORS.anomaly }}>{impact.personalityShift.to}</strong>
+                                <strong style={{ color: UI_COLORS.anomaly }}>
+                                    {NARRATIVE_STATE_LABELS[impact.personalityShift.to] ?? impact.personalityShift.to}
+                                </strong>
                             </CyberText>
                             <CyberText sx={{ fontSize: "0.65rem", color: UI_COLORS.textSecondary, mt: 0.25 }}>
                                 {impact.personalityShift.reason}
@@ -361,12 +421,12 @@ function ImpactCard({ impact, applying, onApplyChange, onApplyImpact }) {
                     )}
 
                     {/* Proposed changes */}
-                    {(impact.resolvedChanges ?? []).length > 0 && (
+                    {enrichedChanges.length > 0 && (
                         <Box>
                             <CyberText sx={{ fontSize: "0.65rem", color: UI_COLORS.textSecondary, mb: 0.5, letterSpacing: 1 }}>
-                                CAMBIOS PROPUESTOS ({impact.resolvedChanges.length})
+                                CAMBIOS PROPUESTOS ({enrichedChanges.length})
                             </CyberText>
-                            {impact.resolvedChanges.map((ch, i) => (
+                            {enrichedChanges.map((ch, i) => (
                                 <ChangeRow
                                     key={i}
                                     change={ch}
@@ -377,8 +437,8 @@ function ImpactCard({ impact, applying, onApplyChange, onApplyImpact }) {
                         </Box>
                     )}
 
-                    {/* Apply all button */}
-                    {(validChanges.length > 0 || hasPersonalityShift) && (
+                    {/* Apply all button (relations/state + bloque IA en ficha) */}
+                    {canApplyImpact && (
                         <Button
                             size="small"
                             variant="outlined"
@@ -431,55 +491,73 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
         if (!change.valid || !campaignId) return;
         setApplying(true);
         try {
-            if (change.kind === "relation_add" || change.kind === "relation_update") {
-                await dispatch(addWikiRelation({
-                    campaignId,
-                    uid,
-                    data: {
-                        fromEntityId: change.resolvedEndpoints.fromEntityId,
-                        toEntityId:   change.resolvedEndpoints.toEntityId,
-                        relationType: change.relationType,
-                        label:        change.newLabel ?? "",
-                        strength:     change.strengthDelta != null
-                            ? defaultStrengthForRelationType(change.relationType) + change.strengthDelta
-                            : defaultStrengthForRelationType(change.relationType),
-                    },
-                }));
+            const enriched = enrichRelationStrengthChange(change, relations);
+            if (enriched.kind === "relation_add" || enriched.kind === "relation_update") {
+                if (!enriched.relationType) {
+                    dispatch(showSnackbar({
+                        message: "No se puede aplicar: falta relationType.",
+                        severity: "warning",
+                    }));
+                    return;
+                }
+                const fromEntityId = enriched.resolvedEndpoints?.fromEntityId ?? enriched.fromEntity?.id;
+                const toEntityId = enriched.resolvedEndpoints?.toEntityId ?? enriched.toEntity?.id;
+                const strengthLabel = formatStrengthChangeLabel(enriched) ?? "";
+                if (enriched.existingRelationId) {
+                    await dispatch(updateWikiRelation({
+                        campaignId,
+                        relationId: enriched.existingRelationId,
+                        data: {
+                            strength: enriched.proposedStrength,
+                            ...(enriched.newLabel != null ? { label: enriched.newLabel } : {}),
+                        },
+                    })).unwrap();
+                } else {
+                    await dispatch(addWikiRelation({
+                        campaignId,
+                        uid,
+                        data: {
+                            fromEntityId,
+                            toEntityId,
+                            relationType: enriched.relationType,
+                            label: enriched.newLabel ?? "",
+                            strength: enriched.proposedStrength,
+                        },
+                    })).unwrap();
+                }
                 dispatch(showSnackbar({
-                    message: `Relación aplicada: ${change.fromEntityTitle} → ${change.toEntityTitle}`,
+                    message: `Relación: ${enriched.fromEntityTitle} → ${enriched.toEntityTitle} · ${strengthLabel}`,
                     severity: "success",
                 }));
-            } else if (change.kind === "relation_remove") {
-                const existing = relations.find(
-                    (r) => r.fromEntityId === change.resolvedEndpoints.fromEntityId
-                        && r.toEntityId   === change.resolvedEndpoints.toEntityId
-                        && r.relationType === change.relationType
-                );
-                if (existing) {
-                    await dispatch(removeWikiRelation({ campaignId, relationId: existing.id }));
+            } else if (enriched.kind === "relation_remove") {
+                if (!enriched.existingRelationId) {
+                    dispatch(showSnackbar({ message: "Relación no encontrada en el wiki.", severity: "warning" }));
+                } else {
+                    await dispatch(removeWikiRelation({
+                        campaignId,
+                        relationId: enriched.existingRelationId,
+                    })).unwrap();
                     dispatch(showSnackbar({
-                        message: `Relación eliminada: ${change.fromEntityTitle} → ${change.toEntityTitle}`,
+                        message: `Relación eliminada: ${enriched.fromEntityTitle} → ${enriched.toEntityTitle}`,
                         severity: "success",
                     }));
-                } else {
-                    dispatch(showSnackbar({ message: "Relación no encontrada en el wiki.", severity: "warning" }));
                 }
-            } else if (change.kind === "entity_state_update") {
-                const targetEntity = change.fromEntity ?? entities.find((e) => e.title === change.fromEntityTitle);
+            } else if (enriched.kind === "entity_state_update") {
+                const targetEntity = enriched.fromEntity ?? entities.find((e) => e.title === enriched.fromEntityTitle);
                 if (!targetEntity) {
-                    dispatch(showSnackbar({ message: `Entidad "${change.fromEntityTitle}" no encontrada.`, severity: "warning" }));
+                    dispatch(showSnackbar({ message: `Entidad "${enriched.fromEntityTitle}" no encontrada.`, severity: "warning" }));
                     return;
                 }
                 const { mergeCustomFields } = await import("../../utils/wikiCustomFields.js");
                 const updatedCf = mergeCustomFields(targetEntity.customFields ?? {}, targetEntity.entityType, {
-                    [change.field]: change.newValue,
+                    [enriched.field]: enriched.newValue,
                 });
                 await dispatch(saveWikiEntity({
                     campaignId, entityId: targetEntity.id, uid,
                     data: { ...targetEntity, customFields: updatedCf },
                 })).unwrap();
-                const label = NARRATIVE_STATE_LABELS[change.newValue] ?? change.newValue;
-                dispatch(showSnackbar({ message: `Estado de ${change.fromEntityTitle} → ${label}`, severity: "success" }));
+                const label = NARRATIVE_STATE_LABELS[enriched.newValue] ?? enriched.newValue;
+                dispatch(showSnackbar({ message: `Estado de ${enriched.fromEntityTitle} → ${label}`, severity: "success" }));
             }
         } catch (err) {
             dispatch(showSnackbar({ message: `Error: ${err.message}`, severity: "error" }));
@@ -493,24 +571,41 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
         if (!campaignId) return;
         setApplying(true);
         try {
-            const { applied, skipped, errors: applyErrors } = await applyProposedImpact({
+            const { applied, skipped, errors: applyErrors, details = [] } = await applyProposedImpact({
                 impact,
                 dispatch,
                 saveWikiEntity,
                 addWikiRelation,
+                updateWikiRelation,
                 removeWikiRelation,
                 campaignId,
                 uid,
                 entities,
+                relations,
+                eventMeta: { eventTitle: result?.eventTitle || "" },
             });
-            const msg = `Impacto aplicado: ${applied} cambio${applied !== 1 ? "s" : ""}${skipped ? ` (${skipped} omitido${skipped !== 1 ? "s" : ""})` : ""}${applyErrors.length ? ` · errores: ${applyErrors.join("; ")}` : ""}`;
-            dispatch(showSnackbar({ message: msg, severity: applyErrors.length ? "warning" : "success" }));
+            const head = applied === 0 && skipped > 0
+                ? `Sin cambios aplicados (${skipped} omitido${skipped !== 1 ? "s" : ""})`
+                : `Impacto: ${applied} aplicado${applied !== 1 ? "s" : ""}${skipped ? ` · ${skipped} omitido${skipped !== 1 ? "s" : ""}` : ""}`;
+            const detailLine = details.length
+                ? ` — ${details.slice(0, 4).join("; ")}${details.length > 4 ? "…" : ""}`
+                : "";
+            const errLine = applyErrors.length ? ` · errores: ${applyErrors.join("; ")}` : "";
+            dispatch(showSnackbar({
+                message: `${head}${detailLine}${errLine}`,
+                severity: applyErrors.length || applied === 0 ? "warning" : "success",
+            }));
         } catch (err) {
             dispatch(showSnackbar({ message: `Error al aplicar impacto: ${err.message}`, severity: "error" }));
         } finally {
             setApplying(false);
         }
-    }, [campaignId, uid, entities, dispatch]);
+    }, [campaignId, uid, entities, relations, dispatch, result?.eventTitle]);
+
+    const handleApplyCollectiveImpact = useCallback(async (collective) => {
+        if (!campaignId || !collective) return;
+        await handleApplyImpact(normalizeCollectiveImpactForApply(collective));
+    }, [campaignId, handleApplyImpact]);
 
     const canCreateEvent = Boolean(
         result?.proposedEvent?.shouldCreate && result.proposedEvent.title?.trim()
@@ -689,6 +784,7 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
                                 key={i}
                                 impact={imp}
                                 applying={applying}
+                                relations={relations}
                                 onApplyChange={(ch) => setConfirmChange(ch)}
                                 onApplyImpact={handleApplyImpact}
                             />
@@ -706,51 +802,82 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
                             IMPACTOS COLECTIVOS — {result.collectiveImpacts.length} entidad{result.collectiveImpacts.length > 1 ? "es" : ""}
                         </CyberTitle>
                     </Box>
-                    {result.collectiveImpacts.map((ci, i) => (
-                        <Box
-                            key={i}
-                            sx={{
-                                border: `1px solid ${UI_COLORS.border}`,
-                                borderLeft: "3px solid #ffa726",
-                                borderRadius: 1,
-                                mb: 1,
-                                p: 1.25,
-                                bgcolor: `${UI_COLORS.backgroundPrimary}bb`,
-                            }}
-                        >
-                            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 0.5 }}>
-                                <CyberTitle sx={{ fontSize: "0.76rem", color: "#ffa726", flex: 1 }}>
-                                    {ci.entityTitle}
-                                </CyberTitle>
-                                <Chip
-                                    label={ci.entityKind}
-                                    size="small"
-                                    sx={{ height: 16, fontSize: "0.54rem", bgcolor: "#ffa72618", color: "#ffa726", "& .MuiChip-label": { px: 0.6 } }}
-                                />
-                                <Chip
-                                    label={ci.confidence ?? "media"}
-                                    size="small"
-                                    sx={{ height: 16, fontSize: "0.54rem", bgcolor: `${CONFIDENCE_COLORS[ci.confidence ?? "media"]}22`, color: CONFIDENCE_COLORS[ci.confidence ?? "media"], "& .MuiChip-label": { px: 0.6 } }}
-                                />
-                            </Box>
-                            <CyberText sx={{ fontSize: "0.73rem", color: UI_COLORS.textPrimary, mb: 0.5 }}>
-                                {ci.collectiveReaction}
-                            </CyberText>
-                            {ci.narrativeHook && (
-                                <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary, fontStyle: "italic" }}>
-                                    {ci.narrativeHook}
+                    {result.collectiveImpacts.map((ci, i) => {
+                        const ciChanges = (ci.resolvedChanges ?? []).map((ch) =>
+                            enrichRelationStrengthChange(ch, relations)
+                        );
+                        const ciValid = ciChanges.filter((c) => c.valid && c.kind !== "dm_note");
+                        const canApplyCollective = Boolean(ci.entityResolved)
+                            && (ciValid.length > 0
+                                || Boolean(ci.collectiveReaction?.trim())
+                                || Boolean(ci.narrativeHook?.trim()));
+                        return (
+                            <Box
+                                key={i}
+                                sx={{
+                                    border: `1px solid ${UI_COLORS.border}`,
+                                    borderLeft: "3px solid #ffa726",
+                                    borderRadius: 1,
+                                    mb: 1,
+                                    p: 1.25,
+                                    bgcolor: `${UI_COLORS.backgroundPrimary}bb`,
+                                }}
+                            >
+                                <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 0.5 }}>
+                                    <CyberTitle sx={{ fontSize: "0.76rem", color: "#ffa726", flex: 1 }}>
+                                        {ci.entityTitle}
+                                    </CyberTitle>
+                                    <Chip
+                                        label={ci.entityKind}
+                                        size="small"
+                                        sx={{ height: 16, fontSize: "0.54rem", bgcolor: "#ffa72618", color: "#ffa726", "& .MuiChip-label": { px: 0.6 } }}
+                                    />
+                                    <Chip
+                                        label={ci.confidence ?? "media"}
+                                        size="small"
+                                        sx={{ height: 16, fontSize: "0.54rem", bgcolor: `${CONFIDENCE_COLORS[ci.confidence ?? "media"]}22`, color: CONFIDENCE_COLORS[ci.confidence ?? "media"], "& .MuiChip-label": { px: 0.6 } }}
+                                    />
+                                </Box>
+                                <CyberText sx={{ fontSize: "0.73rem", color: UI_COLORS.textPrimary, mb: 0.5 }}>
+                                    {ci.collectiveReaction}
                                 </CyberText>
-                            )}
-                            {(ci.resolvedChanges ?? []).map((ch, j) => (
-                                <ChangeRow
-                                    key={j}
-                                    change={ch}
-                                    applying={applying}
-                                    onApply={(ch) => setConfirmChange(ch)}
-                                />
-                            ))}
-                        </Box>
-                    ))}
+                                {ci.narrativeHook && (
+                                    <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary, fontStyle: "italic", mb: 0.5 }}>
+                                        {ci.narrativeHook}
+                                    </CyberText>
+                                )}
+                                {ciChanges.map((ch, j) => (
+                                    <ChangeRow
+                                        key={j}
+                                        change={ch}
+                                        applying={applying}
+                                        onApply={(row) => setConfirmChange(row)}
+                                    />
+                                ))}
+                                {canApplyCollective && (
+                                    <Button
+                                        size="small"
+                                        variant="outlined"
+                                        disabled={applying}
+                                        fullWidth
+                                        onClick={() => handleApplyCollectiveImpact(ci)}
+                                        sx={{
+                                            mt: 0.75,
+                                            fontSize: "0.6rem",
+                                            fontFamily: "'Orbitron', sans-serif",
+                                            letterSpacing: 0.5,
+                                            borderColor: "#ffa72688",
+                                            color: "#ffa726",
+                                            py: 0.25,
+                                            "&:hover": { bgcolor: "#ffa72612" },
+                                        }}
+                                    >
+                                        Aplicar impacto completo
+                                    </Button>
+                                )}
+                            </Box>
+                        );
+                    })}
                 </Box>
             )}
 
@@ -859,7 +986,7 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
             <Dialog
                 open={Boolean(confirmChange)}
                 onClose={() => setConfirmChange(null)}
-                sx={{ zIndex: 1500 }}
+                sx={{ zIndex: Z_INDEX.wikiDialog }}
                 PaperProps={{
                     sx: { bgcolor: UI_COLORS.backgroundSecondary, border: `1px solid ${UI_COLORS.border}`, minWidth: 320 },
                 }}
@@ -873,13 +1000,35 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
                             <>
                                 <strong>{KIND_LABELS[confirmChange.kind] ?? confirmChange.kind}</strong>
                                 <br /><br />
-                                <strong>{confirmChange.fromEntityTitle}</strong>
-                                {confirmChange.relationType && (
-                                    <span style={{ color: UI_COLORS.textSecondary }}>
-                                        {" → [" + (WIKI_RELATION_TYPE_LABELS[confirmChange.relationType] ?? confirmChange.relationType) + "] → "}
-                                    </span>
+                                {confirmChange.kind === "entity_state_update" ? (
+                                    <>
+                                        <strong>{confirmChange.fromEntityTitle}</strong>
+                                        <span style={{ color: UI_COLORS.textSecondary }}>
+                                            {" · "}{confirmChange.field}{" → "}
+                                        </span>
+                                        <strong>
+                                            {NARRATIVE_STATE_LABELS[confirmChange.newValue] ?? confirmChange.newValue}
+                                        </strong>
+                                    </>
+                                ) : (
+                                    <>
+                                        <strong>{confirmChange.fromEntityTitle}</strong>
+                                        {confirmChange.relationType && (
+                                            <span style={{ color: UI_COLORS.textSecondary }}>
+                                                {" → [" + (WIKI_RELATION_TYPE_LABELS[confirmChange.relationType] ?? confirmChange.relationType) + "] → "}
+                                            </span>
+                                        )}
+                                        <strong>{confirmChange.toEntityTitle}</strong>
+                                        {formatStrengthChangeLabel(confirmChange) && (
+                                            <>
+                                                <br />
+                                                <span style={{ color: UI_COLORS.anomaly, fontFamily: "'Orbitron', sans-serif", fontSize: "0.74rem" }}>
+                                                    {formatStrengthChangeLabel(confirmChange)}
+                                                </span>
+                                            </>
+                                        )}
+                                    </>
                                 )}
-                                <strong>{confirmChange.toEntityTitle}</strong>
                                 <br /><br />
                                 <span style={{ color: UI_COLORS.textSecondary, fontSize: "0.74rem" }}>
                                     {confirmChange.reason}
@@ -910,7 +1059,7 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
             <Dialog
                 open={confirmCreateEvent}
                 onClose={() => !creatingEvent && setConfirmCreateEvent(false)}
-                sx={{ zIndex: 1500 }}
+                sx={{ zIndex: Z_INDEX.wikiDialog }}
                 PaperProps={{
                     sx: { bgcolor: UI_COLORS.backgroundSecondary, border: `1px solid ${UI_COLORS.border}`, minWidth: 340 },
                 }}

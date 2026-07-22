@@ -1,16 +1,19 @@
 import { useState, useEffect, useRef } from "react";
-import { Box } from "@mui/material";
+import { Badge, Box, IconButton, Tooltip } from "@mui/material";
+import PersonPinCircleIcon from "@mui/icons-material/PersonPinCircle";
+import ChatIcon from "@mui/icons-material/Chat";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 
-import { openDialog, showSnackbar, setIsMinimized, openWikiOverlay, setWikiOverlayMinimized } from "../../store/uiSlice";
+import { restoreDialog, openDialog, showSnackbar, openWikiOverlay } from "../../store/uiSlice";
+import { DIALOG_IDS } from "../../constants/dialogIds";
 import { resetWorldState } from "../../store/worldSlice";
 import { fetchPlayerCharacters } from "../../store/characterSlice";
 import { logoutPlayer } from "../../../firebase/playersAuth";
-import { loadFirebaseAsset } from "../../../firebase/services/assetLoader";
 import { UI_COLORS } from "../../constants/uiColors";
 import { ROLES } from "../../constants/roles";
 import { VTT_HUD } from "../../constants/vttHudTokens";
+import { useAssetUrl } from "../../hooks/useAssetUrl";
 
 const menuItemSx = {
     display: "block",
@@ -36,32 +39,55 @@ const menuItemSx = {
     },
 };
 
-export default function TopRightHUD({ profile }) {
+const hudIconBtnSx = (active, accent = UI_COLORS.anomaly) => ({
+    width: VTT_HUD.hudBtnSize,
+    height: VTT_HUD.hudBtnSize,
+    color: active ? UI_COLORS.accent : accent,
+    border: `1px solid ${active ? UI_COLORS.accent : `${accent}55`}`,
+    bgcolor: "rgba(10,10,15,0.9)",
+    backdropFilter: "blur(8px)",
+    boxShadow: active ? `0 0 12px ${UI_COLORS.accent}44` : "none",
+    "&:hover": {
+        borderColor: UI_COLORS.accent,
+        bgcolor: `${UI_COLORS.accent}14`,
+    },
+});
+
+export default function TopRightHUD({
+    profile,
+    tokenPanelOpen = false,
+    onToggleTokenPanel,
+    showTokenToggle = false,
+    showChatToggle = false,
+    chatPanelOpen = false,
+    chatUnread = 0,
+    onToggleChatPanel,
+}) {
     const dispatch = useDispatch();
     const navigate = useNavigate();
     const [menuOpen, setMenuOpen] = useState(false);
-    const [avatarUrl, setAvatarUrl] = useState(null);
     const menuRef = useRef(null);
 
     const { list: characters } = useSelector((s) => s.characters);
     const campaignId = useSelector((s) => s.world.selectedCampaignId);
-    const isDM = profile?.role === ROLES.DM;
+    const locations = useSelector((s) => s.world.locations);
+    const isDM = profile?.role === ROLES.DM || profile?.role === "gm";
 
-    const activeCharacter =
-        characters.find((c) => c.id === profile?.activeCharacterId) ||
-        characters[0] ||
-        null;
-
-    /* Load avatar */
-    useEffect(() => {
-        if (activeCharacter?.imageUrl) {
-            loadFirebaseAsset(activeCharacter.imageUrl)
-                .then(setAvatarUrl)
-                .catch(() => setAvatarUrl(null));
-        } else {
-            setAvatarUrl(null);
+    const activeCharacter = (() => {
+        const fromSheet =
+            characters.find((c) => c.id === profile?.activeCharacterId) ||
+            characters[0] ||
+            null;
+        if (!fromSheet) return null;
+        for (const loc of Object.values(locations || {})) {
+            const live = loc.characters?.find((c) => c.id === fromSheet.id);
+            if (live) return { ...fromSheet, ...live };
         }
-    }, [activeCharacter?.imageUrl]);
+        return fromSheet;
+    })();
+
+    const avatarPath = activeCharacter?.tokenImageUrl || activeCharacter?.imageUrl || null;
+    const avatarUrl = useAssetUrl(avatarPath);
 
     /* Fetch player characters */
     useEffect(() => {
@@ -107,13 +133,13 @@ export default function TopRightHUD({ profile }) {
             );
             return;
         }
-        dispatch(setWikiOverlayMinimized(false));
+        dispatch(restoreDialog(DIALOG_IDS.WIKI));
         dispatch(openWikiOverlay({ mode: "list" }));
     };
 
     const handleOpenSettings = () => {
         setMenuOpen(false);
-        dispatch(setIsMinimized(false));
+        dispatch(restoreDialog(DIALOG_IDS.SETTINGS));
         dispatch(openDialog("settings"));
     };
 
@@ -122,17 +148,61 @@ export default function TopRightHUD({ profile }) {
     return (
         <Box
             ref={menuRef}
+            data-no-token-drop
             sx={{
                 position: "fixed",
                 top: VTT_HUD.inset,
                 right: VTT_HUD.inset,
-                zIndex: 1200,
+                zIndex: VTT_HUD.profileZIndex,
                 pointerEvents: "auto",
                 display: "flex",
                 alignItems: "center",
                 gap: 0.75,
             }}
         >
+            {showChatToggle && (
+                <Tooltip title={chatPanelOpen ? "Cerrar chat" : "Chat"} placement="bottom">
+                    <Badge
+                        badgeContent={chatPanelOpen ? 0 : chatUnread}
+                        color="error"
+                        overlap="circular"
+                        sx={{
+                            "& .MuiBadge-badge": {
+                                fontSize: "0.55rem",
+                                minWidth: 16,
+                                height: 16,
+                                bgcolor: UI_COLORS.accent,
+                                color: "#fff",
+                            },
+                        }}
+                    >
+                        <IconButton
+                            size="small"
+                            onClick={() => onToggleChatPanel?.()}
+                            aria-label="Chat"
+                            aria-pressed={chatPanelOpen}
+                            sx={hudIconBtnSx(chatPanelOpen, UI_COLORS.anomaly)}
+                        >
+                            <ChatIcon sx={{ fontSize: "1.1rem" }} />
+                        </IconButton>
+                    </Badge>
+                </Tooltip>
+            )}
+
+            {showTokenToggle && (
+                <Tooltip title={tokenPanelOpen ? "Cerrar tokens" : "Tokens del mapa"} placement="bottom">
+                    <IconButton
+                        size="small"
+                        onClick={() => onToggleTokenPanel?.()}
+                        aria-label="Tokens del mapa"
+                        aria-pressed={tokenPanelOpen}
+                        sx={hudIconBtnSx(tokenPanelOpen, UI_COLORS.anomaly)}
+                    >
+                        <PersonPinCircleIcon sx={{ fontSize: "1.15rem" }} />
+                    </IconButton>
+                </Tooltip>
+            )}
+
             {/* Profile avatar pill */}
             <Box
                 component="button"
@@ -145,7 +215,7 @@ export default function TopRightHUD({ profile }) {
                     gap: 1,
                     px: 1.5,
                     pl: 0.75,
-                    height: 40,
+                    height: VTT_HUD.profilePillHeight,
                     borderRadius: "20px",
                     border: `1px solid ${menuOpen ? UI_COLORS.accent : "rgba(255,102,255,0.22)"}`,
                     bgcolor: "rgba(10,10,15,0.9)",
@@ -178,6 +248,8 @@ export default function TopRightHUD({ profile }) {
                             component="img"
                             src={avatarUrl}
                             alt={activeCharacter?.name || "character"}
+                            decoding="sync"
+                            loading="eager"
                             sx={{ width: "100%", height: "100%", objectFit: "cover" }}
                         />
                     ) : (
