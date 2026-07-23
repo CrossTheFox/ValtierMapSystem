@@ -20,7 +20,7 @@ import { useState, useCallback } from "react";
 import {
     Box, Button, Chip, Collapse, Dialog, DialogActions,
     DialogContent, DialogContentText, DialogTitle,
-    Divider, IconButton, Tooltip, CircularProgress,
+    Divider, IconButton, TextField, Tooltip, CircularProgress,
 } from "@mui/material";
 import ExpandMoreIcon         from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon         from "@mui/icons-material/ExpandLess";
@@ -44,12 +44,20 @@ import { addWikiRelation, updateWikiRelation, removeWikiRelation, saveWikiEntity
 import { showSnackbar } from "../../store/uiSlice";
 import { applyProposedWikiEvent } from "../../utils/applyProposedWikiEvent";
 import { applyProposedImpact } from "../../utils/applyProposedImpact";
-import { normalizeCollectiveImpactForApply } from "../../utils/aiImpactBlocks";
+import {
+    buildAiImpactBlockBody,
+    normalizeCollectiveImpactForApply,
+} from "../../utils/aiImpactBlocks";
 import { NARRATIVE_STATE_LABELS } from "../../constants/wiki/entityFieldSchemas";
 import {
     enrichRelationStrengthChange,
     formatStrengthChangeLabel,
 } from "../../utils/resolveRelationStrengthChange";
+import {
+    clampRelationStrength,
+    WIKI_RELATION_STRENGTH_MIN,
+    WIKI_RELATION_STRENGTH_MAX,
+} from "../../../firebase/services/wikiRelationService";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -135,6 +143,57 @@ function ArchetypeBadge({ archetype }) {
             />
         </Tooltip>
     );
+}
+
+/**
+ * Build editable strength rows for the review dialog (AI defaults).
+ * @param {object} impact
+ * @param {object[]} relations
+ */
+function buildStrengthDrafts(impact, relations = []) {
+    const rows = [];
+    (impact?.resolvedChanges ?? []).forEach((ch, index) => {
+        if (!ch?.valid) return;
+        if (ch.kind !== "relation_add" && ch.kind !== "relation_update") return;
+        const enriched = enrichRelationStrengthChange(ch, relations);
+        rows.push({
+            index,
+            kind: enriched.kind,
+            fromTitle: enriched.fromEntityTitle ?? "?",
+            toTitle: enriched.toEntityTitle ?? "?",
+            relationType: enriched.relationType,
+            currentStrength: enriched.currentStrength,
+            proposedStrength: enriched.proposedStrength ?? 0,
+            include: true,
+        });
+    });
+    return rows;
+}
+
+/**
+ * Apply DM strength edits onto a cloned impact before persist.
+ * Absolute peso in the UI → strengthDelta semantics expected by enrich/apply.
+ */
+function impactWithStrengthDrafts(impact, strengthDrafts = []) {
+    if (!impact || !strengthDrafts.length) return impact;
+    const byIndex = new Map(strengthDrafts.map((d) => [d.index, d]));
+    const resolvedChanges = (impact.resolvedChanges ?? []).map((ch, index) => {
+        const draft = byIndex.get(index);
+        if (!draft) return ch;
+        if (!draft.include) {
+            return { ...ch, valid: false, validationError: "Omitido por el DM en revisión" };
+        }
+        const peso = clampRelationStrength(draft.proposedStrength);
+        if (ch.kind === "relation_add") {
+            return { ...ch, strengthDelta: peso };
+        }
+        if (ch.kind === "relation_update") {
+            const current = draft.currentStrength ?? 0;
+            return { ...ch, strengthDelta: peso - current };
+        }
+        return ch;
+    });
+    return { ...impact, resolvedChanges };
 }
 
 function StrengthBadge({ change }) {
@@ -444,7 +503,7 @@ function ImpactCard({ impact, applying, onApplyChange, onApplyImpact, relations 
                             variant="outlined"
                             disabled={applying}
                             fullWidth
-                            onClick={() => onApplyImpact(impact)}
+                            onClick={() => onApplyImpact?.(impact)}
                             sx={{
                                 mt: 0.75,
                                 fontSize: "0.6rem",
@@ -456,7 +515,7 @@ function ImpactCard({ impact, applying, onApplyChange, onApplyImpact, relations 
                                 "&:hover": { bgcolor: `${UI_COLORS.anomaly}12` },
                             }}
                         >
-                            Aplicar impacto completo
+                            Revisar y aplicar
                         </Button>
                     )}
                 </Box>
@@ -486,6 +545,8 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
     const [confirmChange, setConfirmChange] = useState(null);
     const [confirmCreateEvent, setConfirmCreateEvent] = useState(false);
     const [creatingEvent, setCreatingEvent] = useState(false);
+    /** @type {[{ impact: object, draftBody: string }|null, Function]} */
+    const [impactReview, setImpactReview] = useState(null);
 
     const handleApplyChange = useCallback(async (change) => {
         if (!change.valid || !campaignId) return;
@@ -567,12 +628,22 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
         }
     }, [campaignId, uid, relations, entities, dispatch]);
 
-    const handleApplyImpact = useCallback(async (impact) => {
+    const openImpactReview = useCallback((impact) => {
+        if (!impact) return;
+        const draftBody = buildAiImpactBlockBody(impact);
+        const strengthDrafts = buildStrengthDrafts(impact, relations);
+        setImpactReview({ impact, draftBody, strengthDrafts });
+    }, [relations]);
+
+    const handleApplyImpact = useCallback(async (impact, blockBodyOverride = null, strengthDrafts = null) => {
         if (!campaignId) return;
         setApplying(true);
         try {
+            const patched = strengthDrafts?.length
+                ? impactWithStrengthDrafts(impact, strengthDrafts)
+                : impact;
             const { applied, skipped, errors: applyErrors, details = [] } = await applyProposedImpact({
-                impact,
+                impact: patched,
                 dispatch,
                 saveWikiEntity,
                 addWikiRelation,
@@ -583,6 +654,7 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
                 entities,
                 relations,
                 eventMeta: { eventTitle: result?.eventTitle || "" },
+                blockBodyOverride,
             });
             const head = applied === 0 && skipped > 0
                 ? `Sin cambios aplicados (${skipped} omitido${skipped !== 1 ? "s" : ""})`
@@ -599,13 +671,14 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
             dispatch(showSnackbar({ message: `Error al aplicar impacto: ${err.message}`, severity: "error" }));
         } finally {
             setApplying(false);
+            setImpactReview(null);
         }
     }, [campaignId, uid, entities, relations, dispatch, result?.eventTitle]);
 
-    const handleApplyCollectiveImpact = useCallback(async (collective) => {
+    const handleApplyCollectiveImpact = useCallback((collective) => {
         if (!campaignId || !collective) return;
-        await handleApplyImpact(normalizeCollectiveImpactForApply(collective));
-    }, [campaignId, handleApplyImpact]);
+        openImpactReview(normalizeCollectiveImpactForApply(collective));
+    }, [campaignId, openImpactReview]);
 
     const canCreateEvent = Boolean(
         result?.proposedEvent?.shouldCreate && result.proposedEvent.title?.trim()
@@ -786,7 +859,7 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
                                 applying={applying}
                                 relations={relations}
                                 onApplyChange={(ch) => setConfirmChange(ch)}
-                                onApplyImpact={handleApplyImpact}
+                                onApplyImpact={openImpactReview}
                             />
                         ))}
                     </Box>
@@ -872,7 +945,7 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
                                             "&:hover": { bgcolor: "#ffa72612" },
                                         }}
                                     >
-                                        Aplicar impacto completo
+                                        Revisar y aplicar
                                     </Button>
                                 )}
                             </Box>
@@ -1049,6 +1122,209 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
                         disabled={applying}
                         variant="contained"
                         sx={{ bgcolor: UI_COLORS.accent, color: "#000", fontFamily: "'Orbitron', sans-serif", fontSize: "0.72rem" }}
+                    >
+                        {applying ? <CircularProgress size={13} /> : "Aplicar"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Edit impact block body + relation strengths before apply */}
+            <Dialog
+                open={Boolean(impactReview)}
+                onClose={() => !applying && setImpactReview(null)}
+                sx={{ zIndex: Z_INDEX.wikiDialog }}
+                PaperProps={{
+                    sx: {
+                        bgcolor: UI_COLORS.backgroundSecondary,
+                        border: `1px solid ${UI_COLORS.border}`,
+                        minWidth: 380,
+                        maxWidth: 520,
+                    },
+                }}
+            >
+                <DialogTitle sx={{ color: UI_COLORS.anomaly, fontFamily: "'Orbitron', sans-serif", fontSize: "0.85rem", letterSpacing: 2 }}>
+                    REVISAR IMPACTO
+                </DialogTitle>
+                <DialogContent>
+                    <DialogContentText sx={{ color: UI_COLORS.textSecondary, fontFamily: "'Fira Sans', sans-serif", fontSize: "0.75rem", mb: 1.5 }}>
+                        Revisa el impacto sobre{" "}
+                        <strong style={{ color: UI_COLORS.textPrimary }}>
+                            {impactReview?.impact?.entityTitle ?? "la entidad"}
+                        </strong>
+                        . Puedes ajustar el peso de cada relación (−10…+10) y el texto del bloque IA.
+                        Texto vacío = sin bloque (sí se aplican relaciones/estado).
+                    </DialogContentText>
+
+                    {(impactReview?.strengthDrafts?.length ?? 0) > 0 && (
+                        <Box sx={{ mb: 1.75 }}>
+                            <CyberTitle sx={{ fontSize: "0.65rem", color: UI_COLORS.textSecondary, letterSpacing: 1.5, mb: 0.75 }}>
+                                PESO DE RELACIONES
+                            </CyberTitle>
+                            {impactReview.strengthDrafts.map((draft, i) => {
+                                const relLabel = draft.relationType
+                                    ? (WIKI_RELATION_TYPE_LABELS[draft.relationType] ?? draft.relationType)
+                                    : "relación";
+                                const fromVal = draft.currentStrength;
+                                const delta = fromVal != null
+                                    ? Number(draft.proposedStrength) - Number(fromVal)
+                                    : null;
+                                return (
+                                    <Box
+                                        key={`${draft.index}-${i}`}
+                                        sx={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 1,
+                                            mb: 0.75,
+                                            p: 0.75,
+                                            borderRadius: 0.5,
+                                            border: `1px solid ${UI_COLORS.border}`,
+                                            bgcolor: `${UI_COLORS.backgroundPrimary}cc`,
+                                            opacity: draft.include ? 1 : 0.45,
+                                        }}
+                                    >
+                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                            <CyberText sx={{ fontSize: "0.72rem", color: UI_COLORS.textPrimary }}>
+                                                {draft.fromTitle}
+                                                <Box component="span" sx={{ color: UI_COLORS.textSecondary }}> → </Box>
+                                                {draft.toTitle}
+                                            </CyberText>
+                                            <CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.textSecondary }}>
+                                                {relLabel}
+                                                {fromVal != null && (
+                                                    <> · actual {fromVal}{delta != null && delta !== 0 ? ` (${delta > 0 ? "+" : ""}${delta})` : ""}</>
+                                                )}
+                                                {fromVal == null && " · nueva"}
+                                            </CyberText>
+                                        </Box>
+                                        <TextField
+                                            type="number"
+                                            size="small"
+                                            label="Peso"
+                                            disabled={!draft.include || applying}
+                                            value={draft.proposedStrength}
+                                            inputProps={{
+                                                min: WIKI_RELATION_STRENGTH_MIN,
+                                                max: WIKI_RELATION_STRENGTH_MAX,
+                                                step: 1,
+                                            }}
+                                            onChange={(e) => {
+                                                const raw = e.target.value;
+                                                const next = raw === "" || raw === "-"
+                                                    ? raw
+                                                    : clampRelationStrength(raw);
+                                                setImpactReview((prev) => {
+                                                    if (!prev) return prev;
+                                                    const strengthDrafts = prev.strengthDrafts.map((row, idx) => (
+                                                        idx === i
+                                                            ? { ...row, proposedStrength: next === "" || next === "-" ? next : next }
+                                                            : row
+                                                    ));
+                                                    return { ...prev, strengthDrafts };
+                                                });
+                                            }}
+                                            onBlur={() => {
+                                                setImpactReview((prev) => {
+                                                    if (!prev) return prev;
+                                                    const strengthDrafts = prev.strengthDrafts.map((row, idx) => (
+                                                        idx === i
+                                                            ? { ...row, proposedStrength: clampRelationStrength(row.proposedStrength) }
+                                                            : row
+                                                    ));
+                                                    return { ...prev, strengthDrafts };
+                                                });
+                                            }}
+                                            sx={{
+                                                width: 88,
+                                                "& .MuiInputLabel-root": { color: UI_COLORS.textSecondary, fontSize: "0.7rem" },
+                                                "& .MuiOutlinedInput-root": {
+                                                    color: UI_COLORS.textPrimary,
+                                                    fontFamily: "'Orbitron', sans-serif",
+                                                    fontSize: "0.8rem",
+                                                    bgcolor: UI_COLORS.backgroundPrimary,
+                                                    "& fieldset": { borderColor: UI_COLORS.border },
+                                                    "&:hover fieldset": { borderColor: UI_COLORS.anomaly },
+                                                    "&.Mui-focused fieldset": { borderColor: UI_COLORS.anomaly },
+                                                },
+                                                "& input": { color: UI_COLORS.textPrimary, py: 0.75 },
+                                            }}
+                                        />
+                                        <Button
+                                            size="small"
+                                            disabled={applying}
+                                            onClick={() => {
+                                                setImpactReview((prev) => {
+                                                    if (!prev) return prev;
+                                                    const strengthDrafts = prev.strengthDrafts.map((row, idx) => (
+                                                        idx === i ? { ...row, include: !row.include } : row
+                                                    ));
+                                                    return { ...prev, strengthDrafts };
+                                                });
+                                            }}
+                                            sx={{
+                                                minWidth: 0,
+                                                px: 0.75,
+                                                fontSize: "0.58rem",
+                                                color: draft.include ? UI_COLORS.accentStrong : UI_COLORS.anomaly,
+                                                border: `1px solid ${draft.include ? UI_COLORS.accentStrong : UI_COLORS.anomaly}66`,
+                                            }}
+                                        >
+                                            {draft.include ? "Omitir" : "Incluir"}
+                                        </Button>
+                                    </Box>
+                                );
+                            })}
+                        </Box>
+                    )}
+
+                    <CyberTitle sx={{ fontSize: "0.65rem", color: UI_COLORS.textSecondary, letterSpacing: 1.5, mb: 0.75 }}>
+                        TEXTO DEL BLOQUE IA
+                    </CyberTitle>
+                    <TextField
+                        multiline
+                        minRows={3}
+                        fullWidth
+                        value={impactReview?.draftBody ?? ""}
+                        onChange={(e) => setImpactReview((prev) => (
+                            prev ? { ...prev, draftBody: e.target.value } : prev
+                        ))}
+                        sx={{
+                            "& .MuiOutlinedInput-root": {
+                                color: UI_COLORS.textPrimary,
+                                fontFamily: "'Fira Sans', sans-serif",
+                                fontSize: "0.8rem",
+                                bgcolor: UI_COLORS.backgroundPrimary,
+                                "& fieldset": { borderColor: UI_COLORS.border },
+                                "&:hover fieldset": { borderColor: UI_COLORS.anomaly },
+                                "&.Mui-focused fieldset": { borderColor: UI_COLORS.anomaly },
+                            },
+                        }}
+                    />
+                </DialogContent>
+                <DialogActions sx={{ px: 2.5, pb: 2 }}>
+                    <Button
+                        onClick={() => setImpactReview(null)}
+                        disabled={applying}
+                        sx={{ color: UI_COLORS.textSecondary, fontFamily: "'Fira Sans', sans-serif", fontSize: "0.78rem" }}
+                    >
+                        Cancelar
+                    </Button>
+                    <Button
+                        onClick={() => {
+                            if (!impactReview?.impact) return;
+                            const drafts = (impactReview.strengthDrafts ?? []).map((d) => ({
+                                ...d,
+                                proposedStrength: clampRelationStrength(d.proposedStrength),
+                            }));
+                            handleApplyImpact(
+                                impactReview.impact,
+                                impactReview.draftBody ?? "",
+                                drafts,
+                            );
+                        }}
+                        disabled={applying}
+                        variant="contained"
+                        sx={{ bgcolor: UI_COLORS.anomaly, color: "#000", fontFamily: "'Orbitron', sans-serif", fontSize: "0.72rem" }}
                     >
                         {applying ? <CircularProgress size={13} /> : "Aplicar"}
                     </Button>

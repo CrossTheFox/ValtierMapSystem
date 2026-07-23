@@ -64,6 +64,8 @@ export async function applyProposedImpact({
     entities = [],
     relations = [],
     eventMeta = {},
+    /** Optional DM-edited body for the primary entity's AI impact block. */
+    blockBodyOverride = null,
 }) {
     let applied = 0;
     let skipped = 0;
@@ -208,28 +210,42 @@ export async function applyProposedImpact({
     }
 
     // Append short AI narrative blocks on EVERY touched entity ficha (primary + partners).
-    const affected = collectAffectedEntitiesFromImpact(impact, liveEntities);
-    for (const target of affected) {
-        try {
-            const latest = liveEntities.find((e) => e.id === target.id) ?? target;
-            const block = createAiImpactBlock(impact, eventMeta, { forEntity: latest });
-            if (!block) continue;
-            const patch = withAppendedAiImpactBlock(latest, block);
-            await dispatch(saveWikiEntity({
-                campaignId,
-                entityId: latest.id,
-                uid,
-                data: patch,
-            })).unwrap();
-            liveEntities = liveEntities.map((e) =>
-                e.id === latest.id ? { ...e, ...patch } : e
-            );
-            applied++;
-            details.push(`bloque IA en ficha: ${latest.title ?? latest.id}`);
-        } catch (e) {
-            errors.push(`aiImpactBlock(${target.title || target.id}): ${e.message}`);
-            details.push(`error bloque IA (${target.title || target.id}): ${e.message}`);
+    // Explicit empty override from DM review = skip all text blocks (relations/state already applied).
+    const skipAllBlocks = typeof blockBodyOverride === "string" && !blockBodyOverride.trim();
+    if (!skipAllBlocks) {
+        const primaryId = impact?.entityResolved?.id ?? null;
+        const affected = collectAffectedEntitiesFromImpact(impact, liveEntities);
+        for (const target of affected) {
+            try {
+                const latest = liveEntities.find((e) => e.id === target.id) ?? target;
+                const isPrimary = primaryId && latest.id === primaryId;
+                const block = createAiImpactBlock(impact, eventMeta, {
+                    forEntity: latest,
+                    entities: liveEntities,
+                    bodyOverride: isPrimary && typeof blockBodyOverride === "string"
+                        ? blockBodyOverride
+                        : null,
+                });
+                if (!block) continue;
+                const patch = withAppendedAiImpactBlock(latest, block);
+                await dispatch(saveWikiEntity({
+                    campaignId,
+                    entityId: latest.id,
+                    uid,
+                    data: patch,
+                })).unwrap();
+                liveEntities = liveEntities.map((e) =>
+                    e.id === latest.id ? { ...e, ...patch } : e
+                );
+                applied++;
+                details.push(`bloque IA en ficha: ${latest.title ?? latest.id}`);
+            } catch (e) {
+                errors.push(`aiImpactBlock(${target.title || target.id}): ${e.message}`);
+                details.push(`error bloque IA (${target.title || target.id}): ${e.message}`);
+            }
         }
+    } else {
+        details.push("bloques IA omitidos (texto vacío en revisión)");
     }
 
     return { applied, skipped, errors, details };

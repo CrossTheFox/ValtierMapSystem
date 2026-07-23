@@ -3,6 +3,8 @@
  * Stored as top-level `entity.aiImpactBlocks[]` (any entityType).
  */
 
+import { linkMentionsInText } from "./linkWikiMentions.js";
+
 const MAX_BODY_LINES = 4;
 const MAX_BODY_CHARS = 420;
 
@@ -93,18 +95,30 @@ export function collectAffectedEntitiesFromImpact(impact, entities = []) {
 /**
  * @param {object} impact
  * @param {{ eventTitle?: string }} [eventMeta]
- * @param {{ forEntity?: object|null }} [opts]
+ * @param {{
+ *   forEntity?: object|null,
+ *   entities?: object[],
+ *   bodyOverride?: string|null,
+ * }} [opts]
  * @returns {object|null}
  */
 export function createAiImpactBlock(impact, eventMeta = {}, opts = {}) {
     const forEntity = opts.forEntity ?? null;
+    const entities = opts.entities ?? [];
     const primaryId = impact?.entityResolved?.id ?? null;
     const isPrimary = !forEntity?.id || forEntity.id === primaryId;
 
-    const body = isPrimary
-        ? buildAiImpactBlockBody(impact)
-        : buildPartnerAiImpactBlockBody(impact, forEntity, eventMeta);
+    let body;
+    if (isPrimary && typeof opts.bodyOverride === "string") {
+        body = opts.bodyOverride.trim();
+    } else {
+        body = isPrimary
+            ? buildAiImpactBlockBody(impact)
+            : buildPartnerAiImpactBlockBody(impact, forEntity, eventMeta);
+    }
     if (!body) return null;
+
+    body = linkMentionsInText(body, entities);
 
     return {
         id: typeof crypto !== "undefined" && crypto.randomUUID
@@ -117,7 +131,7 @@ export function createAiImpactBlock(impact, eventMeta = {}, opts = {}) {
         wave: typeof impact.wave === "number" ? impact.wave : null,
         body,
         createdByAi: true,
-        editedByHuman: false,
+        editedByHuman: isPrimary && typeof opts.bodyOverride === "string",
         primaryEntityId: primaryId,
         forEntityId: forEntity?.id ?? primaryId,
     };

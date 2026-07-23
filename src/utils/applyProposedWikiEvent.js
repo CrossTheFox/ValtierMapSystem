@@ -5,7 +5,8 @@
  * Called from WikiCascadeResult after DM confirmation.
  */
 
-import { slugify, uniqueSlug } from "./wikiSlug.js";
+import { slugify, uniqueSlug, buildMentionToken } from "./wikiSlug.js";
+import { linkMentionsInText } from "./linkWikiMentions.js";
 import { resolveCampaignNarrativeDate } from "../constants/wiki/campaignNarrativeDefaults.js";
 import {
     WIKI_RELATION_TYPES,
@@ -71,12 +72,38 @@ export async function applyProposedWikiEvent({
     const existingSlugs = entities.map((e) => e.slug).filter(Boolean);
     const slug = uniqueSlug(slugify(proposedEvent.title), existingSlugs);
 
+    const unresolvedParticipants = [];
+    const resolvedParticipants = [];
+    for (const participantTitle of proposedEvent.participants ?? []) {
+        const participant = resolveEntityTitle(participantTitle, entities);
+        if (!participant) {
+            unresolvedParticipants.push(participantTitle);
+            continue;
+        }
+        resolvedParticipants.push(participant);
+    }
+
+    const rawSummary = (proposedEvent.summary ?? "").trim();
+    const summary = linkMentionsInText(rawSummary, entities);
+    const participantLines = resolvedParticipants.map(
+        (p) => `- ${buildMentionToken(p.title, p.id)}`
+    );
+    const unresolvedLines = unresolvedParticipants.map((t) => `- ${t} (sin resolver)`);
+    const bodyParts = [];
+    if (summary) bodyParts.push(summary);
+    if (participantLines.length || unresolvedLines.length) {
+        bodyParts.push(
+            ["## Participantes", ...participantLines, ...unresolvedLines].join("\n")
+        );
+    }
+    const body = linkMentionsInText(bodyParts.join("\n\n"), entities);
+
     const eventPayload = {
         entityType: WIKI_ENTITY_TYPES.EVENTO_HISTORICO,
         title: proposedEvent.title.trim(),
-        summary: (proposedEvent.summary ?? "").trim(),
-        body: "",
-        tags: [],
+        summary,
+        body,
+        tags: ["ai-cascade"],
         visibility: "dm_only",
         slug,
         customFields: {
@@ -99,16 +126,9 @@ export async function applyProposedWikiEvent({
     ).unwrap();
 
     const eventEntity = { id: created.id, entityType: WIKI_ENTITY_TYPES.EVENTO_HISTORICO, title: eventPayload.title };
-    const unresolvedParticipants = [];
     let relationsCreated = 0;
 
-    for (const participantTitle of proposedEvent.participants ?? []) {
-        const participant = resolveEntityTitle(participantTitle, entities);
-        if (!participant) {
-            unresolvedParticipants.push(participantTitle);
-            continue;
-        }
-
+    for (const participant of resolvedParticipants) {
         const endpoints = resolveRelationEndpoints(
             participant,
             eventEntity,

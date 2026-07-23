@@ -59,9 +59,12 @@ import { listSessionLogs } from "../../../firebase/services/sessionLogService";
 import { resolveWikiMentions }   from "../../utils/resolveWikiMentions";
 import { validateAiResponse, buildReflexionPrompt } from "../../utils/validateAiResponse";
 import { generateNarrativeAi }   from "../../../firebase/services/narrativeAiService";
-import { addWikiRelation, removeWikiRelation } from "../../store/wikiSlice";
+import { addWikiRelation, removeWikiRelation, saveWikiEntity } from "../../store/wikiSlice";
 import { showSnackbar } from "../../store/uiSlice";
 import { WIKI_RELATION_TYPE_LABELS, defaultStrengthForRelationType } from "../../constants/wikiRelationTypes";
+import { WIKI_ENTITY_TYPES } from "../../constants/wikiEntityTypes";
+import { slugify, uniqueSlug } from "../../utils/wikiSlug";
+import { linkMentionsInText } from "../../utils/linkWikiMentions";
 import WikiCascadeResult from "./WikiCascadeResult";
 import {
     resolveNarrativeAiConfig,
@@ -69,6 +72,8 @@ import {
 } from "../../constants/wiki/narrativeAiConfig";
 import { filterGraphEntities } from "../../utils/wikiGraphEntities";
 import { hasGeminiApiKeyConfigured } from "../../utils/aiApiKeys";
+
+const VARIATION_TEMPERATURE = 1.05;
 
 const INSPIRATION_PROMPTS = [
     { label: "3 ganchos", intent: "hook", instruction: "Genera 3 ganchos de escena distintos y jugables." },
@@ -268,7 +273,7 @@ function MetaBadge({ label, value, warn }) {
     );
 }
 
-function SituationCard({ situation, index }) {
+function SituationCard({ situation, index, onSaveDraft, saving }) {
     const [expanded, setExpanded] = useState(false);
     const conf = situation.confidence ?? "media";
 
@@ -388,8 +393,51 @@ function SituationCard({ situation, index }) {
                     </Box>
                 )}
             </Collapse>
+
+            {onSaveDraft && (
+                <Button
+                    size="small"
+                    variant="outlined"
+                    disabled={saving}
+                    onClick={() => onSaveDraft(situation)}
+                    sx={{
+                        mt: 1,
+                        fontSize: "0.62rem",
+                        fontFamily: "'Orbitron', sans-serif",
+                        letterSpacing: 0.5,
+                        borderColor: `${UI_COLORS.anomaly}88`,
+                        color: UI_COLORS.anomaly,
+                        py: 0.25,
+                        "&:hover": { bgcolor: `${UI_COLORS.anomaly}12` },
+                    }}
+                >
+                    {saving ? <CircularProgress size={12} sx={{ color: UI_COLORS.anomaly }} /> : "Guardar borrador"}
+                </Button>
+            )}
         </Box>
     );
+}
+
+/**
+ * Build crónica body markdown from a situation card.
+ * @param {object} situation
+ */
+function buildSituationDraftBody(situation) {
+    const parts = [];
+    if (situation.hook) parts.push(`## Gancho\n${situation.hook}`);
+    if (situation.stakes) parts.push(`## Stakes\n${situation.stakes}`);
+    if (situation.involvedEntities?.length) {
+        const lines = situation.involvedEntities.map((e) => {
+            const invent = e._invented ? " ⚠ inventada" : "";
+            return `- ${e.title} (${e.role})${invent}${e.why ? `: ${e.why}` : ""}`;
+        });
+        parts.push(`## Entidades\n${lines.join("\n")}`);
+    }
+    if (situation.dramaticQuestions?.length) {
+        parts.push(`## Preguntas dramáticas\n${situation.dramaticQuestions.map((q) => `- ${q}`).join("\n")}`);
+    }
+    if (situation.dmNotes) parts.push(`## Notas DM\n${situation.dmNotes}`);
+    return parts.join("\n\n");
 }
 
 // ── Main Panel ────────────────────────────────────────────────────────────────
@@ -441,6 +489,7 @@ export default function WikiAiLabPanel({
     const [lastContextText, setLastContextText] = useState("");
     const [showContextText, setShowContextText] = useState(false);
     const [tokenUsage, setTokenUsage]   = useState(null);
+    const [savingDraftIdx, setSavingDraftIdx] = useState(null);
 
     // Apply confirmation dialog
     const [applyTarget, setApplyTarget] = useState(null);
@@ -533,16 +582,91 @@ export default function WikiAiLabPanel({
         }
     }, [mode, entities]);
 
-    const handleGenerate = useCallback(async () => {
+    const handleSaveSituationDraft = useCallback(async (situation, index) => {
+        if (!campaignId || !situation?.title?.trim()) return;
+        setSavingDraftIdx(index);
+        try {
+            const existingSlugs = (entities ?? []).map((e) => e.slug).filter(Boolean);
+            const slug = uniqueSlug(slugify(situation.title), existingSlugs);
+            const tags = ["ai-draft"];
+            if (situation.tone) tags.push(String(situation.tone));
+
+            const involved = (situation.involvedEntities ?? [])
+                .map((row) => {
+                    const key = (row.title ?? "").toLowerCase().trim();
+                    if (!key) return null;
+                    return (entities ?? []).find((e) => e.title?.toLowerCase().trim() === key) ?? null;
+                })
+                .filter(Boolean);
+
+            const summary = linkMentionsInText((situation.hook ?? "").trim(), entities);
+            const body = linkMentionsInText(buildSituationDraftBody(situation), [
+                ...involved,
+                ...(entities ?? []),
+            ]);
+
+            const created = await dispatch(saveWikiEntity({
+                campaignId,
+                entityId: null,
+                uid,
+                data: {
+                    entityType: WIKI_ENTITY_TYPES.CRONICA,
+                    title: situation.title.trim(),
+                    summary,
+                    body,
+                    tags,
+                    visibility: "dm_only",
+                    slug,
+                },
+            })).unwrap();
+
+            dispatch(showSnackbar({
+                message: `Borrador guardado: ${created.title ?? situation.title}`,
+                severity: "success",
+            }));
+        } catch (err) {
+            dispatch(showSnackbar({
+                message: `No se pudo guardar el borrador: ${err.message ?? err}`,
+                severity: "error",
+            }));
+        } finally {
+            setSavingDraftIdx(null);
+        }
+    }, [campaignId, entities, uid, dispatch]);
+
+    const handleGenerate = useCallback(async (opts = {}) => {
+        const variation = Boolean(opts?.variation);
         setLoading(true);
-        setLoadingLabel("Generando…");
+        setLoadingLabel(variation ? "Generando variación…" : "Generando…");
         setError(null);
+        // Keep previous titles for variation hint before clearing result
+        const previousTitles = mode === AI_MODES.SITUATION
+            ? (result?.situations ?? []).map((s) => s.title).filter(Boolean)
+            : result?.eventTitle
+                ? [result.eventTitle]
+                : (result?.proposedEvent?.title ? [result.proposedEvent.title] : []);
         setResult(null);
         setContextMeta(null);
         setLastContextText("");
         setShowContextText(false);
         setTokenUsage(null);
         setEstimatedTokens(null);
+
+        const effectiveGenerationParams = variation
+            ? {
+                ...generationParams,
+                temperature: Math.min(
+                    1.2,
+                    Math.max(VARIATION_TEMPERATURE, Number(generationParams?.temperature ?? 0.7) + 0.25)
+                ),
+            }
+            : generationParams;
+
+        const variationNote = variation && previousTitles.length
+            ? `\n\n[VARIACIÓN] Propón una idea claramente distinta a: ${previousTitles.slice(0, 3).join(" · ")}. No repitas el mismo gancho ni la misma estructura.`
+            : variation
+                ? "\n\n[VARIACIÓN] Propón una idea claramente distinta a la generación anterior."
+                : "";
 
         const callAi = async (params) => {
             try {
@@ -625,7 +749,7 @@ export default function WikiAiLabPanel({
                             mode: AI_MODES.CASCADE_SCOUT,
                             contextText: scoutCtxText,
                             instruction: instruction || null,
-                            generationParams,
+                            generationParams: effectiveGenerationParams,
                             modelId,
                         });
                         // Parse Scout output (informational seed — no full validation needed)
@@ -649,13 +773,14 @@ export default function WikiAiLabPanel({
                 }
 
                 // ── Pasa 2 / single-pass Impact ─────────────────────────────────
+                const cascadeInstruction = `${instruction || ""}${variationNote}`.trim() || null;
                 const { raw, usage } = await callAi({
                     mode,
                     contextText: contextTextForImpact,
-                    instruction: instruction || null,
+                    instruction: cascadeInstruction,
                     resolvedMentions: ctx.resolvedMentions,
                     guardrailsText: ctx.guardrailsText,
-                    generationParams,
+                    generationParams: effectiveGenerationParams,
                     modelId,
                 });
                 setTokenUsage(usage);
@@ -716,7 +841,7 @@ export default function WikiAiLabPanel({
                                 instruction: null,
                                 resolvedMentions: ctx.resolvedMentions,
                                 guardrailsText: ctx.guardrailsText,
-                                generationParams,
+                                generationParams: effectiveGenerationParams,
                                 modelId,
                             });
                             const retryValidated = validateAiResponse(mode, retryRaw, contextEntities, graphEntities, {
@@ -801,12 +926,13 @@ export default function WikiAiLabPanel({
                 setContextMeta(ctx.meta);
                 setLastContextText(ctx.text ?? "");
 
+                const situationInstruction = `${instruction || ""}${variationNote}`.trim() || null;
                 const { raw, usage } = await callAi({
                     mode,
                     contextText: ctx.text,
                     intent: intent || null,
-                    instruction: instruction || null,
-                    generationParams,
+                    instruction: situationInstruction,
+                    generationParams: effectiveGenerationParams,
                     modelId,
                 });
                 setTokenUsage(usage);
@@ -843,7 +969,7 @@ export default function WikiAiLabPanel({
         aiRules, generationParams, propagationOpts, propagationDepth,
         onPropagationStart, onPropagationEnd, restoreCascadePreview,
         canonSummary, sessionRecaps, threadMessages, extraAnchorIds,
-        activeThreadId, campaignId, hasGeminiKey,
+        activeThreadId, campaignId, hasGeminiKey, result,
     ]);
 
     // When the anchor entity or depth changes in cascade mode, update the static preview halo.
@@ -1346,30 +1472,57 @@ export default function WikiAiLabPanel({
                     </Box>
                 )}
 
-                {/* Generate button */}
-                <Button
-                    variant="outlined"
-                    size="small"
-                    fullWidth
-                    disabled={
-                        loading
-                        || !selectedEntity
-                        || ((mode === AI_MODES.NARRATIVE_IMPACT || mode === AI_MODES.CASCADE) && !instruction.trim())
-                    }
-                    onClick={handleGenerate}
-                    startIcon={loading ? <CircularProgress size={14} sx={{ color: UI_COLORS.anomaly }} /> : <AutoAwesomeIcon />}
-                    sx={{
-                        borderColor: UI_COLORS.anomaly,
-                        color: loading ? UI_COLORS.textSecondary : UI_COLORS.anomaly,
-                        fontSize: "0.75rem",
-                        fontFamily: "'Orbitron', sans-serif",
-                        letterSpacing: 1,
-                        "&:hover": { borderColor: UI_COLORS.anomaly, bgcolor: `${UI_COLORS.anomaly}12` },
-                        "&:disabled": { borderColor: UI_COLORS.border, color: UI_COLORS.textSecondary },
-                    }}
-                >
-                    {loading ? loadingLabel : "Generar"}
-                </Button>
+                {/* Generate + variation */}
+                <Box sx={{ display: "flex", gap: 0.75 }}>
+                    <Button
+                        variant="outlined"
+                        size="small"
+                        fullWidth
+                        disabled={
+                            loading
+                            || !selectedEntity
+                            || ((mode === AI_MODES.NARRATIVE_IMPACT || mode === AI_MODES.CASCADE) && !instruction.trim())
+                        }
+                        onClick={() => handleGenerate()}
+                        startIcon={loading ? <CircularProgress size={14} sx={{ color: UI_COLORS.anomaly }} /> : <AutoAwesomeIcon />}
+                        sx={{
+                            borderColor: UI_COLORS.anomaly,
+                            color: loading ? UI_COLORS.textSecondary : UI_COLORS.anomaly,
+                            fontSize: "0.75rem",
+                            fontFamily: "'Orbitron', sans-serif",
+                            letterSpacing: 1,
+                            "&:hover": { borderColor: UI_COLORS.anomaly, bgcolor: `${UI_COLORS.anomaly}12` },
+                            "&:disabled": { borderColor: UI_COLORS.border, color: UI_COLORS.textSecondary },
+                        }}
+                    >
+                        {loading ? loadingLabel : "Generar"}
+                    </Button>
+                    <Button
+                        variant="outlined"
+                        size="small"
+                        disabled={
+                            loading
+                            || !selectedEntity
+                            || !result
+                            || ((mode === AI_MODES.NARRATIVE_IMPACT || mode === AI_MODES.CASCADE) && !instruction.trim())
+                        }
+                        onClick={() => handleGenerate({ variation: true })}
+                        sx={{
+                            minWidth: 0,
+                            px: 1.25,
+                            borderColor: `${UI_COLORS.accent}88`,
+                            color: UI_COLORS.accent,
+                            fontSize: "0.62rem",
+                            fontFamily: "'Orbitron', sans-serif",
+                            letterSpacing: 0.5,
+                            whiteSpace: "nowrap",
+                            "&:hover": { borderColor: UI_COLORS.accent, bgcolor: `${UI_COLORS.accent}12` },
+                            "&:disabled": { borderColor: UI_COLORS.border, color: UI_COLORS.textSecondary },
+                        }}
+                    >
+                        Otra idea
+                    </Button>
+                </Box>
 
                 {/* Context meta */}
                 {(contextMeta || estimatedTokens != null) && (
@@ -1490,7 +1643,13 @@ export default function WikiAiLabPanel({
                             </CyberText>
                         )}
                         {(result.situations ?? []).map((s, i) => (
-                            <SituationCard key={i} situation={s} index={i} />
+                            <SituationCard
+                                key={i}
+                                situation={s}
+                                index={i}
+                                saving={savingDraftIdx === i}
+                                onSaveDraft={(sit) => handleSaveSituationDraft(sit, i)}
+                            />
                         ))}
                         {result.situations?.length === 0 && (
                             <CyberText sx={{ fontSize: "0.78rem", color: UI_COLORS.textSecondary }}>

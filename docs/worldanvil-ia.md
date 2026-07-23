@@ -309,7 +309,7 @@ Conteo: 27 tipos, ~56 de 72 pares direccionales tienen al menos un tipo; ~15 par
 | Dónde corre v1 | **Cliente**, solo UI visible para DM |
 | Formato de salida | **JSON estructurado** (no chat libre) |
 | Contexto | **Subgrafo** desde ancla (locación/ficha), no wiki completo |
-| Persistencia v1 | Parcial — cascade puede crear evento histórico; situaciones son descartables |
+| Persistencia v1 | MVP — situación → crónica borrador; cascade → evento + impactos con revisión de texto; `@menciones` al guardar |
 
 ### 3.2 Modos disponibles
 
@@ -381,18 +381,19 @@ maxChars:      10_000
 | 0 | Validar prompt sin UI: `buildSituationContext`, scripts CLI | ✅ Completo |
 | 1 | MVP en UI DM: botón + tarjetas de resultado | ✅ Completo |
 | 2 | Subgrafo inteligente: expansión por tipo, backlinks, métricas | ✅ Completo |
-| 3 | Persistencia y flujo de aceptación | 🔄 Parcial |
+| 3 | Persistencia y flujo de aceptación | ✅ Completo (MVP) |
 | 4 | Endurecimiento (Cloud Functions, Remote Config, jugadores) | 🔜 Post-MVP |
 
 **Fase 3 — detalle:**
 
 | # | Tarea | Estado |
 |---|---|---|
-| 3.1 | Botón «Guardar como borrador» → `entityType: cronica` | ❌ Pendiente |
+| 3.1 | Botón «Guardar como borrador» → `entityType: cronica` | ✅ Listo (`WikiAiLabPanel` → `saveWikiEntity`) |
 | 3.2 | Crear evento desde CASCADE → `evento_historico` + `participo_en` | ✅ Listo |
-| 3.3 | Regenerar con variación («otra idea», mismo ancla) | ❌ Pendiente |
-| 3.4 | Enlazar entidades mencionadas como `@mención` al guardar | ❌ Pendiente |
+| 3.3 | Regenerar con variación («otra idea», mismo ancla) | ✅ Listo (temp ↑ + hint de variación) |
+| 3.4 | Enlazar entidades mencionadas como `@mención` al guardar | ✅ Listo (`linkMentionsInText`) |
 | 3.5 | Validación endurecida: `missingImpacts`, tests, CLI cascade | ✅ Listo |
+| — | Edit-before-save de cuerpo + peso de relaciones (−10…+10) | ✅ Listo (`WikiCascadeResult` diálogo Revisar y aplicar) |
 
 ### 3.6 Riesgos y mitigaciones
 
@@ -411,6 +412,7 @@ maxChars:      10_000
 | 2025-06-08 | — | Plan creado. Relaciones `vive_en` / `perteneciente_a` en seed y UI. |
 | 2026-06-12 | 0–2 + 3 parcial | Laboratorio IA live (3 modos). Tests `validateAiResponse`. CLI `--mode=cascade`. `missingImpacts` en validador. Botón «Crear evento» desde CASCADE. Arquetipos PANGeA en seed. |
 | 2026-06-12 | Unificación | **Evento narrativo unificado + profundidad + memoria de personalidad.** Modo único «Evento narrativo». Campos de personalidad en UI y seed. `cascadeOptsForDepth(2–8)`. Schema extendido: `personalityShift`, `entity_state_update`, `collectiveImpacts`. `applyProposedImpact.js`. Tests: 27 en verde. CLI `--depth=N`. |
+| 2026-07-21 | 3 MVP | **Aceptación punta a punta:** Guardar borrador → crónica `dm_only`; «Otra idea» (variación); `linkMentionsInText` en evento/impactos/borrador; diálogo editar body de impacto antes de aplicar. Tests `linkWikiMentions`. |
 
 ---
 
@@ -448,17 +450,25 @@ maxChars:      10_000
 | **Seed de relaciones en campaña real** | El grafo y la IA no tienen suficiente contexto sin relaciones reales | `npm run seed-valtia-wiki -- --campaignId=<id>` + crear relaciones manuales en la campaña |
 | **App Check** | Sin App Check, la clave API de Gemini queda expuesta en cliente | Habilitar en Firebase Console antes de uso intensivo |
 
-### 5.2 Flujo de IA — gaps a probar
+### 5.2 Flujo de IA — gaps post-MVP (código ya no bloquea testing)
 
 | Item | Problema |
 |---|---|
-| **Hilo de conversación** | `aiThreadService.js` existe pero no hay UI para ver historial de hilos ni retomar una conversación anterior |
-| **Cascade scout** | `CASCADE_SCOUT_THRESHOLD` es hardcoded en `narrativeAiSchemas.js`; el DM no puede ajustarlo sin code change |
-| **Guardar como borrador** | Fase 3.1 pendiente: no hay botón «Guardar situación como crónica borrador» en `WikiAiLabPanel` |
-| **Regenerar con variación** | Fase 3.3 pendiente: no hay «otra idea» / re-prompt con temperatura alta |
-| **Fallback de modelo silencioso** | La caída de `gemini-2.5-flash` → `gemini-2.5-flash-lite` es transparente al DM; no hay toast ni indicador |
-| **Enlazar menciones al guardar** | Fase 3.4 pendiente: al aceptar un cascade, los NPC mencionados no se vinculan automáticamente como `@mención` |
-| **Edit-before-save** | `applyProposedImpact` aplica el batch directamente; no hay pantalla de revisión/edición de impactos antes de persistir |
+| **Hilo de conversación** | `aiThreadService.js` existe pero no hay UI para listar/retomar hilos (persistencia sí) |
+| **Cascade scout** | `CASCADE_SCOUT_THRESHOLD` hardcoded; sin slider DM |
+| **Fallback de modelo silencioso** | Caída flash → flash-lite sin toast |
+
+### 5.2b Checklist pre-testing (ops, no código)
+
+Hacer **antes** de sesiones intensivas de Lab IA:
+
+1. [ ] Desplegar Firestore rules: `npx -y firebase-tools@latest deploy --only firestore:rules`
+2. [ ] Migrar encyclopedia en campaña de prueba: `npm run migrate-encyclopedia -- --campaignId=<id>`
+3. [ ] Seed / relaciones reales: `npm run seed-valtia-wiki -- --campaignId=<id>` (+ vínculos manuales si hace falta)
+4. [ ] App Check en Firebase Console (antes de uso intensivo con clave en cliente)
+5. [ ] Smoke UI:
+   - [ ] Situación → Generar → Otra idea → Guardar borrador (aparece crónica `dm_only`)
+   - [ ] Cascade → Crear evento (summary/body con `@menciones`) → Revisar y aplicar impacto (editar body)
 
 ### 5.3 Wiki y editor — gaps a probar
 
