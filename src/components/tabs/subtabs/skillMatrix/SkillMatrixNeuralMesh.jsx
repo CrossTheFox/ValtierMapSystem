@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, CircularProgress, IconButton } from "@mui/material";
+import { Box, CircularProgress, IconButton, Tooltip } from "@mui/material";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import FilterCenterFocusIcon from "@mui/icons-material/FilterCenterFocus";
 import { getAbilitiesByIds } from "../../../../../firebase/services/characterService";
 import { getAbilityKeysForClase, getClaseDocsByIds } from "../../../../../firebase/services/classService";
 import { CyberText } from "../../../customs/CustomTexts";
@@ -10,6 +11,7 @@ import { CYBER_SCROLL_STYLE } from "../../../../constants/cyberScrollStyle";
 import { formatClassLabel } from "../../../../constants/characterSheetTokens";
 import { resolveCharacterChapter } from "../../../../constants/skillTreeProgression";
 import { archGlow } from "./orbitLayoutEngine";
+import { isViewportCamera } from "./neuralMeshConfig";
 import {
     buildNeuralMeshGraph,
     kindLabel,
@@ -166,7 +168,11 @@ export default function SkillMatrixNeuralMesh({ character, compactChrome = true 
     const dossierGridRef = useRef(null);
     const dossierCodeRef = useRef(null);
     const umbilicalRef = useRef(null);
+    const dossierRef = useRef(null);
+    const dossierWrapRef = useRef(null);
+    const cameraRafRef = useRef(0);
     const [sceneReady, setSceneReady] = useState(false);
+    const useViewport = isViewportCamera();
 
     useEffect(() => {
         const active = character?.activeClassId;
@@ -245,6 +251,7 @@ export default function SkillMatrixNeuralMesh({ character, compactChrome = true 
         (opts = {}) => {
             const { keepSelection = false } = opts;
             signalRef.current.cancelled = true;
+            dossierRef.current = null;
             setDossier(null);
             setActionsReady(false);
             setDossierReady(false);
@@ -254,6 +261,56 @@ export default function SkillMatrixNeuralMesh({ character, compactChrome = true 
         [removeUmbilical]
     );
 
+    const placeDossierCard = useCallback((nodeScreen, stageEl) => {
+        const rect = stageEl.getBoundingClientRect();
+        const cardW = Math.min(300, rect.width * 0.42);
+        const cardH = Math.min(340, rect.height * 0.52);
+        let fx = nodeScreen.x + 28;
+        let fy = nodeScreen.y - cardH * 0.35;
+        if (fx + cardW > rect.width - 10) fx = nodeScreen.x - cardW - 28;
+        if (fx < 10) fx = 10;
+        if (fy < 10) fy = 10;
+        if (fy + cardH > rect.height - 10) fy = rect.height - cardH - 10;
+        return { fx, fy, cardW, cardH, sx: nodeScreen.x, sy: nodeScreen.y };
+    }, []);
+
+    const layoutUmbilical = useCallback((sx, sy, fx, fy, cardW, cardH) => {
+        const u = umbilicalRef.current;
+        const stage = stageRef.current;
+        if (!u || !stage) return;
+        const cx = fx + cardW / 2;
+        const cy = fy + Math.min(40, cardH * 0.15);
+        const dx = cx - sx;
+        const dy = cy - sy;
+        const len = Math.hypot(dx, dy);
+        const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
+        u.style.left = `${sx}px`;
+        u.style.top = `${sy}px`;
+        u.style.width = `${Math.max(8, len)}px`;
+        u.style.setProperty("--ang", `${ang}deg`);
+    }, []);
+
+    const syncDossierToCamera = useCallback(() => {
+        const d = dossierRef.current;
+        const scene = sceneRef.current;
+        const stage = stageRef.current;
+        if (!d?.node || !scene || !stage) return;
+        const screen = scene.worldToScreen?.(d.wx ?? d.node.x, d.wy ?? d.node.y) || {
+            x: d.node.x,
+            y: d.node.y,
+        };
+        const placed = placeDossierCard(screen, stage);
+        dossierRef.current = { ...d, ...placed };
+        const wrap = dossierWrapRef.current;
+        if (wrap) {
+            wrap.style.left = `${placed.fx}px`;
+            wrap.style.top = `${placed.fy}px`;
+            wrap.style.width = `${placed.cardW}px`;
+            wrap.style.height = `${placed.cardH}px`;
+        }
+        layoutUmbilical(placed.sx, placed.sy, placed.fx, placed.fy, placed.cardW, placed.cardH);
+    }, [layoutUmbilical, placeDossierCard]);
+
     const openDossier = useCallback(async (node, fromStage, clickGen) => {
         signalRef.current = { cancelled: false };
         const signal = signalRef.current;
@@ -262,25 +319,22 @@ export default function SkillMatrixNeuralMesh({ character, compactChrome = true 
 
         const stage = stageRef.current;
         if (!stage) return;
-        const rect = stage.getBoundingClientRect();
-        const cardW = Math.min(300, rect.width * 0.42);
-        const cardH = Math.min(340, rect.height * 0.52);
-        let fx = fromStage.x + 28;
-        let fy = fromStage.y - cardH * 0.35;
-        if (fx + cardW > rect.width - 10) fx = fromStage.x - cardW - 28;
-        if (fx < 10) fx = 10;
-        if (fy < 10) fy = 10;
-        if (fy + cardH > rect.height - 10) fy = rect.height - cardH - 10;
+        const placed = placeDossierCard(fromStage, stage);
+        const { fx, fy, cardW, cardH, sx, sy } = placed;
 
-        setDossier({
+        const payload = {
             node,
             fx,
             fy,
             cardW,
             cardH,
-            sx: fromStage.x,
-            sy: fromStage.y,
-        });
+            sx,
+            sy,
+            wx: node.x,
+            wy: node.y,
+        };
+        dossierRef.current = payload;
+        setDossier(payload);
 
         await wait(40);
         if (signal.cancelled || clickGen !== clickGenRef.current) return;
@@ -288,18 +342,9 @@ export default function SkillMatrixNeuralMesh({ character, compactChrome = true 
         removeUmbilical(true);
         const u = document.createElement("div");
         u.className = "nm-umbilical";
-        const cx = fx + cardW / 2;
-        const cy = fy + Math.min(40, cardH * 0.15);
-        const dx = cx - fromStage.x;
-        const dy = cy - fromStage.y;
-        const len = Math.hypot(dx, dy);
-        const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
-        u.style.left = `${fromStage.x}px`;
-        u.style.top = `${fromStage.y}px`;
-        u.style.width = `${Math.max(8, len)}px`;
-        u.style.setProperty("--ang", `${ang}deg`);
         stage.appendChild(u);
         umbilicalRef.current = u;
+        layoutUmbilical(sx, sy, fx, fy, cardW, cardH);
         requestAnimationFrame(() => {
             if (umbilicalRef.current === u) u.classList.add("on");
         });
@@ -336,7 +381,7 @@ export default function SkillMatrixNeuralMesh({ character, compactChrome = true 
         ];
         await typeCodeStream(dossierCodeRef.current, lines, signal);
         if (!signal.cancelled && clickGen === clickGenRef.current) setActionsReady(true);
-    }, [removeUmbilical]);
+    }, [removeUmbilical, placeDossierCard, layoutUmbilical]);
 
     const onNodeClick = useCallback(
         async (node) => {
@@ -344,6 +389,7 @@ export default function SkillMatrixNeuralMesh({ character, compactChrome = true 
             const clickGen = ++clickGenRef.current;
             // Cancel prior dossier + in-flight trail without leaving FX stuck
             signalRef.current.cancelled = true;
+            dossierRef.current = null;
             setDossier(null);
             setActionsReady(false);
             setDossierReady(false);
@@ -355,13 +401,24 @@ export default function SkillMatrixNeuralMesh({ character, compactChrome = true 
             if (!scene) return;
             await scene.selectNode(node.id);
             if (clickGen !== clickGenRef.current) return;
-            openDossier(node, { x: node.x, y: node.y }, clickGen);
+            const screen = scene.worldToScreen?.(node.x, node.y) || { x: node.x, y: node.y };
+            openDossier(node, screen, clickGen);
         },
         [rebuilding, loading, openDossier, removeUmbilical]
     );
 
     const onNodeClickRef = useRef(onNodeClick);
     onNodeClickRef.current = onNodeClick;
+
+    const onCameraChangeRef = useRef(() => {});
+    onCameraChangeRef.current = () => {
+        if (!dossierRef.current) return;
+        if (cameraRafRef.current) return;
+        cameraRafRef.current = requestAnimationFrame(() => {
+            cameraRafRef.current = 0;
+            syncDossierToCamera();
+        });
+    };
 
     // Init Pixi scene once
     useEffect(() => {
@@ -371,6 +428,9 @@ export default function SkillMatrixNeuralMesh({ character, compactChrome = true 
         const scene = createNeuralMeshScene(el, {
             onNodeClick: (n) => {
                 onNodeClickRef.current?.(n);
+            },
+            onCameraChange: () => {
+                onCameraChangeRef.current?.();
             },
         });
         sceneRef.current = scene;
@@ -390,7 +450,7 @@ export default function SkillMatrixNeuralMesh({ character, compactChrome = true 
         };
     }, []);
 
-    // Rebuild graph when job/data/size ready
+    // Rebuild graph when job/data ready (viewport: world size is fixed; fixed: uses stage size)
     useEffect(() => {
         if (loading || !sceneReady || !sceneRef.current || !stageRef.current) return;
         const el = stageRef.current;
@@ -410,7 +470,7 @@ export default function SkillMatrixNeuralMesh({ character, compactChrome = true 
         sceneRef.current.setGraph(graph, { animate: true });
     }, [loading, sceneReady, jobAbilities, character?.unlockedAbilities, chapter, jobLabel, classAccent, focusIdx, closeDossier]);
 
-    // Resize observer
+    // Resize: viewport → sync camera screen only; fixed → rebuild elliptical fit
     useEffect(() => {
         const el = stageRef.current;
         if (!el) return undefined;
@@ -420,6 +480,12 @@ export default function SkillMatrixNeuralMesh({ character, compactChrome = true 
             const h = el.clientHeight;
             if (Math.abs(w - sizeRef.current.w) < 8 && Math.abs(h - sizeRef.current.h) < 8) return;
             sizeRef.current = { w, h };
+            if (useViewport) {
+                sceneRef.current.syncScreen?.();
+                sceneRef.current.fitGraph?.({ animate: false });
+                if (dossierRef.current) syncDossierToCamera();
+                return;
+            }
             const graph = buildNeuralMeshGraph({
                 abilities: jobAbilities,
                 unlockedKeys: character?.unlockedAbilities || [],
@@ -433,7 +499,17 @@ export default function SkillMatrixNeuralMesh({ character, compactChrome = true 
         });
         ro.observe(el);
         return () => ro.disconnect();
-    }, [loading, sceneReady, jobAbilities, character?.unlockedAbilities, chapter, jobLabel, classAccent]);
+    }, [
+        loading,
+        sceneReady,
+        jobAbilities,
+        character?.unlockedAbilities,
+        chapter,
+        jobLabel,
+        classAccent,
+        useViewport,
+        syncDossierToCamera,
+    ]);
 
     const ep = character?.ap ?? character?.abilityPoints ?? character?.stats?.ap ?? "—";
     const canSwitch = classIds.length > 1;
@@ -667,6 +743,35 @@ export default function SkillMatrixNeuralMesh({ character, compactChrome = true 
                 }}
             >
                 {compactChrome && jobSwitcher}
+                {useViewport && (
+                    <Tooltip title="Recentrar órbita" placement="left">
+                        <IconButton
+                            className="dialog-no-drag"
+                            size="small"
+                            aria-label="Recentrar mesh"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                sceneRef.current?.recenter?.({ animate: true });
+                            }}
+                            sx={{
+                                position: "absolute",
+                                right: 10,
+                                bottom: 12,
+                                zIndex: 18,
+                                color: UI_COLORS.anomaly,
+                                bgcolor: "rgba(10,10,20,0.82)",
+                                border: `1px solid ${UI_COLORS.border}`,
+                                boxShadow: "0 2px 12px rgba(0,0,0,0.45)",
+                                "&:hover": {
+                                    borderColor: UI_COLORS.anomaly,
+                                    bgcolor: "rgba(0,242,234,0.12)",
+                                },
+                            }}
+                        >
+                            <FilterCenterFocusIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+                )}
                 {loading && (
                     <Box
                         sx={{
@@ -684,6 +789,7 @@ export default function SkillMatrixNeuralMesh({ character, compactChrome = true 
                 )}
                 {dossier && (
                     <Box
+                        ref={dossierWrapRef}
                         sx={{
                             position: "absolute",
                             left: dossier.fx,

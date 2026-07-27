@@ -2,7 +2,7 @@
  * Neural Mesh graph layout — ICON job kit → radial nodes/edges.
  * Mirrors docs/mockups/skill-tree-neural-mesh.html geometry.
  */
-import { isRectNodeShape } from "./neuralMeshConfig";
+import { isRectNodeShape, isViewportCamera, NEURAL_MESH_WORLD } from "./neuralMeshConfig";
 
 function keyOf(a) {
     return a?.key || a?.id || "";
@@ -102,35 +102,52 @@ export function buildNeuralMeshGraph(opts) {
     if (limitBreak) abs.push({ ...limitBreak, isLB: true });
     for (const a of pool) abs.push({ ...a, isLB: false });
 
-    const w = Math.max(320, width || 800);
-    const h = Math.max(280, height || 560);
-    const cx = w * 0.5;
-    // Slight top bias so job chrome + mastery ring don't clip the dialog edge
-    const cy = h * 0.52;
+    let w = Math.max(320, width || 800);
+    let h = Math.max(280, height || 560);
+    let cx;
+    let cy;
+    let Rx;
+    let Ry;
+    let R;
 
-    /*
-     * Orbital ellipse: fill available stage so 1080p (wide, short) flattens
-     * horizontally instead of staying a cramped circle.
-     */
-    const padX = Math.max(36, w * 0.04);
-    const padY = Math.max(44, h * 0.08);
-    let Rx = Math.max(120, w * 0.5 - padX);
-    let Ry = Math.max(100, h * 0.5 - padY);
-    const aspect = w / Math.max(1, h);
-    const circle = Math.min(Rx, Ry);
-    if (aspect >= 1.12) {
-        // Flatten: use horizontal room, keep vertical from height budget
-        const stretch = Math.min(1.65, 0.95 + (aspect - 1) * 0.85);
-        Rx = Math.min(Rx, circle * stretch);
-        Ry = Math.min(Ry, circle * (aspect >= 1.35 ? 0.92 : 1));
-    } else if (aspect < 0.92) {
-        Ry = Math.min(Ry, circle * 1.25);
-        Rx = circle;
+    if (isViewportCamera()) {
+        /*
+         * Circular world (HTML mockup computeLayout): true circumference orbits.
+         * Screen size only affects the Viewport camera, not node placement.
+         */
+        w = NEURAL_MESH_WORLD.size;
+        h = NEURAL_MESH_WORLD.size;
+        cx = w * 0.5;
+        cy = h * 0.5;
+        R = NEURAL_MESH_WORLD.R;
+        Rx = R;
+        Ry = R;
     } else {
-        Rx = circle;
-        Ry = circle;
+        /*
+         * Fixed camera checkpoint: elliptical fit-to-stage (pre-viewport).
+         * Restore via NEURAL_MESH_CAMERA_MODE = "fixed".
+         */
+        cx = w * 0.5;
+        cy = h * 0.52;
+        const padX = Math.max(36, w * 0.04);
+        const padY = Math.max(44, h * 0.08);
+        Rx = Math.max(120, w * 0.5 - padX);
+        Ry = Math.max(100, h * 0.5 - padY);
+        const aspect = w / Math.max(1, h);
+        const circle = Math.min(Rx, Ry);
+        if (aspect >= 1.12) {
+            const stretch = Math.min(1.65, 0.95 + (aspect - 1) * 0.85);
+            Rx = Math.min(Rx, circle * stretch);
+            Ry = Math.min(Ry, circle * (aspect >= 1.35 ? 0.92 : 1));
+        } else if (aspect < 0.92) {
+            Ry = Math.min(Ry, circle * 1.25);
+            Rx = circle;
+        } else {
+            Rx = circle;
+            Ry = circle;
+        }
+        R = Math.min(Rx, Ry);
     }
-    const R = Math.min(Rx, Ry);
 
     /** @type {Array<Record<string, unknown>>} */
     const nodes = [];

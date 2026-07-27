@@ -1,9 +1,11 @@
 /**
  * Pixi v8 Neural Mesh scene — graph + Reticle Ping / Bracket Frame / Neon Trail.
+ * Optional pixi-viewport camera (see neuralMeshConfig.NEURAL_MESH_CAMERA_MODE).
  */
 import * as PIXI from "pixi.js";
+import { Viewport } from "pixi-viewport";
 import { UI_COLORS } from "../../../../constants/uiColors";
-import { isRectNodeShape } from "./neuralMeshConfig";
+import { isRectNodeShape, isViewportCamera, NEURAL_MESH_WORLD } from "./neuralMeshConfig";
 import { ancestorsOf } from "./neuralMeshLayout";
 
 const PINK = Number.parseInt(UI_COLORS.accent.replace("#", ""), 16);
@@ -68,12 +70,15 @@ function fill(g, color, alpha = 1) {
 
 /**
  * @param {HTMLElement} container
- * @param {{ onNodeClick?: (node: object) => void }} handlers
+ * @param {{ onNodeClick?: (node: object) => void, onCameraChange?: () => void }} handlers
  */
 export function createNeuralMeshScene(container, handlers = {}) {
     /** @type {PIXI.Application | null} */
     let app = null;
     let destroyed = false;
+    /** @type {Viewport | null} */
+    let viewport = null;
+    const useViewport = isViewportCamera();
     /** @type {ReturnType<typeof buildLayers> | null} */
     let layers = null;
     /** @type {Map<string, { node: object, container: PIXI.Container, shape: PIXI.Graphics, brackets: PIXI.Graphics, orbit?: PIXI.Container, glow?: PIXI.Graphics, label?: PIXI.Text }>} */
@@ -95,6 +100,14 @@ export function createNeuralMeshScene(container, handlers = {}) {
     /** @type {Map<string, ReturnType<typeof setTimeout>>} */
     const litTimers = new Map();
 
+    function graphRoot() {
+        return viewport || app?.stage || null;
+    }
+
+    function emitCameraChange() {
+        handlers.onCameraChange?.();
+    }
+
     function buildLayers() {
         const guides = new PIXI.Graphics();
         const edges = new PIXI.Container();
@@ -102,8 +115,61 @@ export function createNeuralMeshScene(container, handlers = {}) {
         const trail = new PIXI.Container();
         const nodes = new PIXI.Container();
         const fx = new PIXI.Container();
-        app.stage.addChild(guides, edges, trail, nodes, fx);
+        const root = graphRoot();
+        root?.addChild(guides, edges, trail, nodes, fx);
         return { guides, edges, trail, nodes, fx };
+    }
+
+    function syncScreen() {
+        if (!app || !container) return;
+        const cw = container.clientWidth || 0;
+        const ch = container.clientHeight || 0;
+        if (cw > 0 && ch > 0) {
+            if (Math.abs(app.screen.width - cw) > 0.5 || Math.abs(app.screen.height - ch) > 0.5) {
+                app.renderer.resize(cw, ch);
+            }
+        }
+        if (viewport) {
+            viewport.resize(app.screen.width, app.screen.height);
+        }
+    }
+
+    /** Fit circular mesh into the stage (viewport camera only). */
+    function fitGraph({ animate = false } = {}) {
+        if (!viewport || !graph) return;
+        const R = graph.R || NEURAL_MESH_WORLD.R;
+        const pad = Math.max(64, R * 0.22);
+        const span = (R + pad) * 2;
+        if (animate && typeof viewport.animate === "function") {
+            try {
+                viewport.plugins.remove("animate");
+            } catch {
+                /* ignore */
+            }
+            viewport.animate({
+                time: 420,
+                ease: "easeInOutSine",
+                position: { x: graph.cx, y: graph.cy },
+                scale: Math.min(
+                    viewport.screenWidth / span,
+                    viewport.screenHeight / span
+                ),
+            });
+        } else {
+            viewport.fit(true, span, span);
+            viewport.moveCenter(graph.cx, graph.cy);
+        }
+        emitCameraChange();
+    }
+
+    function worldToScreen(wx, wy) {
+        if (!viewport) return { x: wx, y: wy };
+        const p = viewport.toScreen(wx, wy);
+        return { x: p.x, y: p.y };
+    }
+
+    function recenter(opts = {}) {
+        fitGraph({ animate: opts.animate !== false });
     }
 
     function destroyDisplayChildren(container) {
@@ -164,6 +230,36 @@ export function createNeuralMeshScene(container, handlers = {}) {
         app.canvas.style.display = "block";
         app.canvas.style.width = "100%";
         app.canvas.style.height = "100%";
+        app.canvas.style.touchAction = "none";
+
+        if (useViewport) {
+            if (!("events" in app.renderer)) {
+                app.renderer.addSystem(PIXI.EventSystem, "events");
+            }
+            const world = NEURAL_MESH_WORLD.size;
+            viewport = new Viewport({
+                screenWidth: app.screen.width,
+                screenHeight: app.screen.height,
+                worldWidth: world,
+                worldHeight: world,
+                ticker: app.ticker,
+                events: app.renderer.events,
+            });
+            viewport
+                .drag({ mouseButtons: "left", pressDrag: true })
+                .pinch()
+                .wheel({ smooth: 4, percent: 0.12 })
+                .decelerate({ friction: 0.9 })
+                .clampZoom({ minScale: 0.32, maxScale: 2.6 })
+                .clamp({ direction: "all", underflow: "center" });
+            viewport.eventMode = "static";
+            viewport.cursor = "grab";
+            app.stage.addChild(viewport);
+            viewport.on("moved", emitCameraChange);
+            viewport.on("zoomed", emitCameraChange);
+            syncScreen();
+        }
+
         layers = buildLayers();
     }
 
@@ -184,9 +280,11 @@ export function createNeuralMeshScene(container, handlers = {}) {
         g.clear();
         const rx = Rx || Ry || 200;
         const ry = Ry || Rx || 200;
+        const circular = Math.abs(rx - ry) < 0.5;
         [0.34, 0.62, 0.84, 0.98].forEach((f, i) => {
             stroke(g, 1, i === 1 ? CYAN : PINK, i === 1 ? 0.12 : 0.07);
-            g.ellipse(cx, cy, rx * f, ry * f);
+            if (circular) g.circle(cx, cy, rx * f);
+            else g.ellipse(cx, cy, rx * f, ry * f);
             g.stroke();
         });
     }
@@ -457,6 +555,7 @@ export function createNeuralMeshScene(container, handlers = {}) {
         graph = graphData;
         if (!graph?.nodes?.length) return;
 
+        if (useViewport) syncScreen();
         drawGuides(graph.cx, graph.cy, graph.Rx || graph.R, graph.Ry || graph.R);
         const byId = Object.fromEntries(graph.nodes.map((n) => [n.id, n]));
 
@@ -525,6 +624,11 @@ export function createNeuralMeshScene(container, handlers = {}) {
         });
 
         startAmbientTickers();
+
+        if (useViewport) {
+            // Snap camera to full circumference before intro animation
+            fitGraph({ animate: false });
+        }
 
         if (animate) {
             const start = performance.now();
@@ -886,6 +990,23 @@ export function createNeuralMeshScene(container, handlers = {}) {
         if (gen !== selectGen) return;
         spawnPing(v.node.x, v.node.y, v.node.r);
         lockBrackets(nodeId);
+
+        // Soft camera ease toward the node (keeps selection FX in world space)
+        if (viewport && v.node.kind !== "class") {
+            try {
+                viewport.plugins.remove("animate");
+            } catch {
+                /* ignore */
+            }
+            const targetScale = Math.min(2.2, Math.max(viewport.scale.x, 1.05));
+            viewport.animate({
+                time: 380,
+                ease: "easeInOutSine",
+                position: { x: v.node.x, y: v.node.y },
+                scale: targetScale,
+            });
+        }
+
         const chain = ancestorsOf(nodeId, graph.edges);
         if (chain.length >= 2) {
             await neonTrail(chain);
@@ -918,6 +1039,15 @@ export function createNeuralMeshScene(container, handlers = {}) {
         trailGen += 1;
         stopAmbientTickers();
         clearSelectionFx();
+        if (viewport) {
+            try {
+                viewport.off("moved", emitCameraChange);
+                viewport.off("zoomed", emitCameraChange);
+            } catch {
+                /* ignore */
+            }
+            viewport = null;
+        }
         if (app) {
             try {
                 app.destroy(true);
@@ -938,8 +1068,15 @@ export function createNeuralMeshScene(container, handlers = {}) {
         selectNode,
         deselect,
         destroy,
+        syncScreen,
+        fitGraph,
+        recenter,
+        worldToScreen,
         get selectedId() {
             return selectedId;
+        },
+        get usesViewport() {
+            return useViewport;
         },
     };
 }
