@@ -1,32 +1,39 @@
-import { useState } from "react";
 import { Box, IconButton } from "@mui/material";
 import AccountTreeIcon from "@mui/icons-material/AccountTree";
 import ListAltIcon from "@mui/icons-material/ListAlt";
 import CharSkillsTab from "../tabs/subtabs/CharSkillsTab";
 import CharTreeTab from "../tabs/subtabs/CharTreeTab";
-import { CyberText } from "../customs/CustomTexts";
 import CyberTooltip from "../customs/CyberTooltip";
 import { UI_COLORS } from "../../constants/uiColors";
 import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
 
 /**
- * Dossier KIT: ability list + CP2077 perk tree (per-job) toggle.
+ * Dossier KIT: ability list + Neural Mesh. View can be controlled by deep-links.
  */
-export default function CharKitTab({ character }) {
-    const [view, setView] = useState("list"); // "list" | "tree"
+export default function CharKitTab({ character, view: viewProp, onViewChange }) {
+    const view = viewProp === "list" ? "list" : "tree";
+    const setView = (next) => onViewChange?.(next);
+    const meshMode = view === "tree";
 
     return (
-        <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <Box sx={{ flex: 1, minHeight: 0, position: "relative", display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <Box
+                className="dialog-no-drag"
                 sx={{
-                    flexShrink: 0,
+                    position: "absolute",
+                    top: 42,
+                    right: 10,
+                    zIndex: 18,
                     display: "flex",
                     alignItems: "center",
-                    gap: 1,
-                    px: 1.5,
-                    py: 0.75,
-                    borderBottom: `1px solid ${UI_COLORS.border}`,
-                    bgcolor: UI_COLORS.backgroundSecondary,
+                    gap: 0.5,
+                    px: 0.55,
+                    py: 0.35,
+                    borderRadius: 1,
+                    bgcolor: "rgba(10, 10, 20, 0.78)",
+                    backdropFilter: "blur(12px)",
+                    border: `1px solid ${UI_COLORS.border}`,
+                    boxShadow: "0 2px 14px rgba(0,0,0,0.4)",
                 }}
             >
                 <CyberTooltip title="Lista de habilidades">
@@ -35,33 +42,32 @@ export default function CharKitTab({ character }) {
                         onClick={() => setView("list")}
                         sx={{
                             color: view === "list" ? UI_COLORS.anomaly : UI_COLORS.textSecondary,
-                            border: `1px solid ${view === "list" ? UI_COLORS.anomaly : UI_COLORS.border}`,
-                            borderRadius: 1,
+                            border: `1px solid ${view === "list" ? UI_COLORS.anomaly : "transparent"}`,
+                            borderRadius: 0.75,
+                            p: 0.45,
                         }}
                     >
-                        <ListAltIcon sx={{ fontSize: "1rem" }} />
+                        <ListAltIcon sx={{ fontSize: "0.95rem" }} />
                     </IconButton>
                 </CyberTooltip>
-                <CyberTooltip title="Árbol de habilidades (por job)">
+                <CyberTooltip title="Neural Mesh">
                     <IconButton
                         size="small"
                         onClick={() => setView("tree")}
                         sx={{
                             color: view === "tree" ? UI_COLORS.anomaly : UI_COLORS.textSecondary,
-                            border: `1px solid ${view === "tree" ? UI_COLORS.anomaly : UI_COLORS.border}`,
-                            borderRadius: 1,
+                            border: `1px solid ${view === "tree" ? UI_COLORS.anomaly : "transparent"}`,
+                            borderRadius: 0.75,
+                            p: 0.45,
                         }}
                     >
-                        <AccountTreeIcon sx={{ fontSize: "1rem" }} />
+                        <AccountTreeIcon sx={{ fontSize: "0.95rem" }} />
                     </IconButton>
                 </CyberTooltip>
-                <CyberText sx={{ fontSize: "0.58rem", letterSpacing: "0.12em", color: UI_COLORS.textSecondary }}>
-                    {view === "list" ? "HABILIDADES" : "ÁRBOL · PERK"}
-                </CyberText>
             </Box>
 
             {view === "list" ? (
-                <Box sx={{ flex: 1, minHeight: 0, overflow: "auto", ...CYBER_SCROLL_STYLE }}>
+                <Box sx={{ flex: 1, minHeight: 0, overflow: "auto", pt: 5, ...CYBER_SCROLL_STYLE }}>
                     <CharSkillsTab character={character} playerMode />
                 </Box>
             ) : (
@@ -75,7 +81,7 @@ export default function CharKitTab({ character }) {
                         bgcolor: UI_COLORS.backgroundPrimary || "#0d0d14",
                     }}
                 >
-                    <CharTreeTab character={character} />
+                    <CharTreeTab character={character} compactChrome={meshMode} />
                 </Box>
             )}
         </Box>

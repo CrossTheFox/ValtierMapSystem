@@ -1,11 +1,11 @@
 import { Box } from "@mui/material";
-import SkillTreeCp2077 from "./skillMatrix/SkillTreeCp2077";
+import SkillMatrixNeuralMesh from "./skillMatrix/SkillMatrixNeuralMesh";
 
-/** Perk tree (CP2077 layout) — React/HTML/SVG, no Pixi/Canvas. */
-export default function CharTreeTab({ character }) {
+/** Neural Mesh skill tree — Pixi graph + Scan Construct dossier. */
+export default function CharTreeTab({ character, compactChrome = true }) {
     return (
         <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            <SkillTreeCp2077 character={character} />
+            <SkillMatrixNeuralMesh character={character} compactChrome={compactChrome} />
         </Box>
     );
 }

@@ -28,8 +28,14 @@ const uiSlice = createSlice({
             location: null,
         },
         measureTool: {
-            pointA: null,     // { x, y, label }
-            pointB: null,     // { x, y, label }
+            pointA: null,     // legacy local measure (kept for compat)
+            pointB: null,
+        },
+        /** Shared-table ruler placement mode (left tools). */
+        rulerTool: {
+            active: false,
+            /** First node while placing: { x, y, col, row } */
+            draftA: null,
         },
         wikiOverlay: {
             open: false,
@@ -40,9 +46,18 @@ const uiSlice = createSlice({
         },
         openDialogs: {
             characters: false,   // CharactersGlobalDialog
-            sheet: false,        // CharactersSettingsDialog
+            sheet: false,        // CharactersSettingsDialog (dossier)
             settings: false,     // AdminSettingsDialog
             loreBrowser: false,  // LoreDialog en modo browse (sin selectedLore)
+        },
+        /**
+         * Deep-link target when opening the character dossier.
+         * tab: "IDENTIDAD" | "KIT"; kitView: "list" | "tree"
+         */
+        sheetFocus: {
+            tab: "IDENTIDAD",
+            kitView: "tree",
+            nonce: 0,
         },
         /** IC speech bubbles over map tokens: characterId → { messageId, text, expiresAt } */
         tokenSpeech: {},
@@ -133,7 +148,7 @@ const uiSlice = createSlice({
             state.contextMenu.open = false;
         },
 
-        // ── Measure Tool ──────────────────────────────────────────
+        // ── Measure Tool (legacy local) ───────────────────────────
         setMeasurePointA(state, action) {
             state.measureTool.pointA = action.payload;
             state.measureTool.pointB = null;
@@ -144,6 +159,22 @@ const uiSlice = createSlice({
         clearMeasureTool(state) {
             state.measureTool.pointA = null;
             state.measureTool.pointB = null;
+        },
+
+        // ── Shared ruler tool ─────────────────────────────────────
+        setRulerMode(state, action) {
+            state.rulerTool.active = Boolean(action.payload);
+            if (!state.rulerTool.active) state.rulerTool.draftA = null;
+        },
+        toggleRulerMode(state) {
+            state.rulerTool.active = !state.rulerTool.active;
+            if (!state.rulerTool.active) state.rulerTool.draftA = null;
+        },
+        setRulerDraftA(state, action) {
+            state.rulerTool.draftA = action.payload;
+        },
+        clearRulerDraft(state) {
+            state.rulerTool.draftA = null;
         },
 
         // ── Wiki Overlay ──────────────────────────────────────────
@@ -184,6 +215,23 @@ const uiSlice = createSlice({
                     state.minimizedDialogs[name] = false;
                 }
             }
+        },
+        /**
+         * Open player dossier for the active character.
+         * Optional deep-link: { tab: "IDENTIDAD"|"KIT"|"MESH", kitView: "list"|"tree" }
+         */
+        openCharacterSheet(state, action) {
+            const { tab = "IDENTIDAD", kitView = "tree" } = action.payload || {};
+            const validTabs = ["IDENTIDAD", "KIT", "MESH"];
+            const nextTab = validTabs.includes(tab) ? tab : "IDENTIDAD";
+            const nextKit = kitView === "list" ? "list" : "tree";
+            state.openDialogs.sheet = true;
+            state.minimizedDialogs[DIALOG_IDS.SHEET] = false;
+            state.sheetFocus = {
+                tab: nextTab,
+                kitView: nextKit,
+                nonce: (state.sheetFocus?.nonce || 0) + 1,
+            };
         },
         closeDialog(state, action) {
             const name = action.payload;
@@ -240,12 +288,17 @@ export const {
     setMeasurePointA,
     setMeasurePointB,
     clearMeasureTool,
+    setRulerMode,
+    toggleRulerMode,
+    setRulerDraftA,
+    clearRulerDraft,
     openWikiOverlay,
     closeWikiOverlay,
     setWikiOverlayMode,
     setWikiOverlayEntity,
     setWikiOverlayAreaFilter,
     openDialog,
+    openCharacterSheet,
     closeDialog,
     showTokenSpeech,
     dismissTokenSpeech,

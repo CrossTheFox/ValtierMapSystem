@@ -43,6 +43,15 @@ export async function updateCharacterFields(characterId, partial) {
     await updateDoc(doc(db, "characters", characterId), partial);
 }
 
+/**
+ * Persiste la URL del banner del personaje (imagen cuadrilateral del dossier).
+ * Campo Firestore: `bannerUrl` — independiente de `imageUrl` (token/retrato).
+ */
+export async function updateCharacterBanner(characterId, bannerUrl) {
+    if (!characterId) return;
+    await updateDoc(doc(db, "characters", characterId), { bannerUrl: bannerUrl ?? null });
+}
+
 export async function getAbilitiesByIds(abilityIds) {
     if (!abilityIds.length) return [];
 

@@ -1,30 +1,35 @@
 import { Box } from "@mui/material";
 
-import CharacterSheetMetaStrip from "./CharacterSheetMetaStrip";
-import CharacterSheetTabs, { normalizeSheetTab } from "./CharacterSheetTabs";
-import CharIdentityTab from "./CharIdentityTab";
-import CharKitTab from "./CharKitTab";
 import { CyberText } from "../customs/CustomTexts";
 import { UI_COLORS } from "../../constants/uiColors";
-import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
+import { normalizeSheetTab } from "./CharacterSheetTabs";
+import DossierIdView from "./DossierIdView";
+import DossierKitView from "./DossierKitView";
+import CharTreeTab from "../tabs/subtabs/CharTreeTab";
 
-const TXT = { color: UI_COLORS.textPrimary };
-
+/**
+ * Dossier Holodeck body — routes to ID / KIT / MESH views.
+ * Tabs live in the parent chrome; this component is pure content.
+ */
 export default function CharacterSheetBody({
     character,
     activeTab,
     onTabChange,
+    kitView = "tree",
+    onKitViewChange,
     statDefinitions = [],
     maxStat = 6,
     wikiEntities = [],
+    avatarSize,
 }) {
     const tab = normalizeSheetTab(activeTab);
-    const kitFill = tab === "KIT";
 
     if (!character) {
         return (
             <Box sx={{ p: 4 }}>
-                <CyberText sx={TXT}>No characters found.</CyberText>
+                <CyberText sx={{ color: UI_COLORS.textPrimary }}>
+                    No hay personaje activo. Elígelo en el HUD inferior.
+                </CyberText>
             </Box>
         );
     }
@@ -36,33 +41,28 @@ export default function CharacterSheetBody({
                 flexDirection: "column",
                 flex: 1,
                 minHeight: 0,
-                bgcolor: UI_COLORS.backgroundPrimary || "#12121a",
                 overflow: "hidden",
+                position: "relative",
+                bgcolor: "rgba(8,8,14,0.55)",
             }}
         >
-            <CharacterSheetMetaStrip character={character} wikiEntities={wikiEntities} />
-            <CharacterSheetTabs value={tab} onChange={onTabChange} />
+            {tab === "IDENTIDAD" && (
+                <DossierIdView
+                    character={character}
+                    statDefinitions={statDefinitions}
+                    maxStat={maxStat}
+                />
+            )}
 
-            <Box
-                sx={{
-                    flex: 1,
-                    minHeight: 0,
-                    display: "flex",
-                    flexDirection: "column",
-                    overflow: kitFill ? "hidden" : "auto",
-                    ...(!kitFill ? CYBER_SCROLL_STYLE : {}),
-                }}
-            >
-                {tab === "IDENTIDAD" && (
-                    <CharIdentityTab
-                        character={character}
-                        statDefinitions={statDefinitions}
-                        maxStat={maxStat}
-                        wikiEntities={wikiEntities}
-                    />
-                )}
-                {tab === "KIT" && <CharKitTab character={character} />}
-            </Box>
+            {tab === "KIT" && (
+                <DossierKitView character={character} />
+            )}
+
+            {tab === "MESH" && (
+                <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                    <CharTreeTab character={character} compactChrome />
+                </Box>
+            )}
         </Box>
     );
 }

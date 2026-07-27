@@ -1,9 +1,9 @@
 /** Density tokens for the player character sheet dialog. */
 export const CHARACTER_SHEET_TOKENS = {
-    avatarSize: { dialog: 44, popup: 48 },
-    tabHeight: 30,
+    avatarSize: { dialog: 40, popup: 44 },
+    tabHeight: 26,
     radarSize: "clamp(200px, 28vw, 360px)",
-    chromeMaxRatio: 0.12,
+    chromeMaxRatio: 0.08,
 };
 
 export function formatClassLabel(classId, characterName) {
