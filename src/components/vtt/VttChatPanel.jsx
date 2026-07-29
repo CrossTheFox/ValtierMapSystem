@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, memo } from "react";
 import {
     Box, Paper, TextField, IconButton, Stack, Chip, Avatar, Autocomplete,
 } from "@mui/material";
@@ -66,39 +66,274 @@ function ChatAvatar({ path, name, accent, size = 26 }) {
     );
 }
 
+/** Stable empty fallback — a fresh `[]` default param would re-break memo(MessageList) every render. */
+const EMPTY_GLOSSARY = [];
+const EMPTY_MESSAGES = [];
+
+const DICE_FAIL = "#ff3355";
+const DICE_CRIT = "#ffcc33";
+
+/** Newest rows rendered on open; older ones stay one click away. */
+const RENDER_WINDOW = 30;
+const RENDER_WINDOW_STEP = 40;
+
+const FONT_TITLE = "'Orbitron', sans-serif";
+const FONT_MONO = "'Fira Code', monospace";
+const FONT_BODY = "'Fira Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif";
+
+/**
+ * One static `sx` for every dice card (emotion serializes it once) with the
+ * accent injected as CSS variables. Building per-card `sx` for ~12 MUI nodes
+ * was costing ~6ms per card, i.e. ~300ms every time the dock opened.
+ */
+const DICE_CARD_SX = {
+    mb: 0.9,
+    borderRadius: "6px",
+    border: "1px solid var(--dice-a66)",
+    background:
+        "linear-gradient(135deg, var(--dice-a14) 0%, rgba(7,7,14,0.92) 42%, rgba(0,0,0,0.55) 100%)",
+    boxShadow: "0 0 18px var(--dice-a22), inset 0 0 0 1px rgba(255,255,255,0.04)",
+    overflow: "hidden",
+    "& .dc-head": {
+        display: "flex",
+        alignItems: "center",
+        gap: "7px",
+        px: 1,
+        pt: 0.7,
+        pb: 0.45,
+        borderBottom: "1px solid var(--dice-a33)",
+    },
+    "& .dc-avatar": {
+        width: 24,
+        height: 24,
+        flexShrink: 0,
+        borderRadius: "50%",
+        overflow: "hidden",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        objectFit: "cover",
+        fontFamily: FONT_BODY,
+        fontSize: "0.6rem",
+        bgcolor: "var(--dice-a33)",
+        border: "1px solid var(--dice-a66)",
+        color: "var(--dice-a)",
+    },
+    "& .dc-who": { flex: 1, minWidth: 0 },
+    "& .dc-name": {
+        fontFamily: FONT_BODY,
+        fontSize: "0.72rem",
+        fontWeight: 700,
+        letterSpacing: "0.3px",
+        lineHeight: 1.2,
+        color: UI_COLORS.textPrimary,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+    },
+    "& .dc-formula": {
+        fontFamily: FONT_BODY,
+        fontSize: "0.52rem",
+        lineHeight: 1.8,
+        letterSpacing: "0.8px",
+        color: UI_COLORS.textSecondary,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+    },
+    "& .dc-badge": {
+        flexShrink: 0,
+        height: 18,
+        display: "inline-flex",
+        alignItems: "center",
+        px: 0.75,
+        borderRadius: "9px",
+        fontFamily: FONT_BODY,
+        fontSize: "0.5rem",
+        letterSpacing: "1.2px",
+        fontWeight: 700,
+        bgcolor: "var(--dice-a22)",
+        color: "var(--dice-a)",
+        border: "1px solid var(--dice-a66)",
+    },
+    "& .dc-body": {
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        px: 1,
+        py: 0.85,
+    },
+    "& .dc-left": { flex: 1, minWidth: 0 },
+    "& .dc-faces": {
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: "3px",
+        mb: 0.35,
+    },
+    "& .dc-face": {
+        minWidth: 22,
+        height: 22,
+        px: 0.55,
+        borderRadius: "4px",
+        bgcolor: "rgba(0,0,0,0.45)",
+        fontFamily: FONT_MONO,
+        fontSize: "0.68rem",
+        fontWeight: 700,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        border: `1px solid ${UI_COLORS.textPrimary}55`,
+        color: UI_COLORS.textPrimary,
+    },
+    "& .dc-face.fail": {
+        border: `1px solid ${DICE_FAIL}55`,
+        color: DICE_FAIL,
+        boxShadow: `0 0 8px ${DICE_FAIL}44`,
+    },
+    "& .dc-face.crit": {
+        border: `1px solid ${DICE_CRIT}55`,
+        color: DICE_CRIT,
+        boxShadow: `0 0 8px ${DICE_CRIT}44`,
+    },
+    "& .dc-mod": {
+        fontFamily: FONT_BODY,
+        fontSize: "0.65rem",
+        color: UI_COLORS.textSecondary,
+        ml: 0.25,
+    },
+    "& .dc-label": {
+        fontFamily: FONT_BODY,
+        fontSize: "0.55rem",
+        letterSpacing: "1px",
+        color: UI_COLORS.textSecondary,
+    },
+    "& .dc-total": {
+        fontFamily: FONT_TITLE,
+        textTransform: "uppercase",
+        letterSpacing: "2px",
+        fontSize: "1.35rem",
+        lineHeight: 1,
+        minWidth: 36,
+        textAlign: "right",
+        color: "var(--dice-a)",
+        textShadow: "0 0 14px var(--dice-a66)",
+    },
+};
+
+const diceVarsCache = new Map();
+
+/** Accent → CSS custom properties consumed by {@link DICE_CARD_SX}. */
+function diceVars(accent) {
+    let vars = diceVarsCache.get(accent);
+    if (vars) return vars;
+    vars = {
+        "--dice-a": accent,
+        "--dice-a66": `${accent}66`,
+        "--dice-a33": `${accent}33`,
+        "--dice-a22": `${accent}22`,
+        "--dice-a14": `${accent}14`,
+    };
+    diceVarsCache.set(accent, vars);
+    return vars;
+}
+
+/** Plain-DOM avatar: styling comes from the parent card class, not emotion. */
+function RawAvatar({ path, name }) {
+    const src = useAssetUrl(path || null);
+    if (src) {
+        return (
+            <img
+                className="dc-avatar"
+                src={src}
+                alt={name}
+                decoding="sync"
+                loading="eager"
+            />
+        );
+    }
+    return <span className="dc-avatar">{(name || "?").slice(0, 1).toUpperCase()}</span>;
+}
+
+function faceMode(value, sides) {
+    const s = Math.max(2, Math.floor(Number(sides) || 20));
+    const r = Math.floor(Number(value) || 0);
+    if (r === 1) return "fail";
+    if (r === s) return "crit";
+    return "normal";
+}
+
+function DiceChatCard({ msg, avatarByCharacterId }) {
+    const dr = msg.diceResult || {};
+    const rolls = Array.isArray(dr.rolls) ? dr.rolls : [];
+    const sides = Math.max(2, Math.floor(Number(dr.sides) || 20));
+    const total = dr.total;
+    const mode = dr.mode; // highest | lowest | null
+    const isAction = mode === "highest" || mode === "lowest";
+    const formula = msg.diceFormula || dr.formula || "";
+    const name = msg.characterName || msg.senderName || "???";
+    const livePath = msg.characterId ? avatarByCharacterId?.get(msg.characterId) : null;
+    const avatarPath = livePath || msg.characterAvatarUrl;
+
+    const hot =
+        rolls.length === 1
+            ? faceMode(rolls[0], sides)
+            : rolls.some((r) => faceMode(r, sides) === "crit")
+                ? "crit"
+                : rolls.some((r) => faceMode(r, sides) === "fail")
+                    ? "fail"
+                    : "normal";
+
+    const accent =
+        hot === "fail" ? DICE_FAIL : hot === "crit" ? DICE_CRIT : UI_COLORS.anomaly;
+    const badge = isAction ? "ACTION" : "DADO";
+    const modeLabel =
+        mode === "highest" ? "keep max" : mode === "lowest" ? "keep min" : null;
+
+    return (
+        <Box sx={DICE_CARD_SX} style={diceVars(accent)}>
+            <div className="dc-head">
+                <RawAvatar path={avatarPath} name={name} />
+                <div className="dc-who">
+                    <div className="dc-name">{name}</div>
+                    <div className="dc-formula">
+                        {formula}
+                        {modeLabel ? ` · ${modeLabel}` : ""}
+                    </div>
+                </div>
+                <span className="dc-badge">{badge}</span>
+            </div>
+
+            <div className="dc-body">
+                <div className="dc-left">
+                    {rolls.length > 0 && (
+                        <div className="dc-faces">
+                            {rolls.map((face, i) => (
+                                <span
+                                    key={`${face}-${i}`}
+                                    className={`dc-face ${faceMode(face, sides)}`}
+                                >
+                                    {face}
+                                </span>
+                            ))}
+                            {!!dr.mod && (
+                                <span className="dc-mod">
+                                    {dr.mod >= 0 ? `+${dr.mod}` : dr.mod}
+                                </span>
+                            )}
+                        </div>
+                    )}
+                    <div className="dc-label">RESULTADO</div>
+                </div>
+                <div className="dc-total">{total}</div>
+            </div>
+        </Box>
+    );
+}
+
 function ChatMessage({ msg, glossaryEntities, avatarByCharacterId }) {
     if (msg.type === CHAT_MESSAGE_TYPES.DICE) {
-        return (
-            <Box
-                sx={{
-                    mb: 0.75,
-                    px: 1,
-                    py: 0.65,
-                    borderLeft: `3px solid ${UI_COLORS.anomaly}`,
-                    bgcolor: "rgba(0,0,0,0.35)",
-                    borderRadius: "0 4px 4px 0",
-                }}
-            >
-                <CyberText sx={{ fontSize: "0.6rem", color: UI_COLORS.textSecondary, letterSpacing: 0.5 }}>
-                    {msg.characterName || msg.senderName} · DADO
-                </CyberText>
-                <CyberText sx={{ fontSize: "0.82rem", color: UI_COLORS.anomaly }}>
-                    {msg.diceFormula} → <strong style={{ color: "#fff" }}>{msg.diceResult?.total}</strong>
-                    {msg.diceResult?.rolls?.length > 0 && (
-                        <span style={{ color: UI_COLORS.textSecondary, fontSize: "0.72rem" }}>
-                            {" "}[{msg.diceResult.rolls.join(", ")}
-                            {msg.diceResult.mode === "highest"
-                                ? " · máx"
-                                : msg.diceResult.mode === "lowest"
-                                    ? " · mín"
-                                    : msg.diceResult.mod
-                                        ? ` ${msg.diceResult.mod >= 0 ? "+" : ""}${msg.diceResult.mod}`
-                                        : ""}]
-                        </span>
-                    )}
-                </CyberText>
-            </Box>
-        );
+        return <DiceChatCard msg={msg} avatarByCharacterId={avatarByCharacterId} />;
     }
 
     if (msg.type === CHAT_MESSAGE_TYPES.ABILITY) {
@@ -223,13 +458,101 @@ function ChatMessage({ msg, glossaryEntities, avatarByCharacterId }) {
 }
 
 /**
+ * Rows are pure: message objects keep identity across snapshots
+ * (see `subscribeToChatMessages`), so a new message renders one row.
+ */
+const ChatRow = memo(ChatMessage);
+
+const LIST_SX = {
+    flex: 1,
+    minHeight: 0,
+    overflowY: "auto",
+    px: 1.25,
+    py: 1,
+    ...CYBER_SCROLL_STYLE,
+};
+
+const olderBtnSx = {
+    width: "100%",
+    mb: 1,
+    py: 0.4,
+    fontFamily: "'Orbitron', sans-serif",
+    fontSize: "0.5rem",
+    letterSpacing: "0.14em",
+    color: UI_COLORS.textSecondary,
+    border: `1px solid ${UI_COLORS.border}`,
+    borderRadius: "4px",
+    bgcolor: "rgba(0,0,0,0.3)",
+    "&:hover": { color: UI_COLORS.accent, borderColor: UI_COLORS.accent },
+};
+
+/**
+ * Isolated message list — memoized so typing in the composer (local `text`
+ * state in the parent) never re-renders every chat card on each keystroke.
+ * Only the newest {@link RENDER_WINDOW} rows are mounted: a full 200-card log
+ * costs ~500ms of layout/paint every time the dock opens or closes.
+ */
+const MessageList = memo(function MessageList({
+    scrollRef,
+    visibleMessages,
+    glossaryEntities,
+    avatarByCharacterId,
+}) {
+    const [limit, setLimit] = useState(RENDER_WINDOW);
+    const lastIdRef = useRef(null);
+
+    const rows = useMemo(
+        () => (visibleMessages.length > limit ? visibleMessages.slice(-limit) : visibleMessages),
+        [visibleMessages, limit],
+    );
+    const hasOlder = visibleMessages.length > rows.length;
+
+    // Stick to the bottom on mount and when a new message lands, but never
+    // yank the view while the user is reading older history.
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        const lastId = rows.length ? rows[rows.length - 1].id : null;
+        const isNew = lastId !== lastIdRef.current;
+        lastIdRef.current = lastId;
+        const nearBottom =
+            el.scrollHeight - el.scrollTop - el.clientHeight < 240;
+        if (isNew || nearBottom) el.scrollTop = el.scrollHeight;
+    }, [rows, scrollRef]);
+
+    return (
+        <Box ref={scrollRef} sx={LIST_SX}>
+            {hasOlder && (
+                <Box
+                    component="button"
+                    type="button"
+                    onClick={() => setLimit((n) => n + RENDER_WINDOW_STEP)}
+                    sx={olderBtnSx}
+                >
+                    CARGAR ANTERIORES ({visibleMessages.length - rows.length})
+                </Box>
+            )}
+            {rows.map((m) => (
+                <ChatRow
+                    key={m.id}
+                    msg={m}
+                    glossaryEntities={glossaryEntities}
+                    avatarByCharacterId={avatarByCharacterId}
+                />
+            ))}
+        </Box>
+    );
+});
+
+/**
  * Chat panel for the right dock. Visibility controlled by parent (`open`).
  */
 export default function VttChatPanel({
     open = false,
     onClose,
     messages = [],
-    glossaryEntities = [],
+    glossaryEntities = EMPTY_GLOSSARY,
+    revealedDiceIds = null,
 }) {
     const dispatch = useDispatch();
     const [text, setText] = useState("");
@@ -281,13 +604,14 @@ export default function VttChatPanel({
         return myCharacters.find((c) => c.id === id) || myCharacters[0] || null;
     }, [profile?.activeCharacterId, myCharacters]);
 
-    useEffect(() => {
-        if (scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
-    }, [messages, open]);
-
-    if (!open) return null;
+    const visibleMessages = useMemo(() => {
+        if (!open) return EMPTY_MESSAGES;
+        if (!revealedDiceIds) return messages;
+        return messages.filter((m) => {
+            if (m?.type !== CHAT_MESSAGE_TYPES.DICE) return true;
+            return revealedDiceIds.has(m.id);
+        });
+    }, [open, messages, revealedDiceIds]);
 
     const handleSelectCharacter = (char) => {
         if (!char?.id) return;
@@ -336,17 +660,18 @@ export default function VttChatPanel({
         <Paper
             elevation={0}
             data-no-token-drop
+            aria-hidden={!open}
             sx={{
-                flex: 1,
-                minHeight: 0,
+                flex: open ? 1 : "0 0 0",
+                minHeight: open ? 0 : 0,
                 width: "100%",
                 bgcolor: `${UI_COLORS.backgroundSecondary}f2`,
                 border: `1px solid ${UI_COLORS.border}`,
                 borderRadius: 1,
-                display: "flex",
+                display: open ? "flex" : "none",
                 flexDirection: "column",
                 overflow: "hidden",
-                pointerEvents: "auto",
+                pointerEvents: open ? "auto" : "none",
             }}
         >
             <Box
@@ -374,26 +699,18 @@ export default function VttChatPanel({
                 </IconButton>
             </Box>
 
-            <Box
-                ref={scrollRef}
-                sx={{
-                    flex: 1,
-                    minHeight: 0,
-                    overflowY: "auto",
-                    px: 1.25,
-                    py: 1,
-                    ...CYBER_SCROLL_STYLE,
-                }}
-            >
-                {messages.map((m) => (
-                    <ChatMessage
-                        key={m.id}
-                        msg={m}
-                        glossaryEntities={glossaryEntities}
-                        avatarByCharacterId={avatarByCharacterId}
-                    />
-                ))}
-            </Box>
+            {/* Mounting the log while the dock is hidden still costs a full
+                React render on every incoming message — keep it unmounted. */}
+            {open ? (
+                <MessageList
+                    scrollRef={scrollRef}
+                    visibleMessages={visibleMessages}
+                    glossaryEntities={glossaryEntities}
+                    avatarByCharacterId={avatarByCharacterId}
+                />
+            ) : (
+                <Box sx={{ flex: 1, minHeight: 0 }} />
+            )}
 
             <Box
                 sx={{

@@ -20,6 +20,9 @@ export function useGameSync() {
                 partyPositions: data.partyPositions ?? {},
                 tokenPositions: data.tokenPositions ?? {},
                 activeMapId: data.activeMapId ?? null,
+                rulers: data.rulers ?? {},
+                pings: data.pings ?? {},
+                sessionPools: data.sessionPools ?? {},
             }));
         });
 

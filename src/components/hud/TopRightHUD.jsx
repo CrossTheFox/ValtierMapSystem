@@ -5,7 +5,7 @@ import ChatIcon from "@mui/icons-material/Chat";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 
-import { restoreDialog, openDialog, showSnackbar, openWikiOverlay } from "../../store/uiSlice";
+import { restoreDialog, openDialog, openCharacterSheet, showSnackbar, openWikiOverlay } from "../../store/uiSlice";
 import { DIALOG_IDS } from "../../constants/dialogIds";
 import { resetWorldState } from "../../store/worldSlice";
 import { fetchPlayerCharacters } from "../../store/characterSlice";
@@ -338,11 +338,11 @@ export default function TopRightHUD({
                         component="button"
                         onClick={() => {
                             setMenuOpen(false);
-                            dispatch(openDialog("sheet"));
+                            dispatch(openCharacterSheet({ tab: "IDENTIDAD" }));
                         }}
                         sx={menuItemSx}
                     >
-                        ⚔ MIS_PERSONAJES
+                        ⚔ DOSSIER
                     </Box>
 
                     {isDM && (

@@ -47,7 +47,7 @@ export default function DialogStackBar() {
         },
         openDialogs.sheet && {
             id: DIALOG_IDS.SHEET,
-            label: "SHEET",
+            label: "DOSSIER",
             minimized: minimizedDialogs[DIALOG_IDS.SHEET],
         },
         openDialogs.settings && {

@@ -40,7 +40,7 @@ const navIconSx = (active) => ({
     },
 });
 
-export default function MapSelectorHUD() {
+export default function MapSelectorHUD({ children = null }) {
     const dispatch = useDispatch();
     const maps = useSelector((s) => s.world.maps);
     const map = useSelector((s) => s.world.map);
@@ -122,17 +122,25 @@ export default function MapSelectorHUD() {
                 pointerEvents: "auto",
                 display: "flex",
                 flexDirection: "column",
-                gap: 0.85,
-                px: 1.25,
-                py: 1,
-                minWidth: 260,
-                borderRadius: `${VTT_HUD.borderRadius}px`,
-                border: `1px solid ${VTT_HUD.glassBorder}`,
-                bgcolor: VTT_HUD.glassBg,
-                backdropFilter: "blur(14px)",
-                boxShadow: "0 0 22px rgba(255,102,255,0.08)",
+                alignItems: "flex-start",
+                gap: 0.65,
             }}
         >
+            <Box
+                sx={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 0.85,
+                    px: 1.25,
+                    py: 1,
+                    minWidth: 260,
+                    borderRadius: `${VTT_HUD.borderRadius}px`,
+                    border: `1px solid ${VTT_HUD.glassBorder}`,
+                    bgcolor: VTT_HUD.glassBg,
+                    backdropFilter: "blur(14px)",
+                    boxShadow: "0 0 22px rgba(255,102,255,0.08)",
+                }}
+            >
             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1 }}>
                 <Box
                     sx={{
@@ -420,6 +428,9 @@ export default function MapSelectorHUD() {
                     </Stack>
                 </Stack>
             </Popover>
+            </Box>
+
+            {children}
         </Box>
     );
 }

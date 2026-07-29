@@ -4,7 +4,7 @@ import {
     addDoc,
     query,
     orderBy,
-    limit,
+    limitToLast,
     onSnapshot,
     serverTimestamp,
 } from "firebase/firestore";
@@ -49,10 +49,38 @@ export async function sendChatMessage(campaignId, {
     });
 }
 
-export function subscribeToChatMessages(campaignId, callback, max = 100) {
-    const q = query(messagesCol(campaignId), orderBy("createdAt", "asc"), limit(max));
+/**
+ * Live-subscribe to the most recent `max` messages, oldest → newest.
+ * IMPORTANT: use `limitToLast` (not `limit`) with an ascending orderBy —
+ * `limit` on an ascending query returns the OLDEST docs, which silently
+ * freezes the chat once a campaign passes `max` total messages (new
+ * messages/dice rolls never enter the window and never render).
+ *
+ * Objects are reused across snapshots for unchanged docs (identity is stable),
+ * so `memo` on chat rows actually holds and one new message re-renders one row
+ * instead of the whole log.
+ */
+export function subscribeToChatMessages(campaignId, callback, max = 200) {
+    const q = query(messagesCol(campaignId), orderBy("createdAt", "asc"), limitToLast(max));
+    const cache = new Map();
     return onSnapshot(q, (snap) => {
-        const messages = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        for (const change of snap.docChanges()) {
+            if (change.type === "removed") cache.delete(change.doc.id);
+            else cache.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
+        }
+        const messages = snap.docs.map((d) => {
+            const cached = cache.get(d.id);
+            if (cached) return cached;
+            const fresh = { id: d.id, ...d.data() };
+            cache.set(d.id, fresh);
+            return fresh;
+        });
+        if (cache.size > messages.length) {
+            const live = new Set(messages.map((m) => m.id));
+            for (const id of cache.keys()) {
+                if (!live.has(id)) cache.delete(id);
+            }
+        }
         callback(messages);
     });
 }
@@ -70,7 +98,14 @@ export function rollDiceFormula(formula) {
         rolls.push(Math.floor(Math.random() * sides) + 1);
     }
     const total = rolls.reduce((a, b) => a + b, 0) + mod;
-    return { rolls, mod, total, formula: trimmed };
+    return {
+        rolls,
+        mod,
+        total,
+        formula: trimmed,
+        sides,
+        diceCount: rolls.length,
+    };
 }
 
 function rollD6() {
@@ -95,6 +130,7 @@ export function rollIconActionDice(statValue, statLabel = "Stat") {
             mode: "lowest",
             formula: `${statLabel} 0 → 2d6 (mín)`,
             diceCount: 2,
+            sides: 6,
         };
     }
     const rolls = Array.from({ length: n }, () => rollD6());
@@ -106,6 +142,7 @@ export function rollIconActionDice(statValue, statLabel = "Stat") {
         mode: "highest",
         formula: `${statLabel} ${n} → ${n}d6 (máx)`,
         diceCount: n,
+        sides: 6,
     };
 }
 
@@ -116,6 +153,31 @@ export async function rollStatInChat(campaignId, profile, character, statDef, st
     await sendChatMessage(campaignId, {
         type: CHAT_MESSAGE_TYPES.DICE,
         text: `${character?.name || profile?.nickname || "Jugador"} tira ${label}`,
+        senderId: profile?.uid,
+        senderName: profile?.nickname ?? "Jugador",
+        characterId: character?.id ?? null,
+        characterName: character?.name ?? null,
+        characterAvatarUrl: character?.tokenImageUrl || character?.imageUrl || null,
+        diceResult,
+        diceFormula: diceResult.formula,
+        isOOC: false,
+    });
+    return diceResult;
+}
+
+/**
+ * Post a freeform NdM[+/-mod] roll into campaign chat.
+ * @param {string} formula e.g. "2d6", "1d20+3", "d100"
+ */
+export async function rollDiceInChat(campaignId, profile, character, formula) {
+    const diceResult = rollDiceFormula(formula);
+    if (!diceResult) {
+        throw new Error(`Fórmula de dados inválida: ${formula}`);
+    }
+    const who = character?.name || profile?.nickname || "Jugador";
+    await sendChatMessage(campaignId, {
+        type: CHAT_MESSAGE_TYPES.DICE,
+        text: `${who} tira ${diceResult.formula}`,
         senderId: profile?.uid,
         senderName: profile?.nickname ?? "Jugador",
         characterId: character?.id ?? null,

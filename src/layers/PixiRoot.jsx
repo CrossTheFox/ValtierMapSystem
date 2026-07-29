@@ -4,7 +4,8 @@ import { useDispatch, useSelector } from "react-redux";
 import { loadWorld, preloadWorldAssets } from "../store/worldSlice";
 import MapViewportProvider from "../pixi/MapViewport";
 import LocationsLayer from "../pixi/LocationsLayer";
-import DistanceMeasureLayer from "../pixi/DistanceMeasureLayer";
+import RulersLayer from "../pixi/RulersLayer";
+import PingLayer from "../pixi/PingLayer";
 import GridLayer from "../pixi/GridLayer";
 import TokenLayer from "../pixi/TokenLayer";
 import TokenSpeechLayer from "../pixi/TokenSpeechLayer";
@@ -50,7 +51,8 @@ export default function PixiRoot({ onViewportReady }) {
                 <MapViewportProvider onViewportReady={onViewportReady}>
                     <GridLayer />
                     <LocationsLayer />
-                    <DistanceMeasureLayer />
+                    <RulersLayer />
+                    <PingLayer />
                     <TokenLayer />
                     <TokenSpeechLayer />
                 </MapViewportProvider>

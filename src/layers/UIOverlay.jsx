@@ -1,29 +1,50 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Box } from "@mui/material";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { closeDialog, showTokenSpeech } from "../store/uiSlice";
 
-import LocationInfoCard        from "../components/LocationInfoCard";
-import LoreDialog              from "../components/LoreDialog";
+import LocationInfoCard from "../components/LocationInfoCard";
+import LoreDialog from "../components/LoreDialog";
 import CharactersSettingsDialog from "../components/CharactersSettingsDialog";
-import AdminSettingsDialog     from "../components/AdminSettingsDialog";
-import CharactersGlobalDialog  from "../components/CharactersGlobalDialog";
-import NarrativeWikiOverlay    from "../components/wiki/NarrativeWikiOverlay";
-import CyberSnackbar           from "../components/customs/CyberSnackbar";
-import MapContextMenu          from "../components/MapContextMenu";
-import MeasuringHUD            from "../components/MeasuringHUD";
+import AdminSettingsDialog from "../components/AdminSettingsDialog";
+import CharactersGlobalDialog from "../components/CharactersGlobalDialog";
+import NarrativeWikiOverlay from "../components/wiki/NarrativeWikiOverlay";
+import CyberSnackbar from "../components/customs/CyberSnackbar";
+import MapContextMenu from "../components/MapContextMenu";
+import MeasuringHUD from "../components/MeasuringHUD";
 
-import TopRightHUD             from "../components/hud/TopRightHUD";
-import DialogStackBar          from "../components/hud/DialogStackBar";
-import MapSelectorHUD          from "../components/vtt/MapSelectorHUD";
-import VttChatPanel            from "../components/vtt/VttChatPanel";
-import TokenDeployPanel        from "../components/vtt/TokenDeployPanel";
-import CharacterCombatHud      from "../components/vtt/CharacterCombatHud";
-import { VTT_RIGHT_DOCK } from "../constants/vttHudTokens";
+import TopRightHUD from "../components/hud/TopRightHUD";
+import DialogStackBar from "../components/hud/DialogStackBar";
+import MapSelectorHUD from "../components/vtt/MapSelectorHUD";
+import CharacterCombatHud from "../components/vtt/CharacterCombatHud";
+import LeftToolsRail from "../components/vtt/LeftToolsRail";
+import VttDiceChatDock from "../components/vtt/VttDiceChatDock";
 import {
     CHAT_MESSAGE_TYPES,
     subscribeToChatMessages,
 } from "../../firebase/services/chatService";
+
+const EMPTY_TOKEN_POSITIONS = Object.freeze({});
+const EMPTY_CHAT = Object.freeze({ campaignId: null, messages: Object.freeze([]) });
+
+/**
+ * Chat messages stream in through this component, so anything that does not
+ * consume them must be able to bail out of the re-render. These children read
+ * what they need from Redux, so memoizing them costs nothing in freshness.
+ */
+const MemoLocationInfoCard = memo(LocationInfoCard);
+const MemoLoreDialog = memo(LoreDialog);
+const MemoNarrativeWikiOverlay = memo(NarrativeWikiOverlay);
+const MemoCyberSnackbar = memo(CyberSnackbar);
+const MemoCharactersGlobalDialog = memo(CharactersGlobalDialog);
+const MemoCharactersSettingsDialog = memo(CharactersSettingsDialog);
+const MemoAdminSettingsDialog = memo(AdminSettingsDialog);
+const MemoMapSelectorHUD = memo(MapSelectorHUD);
+const MemoTopRightHUD = memo(TopRightHUD);
+const MemoCharacterCombatHud = memo(CharacterCombatHud);
+const MemoDialogStackBar = memo(DialogStackBar);
+const MemoMeasuringHUD = memo(MeasuringHUD);
+const MemoMapContextMenu = memo(MapContextMenu);
+const MemoLeftToolsRail = memo(LeftToolsRail);
 
 function messageTimeMs(msg) {
     const t = msg?.createdAt;
@@ -34,46 +55,36 @@ function messageTimeMs(msg) {
 }
 
 export default function UIOverlay() {
-    const dispatch  = useDispatch();
-    const profile   = useSelector((state) => state.player.profile);
-    const { openDialogs } = useSelector((state) => state.ui);
+    const dispatch = useDispatch();
+    const profile = useSelector((state) => state.player.profile);
+    const openDialogs = useSelector((state) => state.ui.openDialogs);
     const campaignId = useSelector((s) => s.world.selectedCampaignId);
     const isAuthenticated = !!profile;
 
     const [tokenPanelOpen, setTokenPanelOpen] = useState(false);
     const [chatPanelOpen, setChatPanelOpen] = useState(false);
     const [abilityBarOpen, setAbilityBarOpen] = useState(false);
-    const [messages, setMessages] = useState([]);
-    const [lastReadMs, setLastReadMs] = useState(0);
-    const seededReadRef = useRef(false);
+    const [chat, setChat] = useState(EMPTY_CHAT);
+    // Everything already in Firestore when the HUD mounts counts as read.
+    const [lastReadMs, setLastReadMs] = useState(() => Date.now());
     const speechSeededRef = useRef(false);
     const seenSpeechIdsRef = useRef(new Set());
     const activeMapId = useSelector((s) => s.world.activeMapId ?? s.world.map?.id);
-    const tokenPositions = useSelector((s) => s.game.tokenPositions ?? {});
+    // Stable empty fallback — never allocate `{}` in the selector (re-render storm).
+    const tokenPositions = useSelector((s) => s.game.tokenPositions) || EMPTY_TOKEN_POSITIONS;
 
     useEffect(() => {
-        if (!campaignId) {
-            setMessages([]);
-            seededReadRef.current = false;
-            speechSeededRef.current = false;
-            seenSpeechIdsRef.current = new Set();
-            return undefined;
-        }
-        seededReadRef.current = false;
         speechSeededRef.current = false;
         seenSpeechIdsRef.current = new Set();
-        return subscribeToChatMessages(campaignId, setMessages);
+        if (!campaignId) return undefined;
+        return subscribeToChatMessages(campaignId, (list) =>
+            setChat({ campaignId, messages: list }),
+        );
     }, [campaignId]);
 
-    // On first snapshot, treat existing history as already read
-    useEffect(() => {
-        if (seededReadRef.current || !messages.length) return;
-        const latest = Math.max(...messages.map(messageTimeMs), Date.now());
-        setLastReadMs(latest);
-        seededReadRef.current = true;
-    }, [messages]);
+    // Derived instead of cleared in the effect: avoids an extra render on switch.
+    const messages = chat.campaignId === campaignId ? chat.messages : EMPTY_CHAT.messages;
 
-    // IC speech bubbles over tokens on the active map
     useEffect(() => {
         if (!messages.length) return;
 
@@ -85,7 +96,7 @@ export default function UIOverlay() {
             return;
         }
 
-        const mapTokens = activeMapId ? (tokenPositions[activeMapId] ?? {}) : {};
+        const mapTokens = activeMapId ? (tokenPositions[activeMapId] ?? EMPTY_TOKEN_POSITIONS) : EMPTY_TOKEN_POSITIONS;
 
         for (const msg of messages) {
             if (!msg?.id || seenSpeechIdsRef.current.has(msg.id)) continue;
@@ -105,13 +116,6 @@ export default function UIOverlay() {
         }
     }, [messages, activeMapId, tokenPositions, dispatch]);
 
-    // While chat is open, keep read cursor at the latest message
-    useEffect(() => {
-        if (!chatPanelOpen || !messages.length) return;
-        const latest = Math.max(...messages.map(messageTimeMs), Date.now());
-        setLastReadMs(latest);
-    }, [chatPanelOpen, messages]);
-
     const chatUnread = useMemo(() => {
         if (chatPanelOpen) return 0;
         const uid = profile?.uid;
@@ -121,87 +125,87 @@ export default function UIOverlay() {
         }).length;
     }, [messages, lastReadMs, chatPanelOpen, profile?.uid]);
 
-    const dockVisible = chatPanelOpen || tokenPanelOpen;
+    const closeCharacters = useCallback(() => dispatch(closeDialog("characters")), [dispatch]);
+    const closeSheet = useCallback(() => dispatch(closeDialog("sheet")), [dispatch]);
+    const closeSettings = useCallback(() => dispatch(closeDialog("settings")), [dispatch]);
+    // Marking read on the click keeps the toggle a single render (no effect cascade).
+    const closeChat = useCallback(() => {
+        setChatPanelOpen(false);
+        setLastReadMs(Date.now());
+    }, []);
+    const closeToken = useCallback(() => setTokenPanelOpen(false), []);
+    const toggleChat = useCallback(() => {
+        setChatPanelOpen((v) => !v);
+        setLastReadMs(Date.now());
+    }, []);
+    const toggleToken = useCallback(() => setTokenPanelOpen((v) => !v), []);
+    const toggleAbilityBar = useCallback(() => setAbilityBarOpen((v) => !v), []);
+
+    const leftRail = useMemo(
+        () => (isAuthenticated ? <MemoLeftToolsRail /> : null),
+        [isAuthenticated],
+    );
 
     return (
         <div
             id="ui-overlay"
             style={{ position: "fixed", inset: 0, pointerEvents: "none" }}
         >
-            <LocationInfoCard />
-            <LoreDialog />
-            {isAuthenticated && <NarrativeWikiOverlay />}
+            <MemoLocationInfoCard />
+            <MemoLoreDialog />
+            {isAuthenticated && <MemoNarrativeWikiOverlay />}
 
-            <CharactersGlobalDialog
-                open={openDialogs.characters}
-                onClose={() => dispatch(closeDialog("characters"))}
+            <MemoCharactersGlobalDialog
+                open={!!openDialogs.characters}
+                onClose={closeCharacters}
             />
 
-            <CharactersSettingsDialog
-                open={openDialogs.sheet}
-                onClose={() => dispatch(closeDialog("sheet"))}
+            <MemoCharactersSettingsDialog
+                open={!!openDialogs.sheet}
+                onClose={closeSheet}
             />
 
             {isAuthenticated && (
-                <AdminSettingsDialog
-                    open={openDialogs.settings}
-                    onClose={() => dispatch(closeDialog("settings"))}
+                <MemoAdminSettingsDialog
+                    open={!!openDialogs.settings}
+                    onClose={closeSettings}
                 />
             )}
 
-            <CyberSnackbar />
+            <MemoCyberSnackbar />
+
+            {isAuthenticated && (
+                <VttDiceChatDock
+                    messages={messages}
+                    localUid={profile?.uid}
+                    chatPanelOpen={chatPanelOpen}
+                    tokenPanelOpen={tokenPanelOpen}
+                    onCloseChat={closeChat}
+                    onCloseToken={closeToken}
+                />
+            )}
 
             <div style={{ pointerEvents: "auto" }}>
-                <MapSelectorHUD />
-                <TopRightHUD
+                <MemoMapSelectorHUD>{leftRail}</MemoMapSelectorHUD>
+                <MemoTopRightHUD
                     profile={profile}
                     showTokenToggle={isAuthenticated}
                     tokenPanelOpen={tokenPanelOpen}
-                    onToggleTokenPanel={() => setTokenPanelOpen((v) => !v)}
+                    onToggleTokenPanel={toggleToken}
                     showChatToggle={isAuthenticated}
                     chatPanelOpen={chatPanelOpen}
                     chatUnread={chatUnread}
-                    onToggleChatPanel={() => setChatPanelOpen((v) => !v)}
+                    onToggleChatPanel={toggleChat}
                 />
                 {isAuthenticated && (
-                    <CharacterCombatHud
+                    <MemoCharacterCombatHud
                         abilityBarOpen={abilityBarOpen}
-                        onToggleAbilityBar={() => setAbilityBarOpen((v) => !v)}
+                        onToggleAbilityBar={toggleAbilityBar}
                     />
                 )}
-                <DialogStackBar />
-                <MeasuringHUD />
-                <MapContextMenu />
-                {isAuthenticated && (
-                    <>
-                        {dockVisible && (
-                            <Box
-                                sx={{
-                                    position: "fixed",
-                                    top: VTT_RIGHT_DOCK.top,
-                                    right: 16,
-                                    bottom: VTT_RIGHT_DOCK.bottom,
-                                    width: VTT_RIGHT_DOCK.width,
-                                    zIndex: 1250,
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    gap: `${VTT_RIGHT_DOCK.gap}px`,
-                                    pointerEvents: "none",
-                                }}
-                            >
-                                <TokenDeployPanel
-                                    open={tokenPanelOpen}
-                                    onClose={() => setTokenPanelOpen(false)}
-                                />
-                                <VttChatPanel
-                                    open={chatPanelOpen}
-                                    onClose={() => setChatPanelOpen(false)}
-                                    messages={messages}
-                                />
-                            </Box>
-                        )}
-                    </>
-                )}
+                <MemoDialogStackBar />
+                <MemoMeasuringHUD />
+                <MemoMapContextMenu />
             </div>
         </div>
     );

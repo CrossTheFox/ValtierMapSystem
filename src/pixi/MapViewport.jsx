@@ -12,13 +12,17 @@ import {
     setSelectedWorldPosition,
     openContextMenu,
     closeContextMenu,
-    setMeasurePointB,
-    clearMeasureTool,
+    setRulerDraftA,
+    clearRulerDraft,
 } from "../store/uiSlice";
 import { DIALOG_IDS } from "../constants/dialogIds";
 import locationIconPath from "../assets/LocationNode.svg";
 import { UI_COLORS } from "../constants/uiColors";
-import { resolveCellSize, snapToGridCenter } from "../utils/gridMath";
+import {
+    buildRulerMeasure,
+    snapWorldToGridPoint,
+} from "../utils/gridMath";
+import { addMapRuler } from "../../firebase/services/gameService";
 
 const RIGHT_CLICK_DRAG_THRESHOLD = 5; // px — below this → treat as click, not drag
 
@@ -26,8 +30,9 @@ export default function MapViewportProvider({ children, onViewportReady }) {
     const { app } = useApplication();
     const dispatch = useDispatch();
 
-    const { map, assetsStatus, gridConfig } = useSelector((state) => state.world);
-    const { isSelectingPosition, measureTool } = useSelector((state) => state.ui);
+    const { map, assetsStatus, gridConfig, selectedCampaignId, activeMapId } = useSelector((state) => state.world);
+    const { isSelectingPosition, rulerTool } = useSelector((state) => state.ui);
+    const profile = useSelector((state) => state.player.profile);
     const gridConfigRef = useRef(gridConfig);
     const mapRef = useRef(map);
     useEffect(() => { gridConfigRef.current = gridConfig; }, [gridConfig]);
@@ -37,11 +42,16 @@ export default function MapViewportProvider({ children, onViewportReady }) {
     const viewportRef = useRef(null);
     const ghostRef    = useRef(null);
 
-    // Keep latest measure/selecting state readable inside non-resubscribing effects
-    const measureToolRef         = useRef(measureTool);
-    const isSelectingRef         = useRef(isSelectingPosition);
-    useEffect(() => { measureToolRef.current = measureTool; },         [measureTool]);
+    const rulerToolRef = useRef(rulerTool);
+    const isSelectingRef = useRef(isSelectingPosition);
+    const campaignIdRef = useRef(selectedCampaignId);
+    const mapIdRef = useRef(activeMapId ?? map?.id);
+    const profileRef = useRef(profile);
+    useEffect(() => { rulerToolRef.current = rulerTool; }, [rulerTool]);
     useEffect(() => { isSelectingRef.current = isSelectingPosition; }, [isSelectingPosition]);
+    useEffect(() => { campaignIdRef.current = selectedCampaignId; }, [selectedCampaignId]);
+    useEffect(() => { mapIdRef.current = activeMapId ?? map?.id; }, [activeMapId, map?.id]);
+    useEffect(() => { profileRef.current = profile; }, [profile]);
 
     // ── Create viewport ───────────────────────────────────────────
     useEffect(() => {
@@ -128,21 +138,21 @@ export default function MapViewportProvider({ children, onViewportReady }) {
         return () => window.removeEventListener("resize", onResize);
     }, [app, viewport]);
 
-    // ── Right-click: drag vs context-menu vs cancel-measure ──────
-    // Right-click + drag  → pixi-viewport handles panning (drag plugin active)
-    // Right-click + no drag (< threshold) → open context menu  OR  cancel measure
+    // ── Right-click: drag vs context-menu / cancel ruler draft ────
+    // Right-click + drag  → pixi-viewport pans
+    // Right-click + no drag while placing ruler → cancel current draft
+    // Otherwise → open context menu (ping, etc.)
     useEffect(() => {
         if (!viewport) return;
 
-        let rightStart = null;  // { x, y } at pointerdown
+        let rightStart = null;
 
         const onDown = (e) => {
             if (e.button === 2) rightStart = { x: e.global.x, y: e.global.y };
         };
 
-        // drag-start fires when pixi-viewport actually begins panning
         const onDragStart = () => {
-            rightStart = null;          // it's a drag, not a click
+            rightStart = null;
             dispatch(closeContextMenu());
         };
 
@@ -150,80 +160,86 @@ export default function MapViewportProvider({ children, onViewportReady }) {
             if (e.button !== 2 || !rightStart) return;
             const dist = Math.hypot(e.global.x - rightStart.x, e.global.y - rightStart.y);
             rightStart = null;
-            if (dist >= RIGHT_CLICK_DRAG_THRESHOLD) return; // was a drag
+            if (dist >= RIGHT_CLICK_DRAG_THRESHOLD) return;
 
-            const isMeasuring =
-                !!measureToolRef.current.pointA && !measureToolRef.current.pointB;
-
-            if (isMeasuring) {
-                // Cancel the measure tool instead of opening context menu
-                dispatch(clearMeasureTool());
-            } else {
-                const worldPos = viewport.toWorld(e.global.x, e.global.y);
-                dispatch(openContextMenu({
-                    screenX: e.global.x,
-                    screenY: e.global.y,
-                    worldX:  worldPos.x,
-                    worldY:  worldPos.y,
-                    type:     "map",
-                    location: null,
-                }));
+            // Cancel in-progress ruler (node A set, waiting for B)
+            if (rulerToolRef.current?.active && rulerToolRef.current?.draftA) {
+                dispatch(clearRulerDraft());
+                dispatch(closeContextMenu());
+                return;
             }
-        };
 
-        viewport.on("pointerdown", onDown);
-        viewport.on("pointerup",   onUp);
-        viewport.on("drag-start",  onDragStart);
-
-        return () => {
-            viewport.off("pointerdown", onDown);
-            viewport.off("pointerup",   onUp);
-            viewport.off("drag-start",  onDragStart);
-        };
-    }, [viewport, dispatch]);
-
-    // ── Measuring-mode: left-click sets endpoint ──────────────────
-    const isMeasuringMode = !!measureTool.pointA && !measureTool.pointB;
-
-    useEffect(() => {
-        if (!viewport) return;
-
-        if (!isMeasuringMode) {
-            // Resume drag whenever we leave measuring mode
-            viewport.plugins?.resume?.("drag");
-            return;
-        }
-
-        // While measuring, suspend drag so a left-click doesn't pan
-        viewport.plugins?.pause?.("drag");
-
-        const onDown = (e) => {
-            if (e.button !== 0) return;
-            // Don't interfere if position-selection mode is also active
-            if (isSelectingRef.current) return;
-            let worldPos = viewport.toWorld(e.global.x, e.global.y);
-            const gc = gridConfigRef.current;
-            if (gc?.snap !== false) {
-                worldPos = snapToGridCenter(
-                    worldPos.x,
-                    worldPos.y,
-                    resolveCellSize(mapRef.current, gc),
-                );
-            }
-            dispatch(setMeasurePointB({
-                x:     worldPos.x,
-                y:     worldPos.y,
-                label: `(${Math.round(worldPos.x)}, ${Math.round(worldPos.y)})`,
+            const worldPos = viewport.toWorld(e.global.x, e.global.y);
+            dispatch(openContextMenu({
+                screenX: e.global.x,
+                screenY: e.global.y,
+                worldX: worldPos.x,
+                worldY: worldPos.y,
+                type: "map",
+                location: null,
             }));
         };
 
         viewport.on("pointerdown", onDown);
+        viewport.on("pointerup", onUp);
+        viewport.on("drag-start", onDragStart);
 
         return () => {
             viewport.off("pointerdown", onDown);
-            viewport.plugins?.resume?.("drag");
+            viewport.off("pointerup", onUp);
+            viewport.off("drag-start", onDragStart);
         };
-    }, [viewport, isMeasuringMode, dispatch]);
+    }, [viewport, dispatch]);
+
+    // ── Ruler mode: 1st left-click = node A, 2nd = node B (persist) ─
+    const isRulerMode = !!rulerTool?.active;
+
+    useEffect(() => {
+        if (!viewport || !isRulerMode) return undefined;
+
+        const onDown = (e) => {
+            if (e.button !== 0) return;
+            if (isSelectingRef.current) return;
+
+            const world = viewport.toWorld(e.global.x, e.global.y);
+            const point = snapWorldToGridPoint(
+                world.x,
+                world.y,
+                mapRef.current,
+                gridConfigRef.current,
+            );
+            const draft = rulerToolRef.current?.draftA;
+
+            if (!draft) {
+                dispatch(setRulerDraftA(point));
+                return;
+            }
+
+            const campaignId = campaignIdRef.current;
+            const mapId = mapIdRef.current;
+            if (!campaignId || !mapId) return;
+
+            const measure = buildRulerMeasure(draft, point, mapRef.current);
+            const profile = profileRef.current;
+            addMapRuler(campaignId, {
+                mapId,
+                a: draft,
+                b: point,
+                straight: measure.straight,
+                diagonal: measure.diagonal,
+                totalCells: measure.totalCells,
+                meters: measure.meters,
+                distanceLabel: measure.distanceLabel,
+                createdBy: profile?.uid ?? null,
+                createdByName: profile?.nickname ?? null,
+            }).catch(console.error);
+
+            dispatch(clearRulerDraft());
+        };
+
+        viewport.on("pointerdown", onDown);
+        return () => viewport.off("pointerdown", onDown);
+    }, [viewport, isRulerMode, dispatch]);
 
     // ── Position-selection mode (left-click places location) ─────
     useEffect(() => {

@@ -245,13 +245,13 @@ export function createNeuralMeshScene(container, handlers = {}) {
                 ticker: app.ticker,
                 events: app.renderer.events,
             });
+            // No world clamp — free pan like MapViewport (VTT); only zoom is bounded.
             viewport
                 .drag({ mouseButtons: "left", pressDrag: true })
                 .pinch()
                 .wheel({ smooth: 4, percent: 0.12 })
                 .decelerate({ friction: 0.9 })
-                .clampZoom({ minScale: 0.32, maxScale: 2.6 })
-                .clamp({ direction: "all", underflow: "center" });
+                .clampZoom({ minScale: 0.32, maxScale: 2.6 });
             viewport.eventMode = "static";
             viewport.cursor = "grab";
             app.stage.addChild(viewport);

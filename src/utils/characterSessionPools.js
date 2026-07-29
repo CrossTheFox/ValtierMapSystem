@@ -1,17 +1,31 @@
 const STORAGE_KEY = "valtier_character_session_pools_v1";
 
+/**
+ * The HUD reads pools during render (once per pinned character), so parsing the
+ * whole blob every time was a blocking cost on unrelated re-renders.
+ */
+let cache = null;
+
+if (typeof window !== "undefined") {
+    window.addEventListener("storage", (e) => {
+        if (!e.key || e.key === STORAGE_KEY) cache = null;
+    });
+}
+
 function readAll() {
+    if (cache) return cache;
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) return {};
-        const parsed = JSON.parse(raw);
-        return typeof parsed === "object" && parsed !== null ? parsed : {};
+        const parsed = raw ? JSON.parse(raw) : null;
+        cache = typeof parsed === "object" && parsed !== null ? parsed : {};
     } catch {
-        return {};
+        cache = {};
     }
+    return cache;
 }
 
 function writeAll(data) {
+    cache = data;
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch (e) {

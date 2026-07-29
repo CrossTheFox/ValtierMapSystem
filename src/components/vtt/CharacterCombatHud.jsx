@@ -1,21 +1,13 @@
 import { useMemo, useState } from "react";
 import {
-    Box, IconButton, Popover, TextField, InputAdornment, CircularProgress, Badge,
+    Box, IconButton, Popover, TextField, InputAdornment,
 } from "@mui/material";
 import { useDispatch, useSelector } from "react-redux";
 import BoltIcon from "@mui/icons-material/Bolt";
 import SearchIcon from "@mui/icons-material/Search";
-import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
-import DirectionsRunIcon from "@mui/icons-material/DirectionsRun";
-import VisibilityIcon from "@mui/icons-material/Visibility";
-import MenuBookIcon from "@mui/icons-material/MenuBook";
-import FavoriteIcon from "@mui/icons-material/Favorite";
-import CampaignIcon from "@mui/icons-material/Campaign";
-import BuildIcon from "@mui/icons-material/Build";
-import GpsFixedIcon from "@mui/icons-material/GpsFixed";
-import FitnessCenterIcon from "@mui/icons-material/FitnessCenter";
-import ShieldIcon from "@mui/icons-material/Shield";
-import CasinoIcon from "@mui/icons-material/Casino";
+import BadgeIcon from "@mui/icons-material/Badge";
+import AccountTreeIcon from "@mui/icons-material/AccountTree";
+import PushPinIcon from "@mui/icons-material/PushPin";
 import { CyberText, CyberTitle } from "../customs/CustomTexts";
 import CyberTooltip from "../customs/CyberTooltip";
 import { UI_COLORS } from "../../constants/uiColors";
@@ -23,9 +15,10 @@ import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
 import { VTT_HUD } from "../../constants/vttHudTokens";
 import { useStatSystem } from "../../hooks/useStatSystem";
 import { useCharacterSessionPools } from "../../hooks/useCharacterSessionPools";
+import { usePinnedCharacters } from "../../hooks/usePinnedCharacters";
 import { useAssetUrl } from "../../hooks/useAssetUrl";
 import { setActiveCharacterId, persistActiveCharacter } from "../../store/playerSlice";
-import { showSnackbar } from "../../store/uiSlice";
+import { openCharacterSheet } from "../../store/uiSlice";
 import { canControlToken, isDmRole } from "../../utils/tokenControl";
 import {
     listCampaignCharacters,
@@ -33,21 +26,8 @@ import {
     resolveVit,
 } from "../../utils/characterCombat";
 import { normalizeTokenCrop, tokenCropCss } from "../../utils/tokenImageFit";
-import { rollStatInChat } from "../../../firebase/services/chatService";
+import { getSessionPools } from "../../utils/characterSessionPools";
 import AbilityHotbar from "./AbilityHotbar";
-
-const STAT_ICONS = {
-    sneak: VisibilityOffIcon,
-    traverse: DirectionsRunIcon,
-    sense: VisibilityIcon,
-    study: MenuBookIcon,
-    charm: FavoriteIcon,
-    command: CampaignIcon,
-    tinker: BuildIcon,
-    excel: GpsFixedIcon,
-    smash: FitnessCenterIcon,
-    endure: ShieldIcon,
-};
 
 function TrackRow({ label, children, valueLabel }) {
     return (
@@ -76,7 +56,7 @@ function TrackRow({ label, children, valueLabel }) {
     );
 }
 
-function CharAvatarButton({ char, active, onClick, size = 44 }) {
+function CharAvatarButton({ char, active, onClick, size = 44, pinned = false }) {
     const initials = (char.name || "?").slice(0, 2).toUpperCase();
     const crop = normalizeTokenCrop(char.tokenCrop);
     const imagePath = char.tokenImageUrl || char.imageUrl || "";
@@ -85,16 +65,17 @@ function CharAvatarButton({ char, active, onClick, size = 44 }) {
     const cropCss = tokenCropCss(crop);
 
     return (
-        <CyberTooltip title={onClick ? `${char.name || "—"} · cambiar` : (char.name || "—")} placement="top">
+        <CyberTooltip title={onClick ? `${char.name || "—"} · activar` : (char.name || "—")} placement="top">
             <Box
                 component={onClick ? "button" : "div"}
                 type={onClick ? "button" : undefined}
                 onClick={onClick}
                 sx={{
+                    position: "relative",
                     width: size,
                     height: size,
                     borderRadius: "50%",
-                    border: `2px solid ${active ? UI_COLORS.anomaly : UI_COLORS.border}`,
+                    border: `2px solid ${active ? UI_COLORS.anomaly : pinned ? UI_COLORS.accent : UI_COLORS.border}`,
                     bgcolor: active ? `${UI_COLORS.anomaly}22` : "rgba(0,0,0,0.35)",
                     color: active ? UI_COLORS.anomaly : UI_COLORS.textSecondary,
                     fontFamily: "'Orbitron', sans-serif",
@@ -137,7 +118,25 @@ function CharAvatarButton({ char, active, onClick, size = 44 }) {
     );
 }
 
-function CharacterAvatarPicker({ roster, selectedId, onSelect, selected }) {
+function MiniHpBar({ pct }) {
+    const color = pct <= 25 ? "#ff3355" : pct <= 50 ? "#f97316" : UI_COLORS.anomaly;
+    return (
+        <Box
+            sx={{
+                mt: 0.35,
+                width: "100%",
+                height: 3,
+                borderRadius: 1,
+                bgcolor: "rgba(255,255,255,0.08)",
+                overflow: "hidden",
+            }}
+        >
+            <Box sx={{ height: "100%", width: `${pct}%`, bgcolor: color }} />
+        </Box>
+    );
+}
+
+function CharacterAvatarPicker({ roster, selectedId, onSelect, selected, pinnedIds, onTogglePin }) {
     const [anchor, setAnchor] = useState(null);
     const [query, setQuery] = useState("");
 
@@ -172,7 +171,7 @@ function CharacterAvatarPicker({ roster, selectedId, onSelect, selected }) {
                         sx: {
                             mb: 1,
                             p: 1,
-                            width: 220,
+                            width: 240,
                             bgcolor: UI_COLORS.backgroundSecondary,
                             border: `1px solid ${UI_COLORS.border}`,
                             boxShadow: `0 0 18px ${UI_COLORS.accentGlow}`,
@@ -182,35 +181,87 @@ function CharacterAvatarPicker({ roster, selectedId, onSelect, selected }) {
                 }}
             >
                 <CyberText sx={{ fontSize: "0.5rem", letterSpacing: 1, color: UI_COLORS.textSecondary, mb: 0.75, px: 0.25 }}>
-                    PERSONAJES
+                    ACTIVAR / PIN
                 </CyberText>
                 <Box
                     sx={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(4, 1fr)",
-                        gap: 0.65,
-                        maxHeight: 200,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 0.5,
+                        maxHeight: 220,
                         overflowY: "auto",
                         mb: 1,
                         pr: 0.25,
                         ...CYBER_SCROLL_STYLE,
                     }}
                 >
-                    {filtered.map((c) => (
-                        <CharAvatarButton
-                            key={c.id}
-                            char={c}
-                            active={c.id === selectedId}
-                            size={42}
-                            onClick={() => {
-                                onSelect(c.id);
-                                setAnchor(null);
-                                setQuery("");
-                            }}
-                        />
-                    ))}
+                    {filtered.map((c) => {
+                        const isPinned = pinnedIds.includes(c.id);
+                        const isActive = c.id === selectedId;
+                        return (
+                            <Box
+                                key={c.id}
+                                sx={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 0.75,
+                                    px: 0.5,
+                                    py: 0.35,
+                                    borderRadius: 1,
+                                    border: `1px solid ${isActive ? UI_COLORS.anomaly : "transparent"}`,
+                                    bgcolor: isActive ? `${UI_COLORS.anomaly}12` : "transparent",
+                                }}
+                            >
+                                <CharAvatarButton
+                                    char={c}
+                                    active={isActive}
+                                    pinned={isPinned}
+                                    size={36}
+                                    onClick={() => {
+                                        onSelect(c.id);
+                                        setAnchor(null);
+                                        setQuery("");
+                                    }}
+                                />
+                                <CyberText
+                                    sx={{
+                                        flex: 1,
+                                        minWidth: 0,
+                                        fontSize: "0.62rem",
+                                        color: UI_COLORS.textPrimary,
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
+                                        cursor: "pointer",
+                                    }}
+                                    onClick={() => {
+                                        onSelect(c.id);
+                                        setAnchor(null);
+                                        setQuery("");
+                                    }}
+                                >
+                                    {c.name || "—"}
+                                </CyberText>
+                                <CyberTooltip title={isPinned ? "Quitar pin" : "Pin en HUD"}>
+                                    <IconButton
+                                        size="small"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onTogglePin(c.id);
+                                        }}
+                                        sx={{
+                                            color: isPinned ? UI_COLORS.accent : UI_COLORS.textSecondary,
+                                            p: 0.35,
+                                        }}
+                                    >
+                                        <PushPinIcon sx={{ fontSize: "0.85rem" }} />
+                                    </IconButton>
+                                </CyberTooltip>
+                            </Box>
+                        );
+                    })}
                     {filtered.length === 0 && (
-                        <CyberText sx={{ gridColumn: "1 / -1", fontSize: "0.62rem", color: UI_COLORS.textSecondary, py: 1 }}>
+                        <CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.textSecondary, py: 1 }}>
                             Sin coincidencias
                         </CyberText>
                     )}
@@ -286,60 +337,6 @@ function EffortBar({ current, max, onSet }) {
     );
 }
 
-function StatIconButton({ statDef, value, busy, onRoll }) {
-    const Icon = STAT_ICONS[statDef.key] || CasinoIcon;
-    const n = Math.max(0, Math.floor(Number(value) || 0));
-    const tip = [
-        `${statDef.label || statDef.key}: ${n}`,
-        statDef.description,
-        n <= 0 ? "Click: 2d6 → mínimo" : `Click: ${n}d6 → máximo`,
-    ].filter(Boolean).join(" · ");
-
-    return (
-        <CyberTooltip title={tip} placement="top">
-            <Badge
-                badgeContent={n}
-                color="default"
-                overlap="circular"
-                sx={{
-                    "& .MuiBadge-badge": {
-                        fontFamily: "'Fira Code', monospace",
-                        fontSize: "0.55rem",
-                        minWidth: 16,
-                        height: 16,
-                        bgcolor: n <= 0 ? UI_COLORS.accentStrong : UI_COLORS.anomaly,
-                        color: "#0a0a12",
-                        border: `1px solid ${UI_COLORS.backgroundSecondary}`,
-                    },
-                }}
-            >
-                <IconButton
-                    size="small"
-                    disabled={busy}
-                    onClick={onRoll}
-                    sx={{
-                        width: 34,
-                        height: 34,
-                        borderRadius: 1,
-                        border: `1px solid ${UI_COLORS.border}`,
-                        bgcolor: VTT_HUD.glassBg,
-                        color: busy ? UI_COLORS.anomaly : UI_COLORS.textSecondary,
-                        backdropFilter: "blur(10px)",
-                        "&:hover": {
-                            color: UI_COLORS.accent,
-                            borderColor: UI_COLORS.accent,
-                            bgcolor: `${UI_COLORS.accent}16`,
-                        },
-                        "&.Mui-disabled": { opacity: 0.55 },
-                    }}
-                >
-                    {busy ? <CircularProgress size={14} sx={{ color: UI_COLORS.anomaly }} /> : <Icon sx={{ fontSize: "1.05rem" }} />}
-                </IconButton>
-            </Badge>
-        </CyberTooltip>
-    );
-}
-
 const glassBtnSx = (active) => ({
     width: 36,
     height: 36,
@@ -351,12 +348,15 @@ const glassBtnSx = (active) => ({
     boxShadow: active
         ? `0 0 12px ${UI_COLORS.anomaly}44`
         : "0 0 12px rgba(255,102,255,0.06)",
+    flexShrink: 0,
+    transition: "border-color 0.15s, box-shadow 0.15s, color 0.15s",
     "&:hover": {
         borderColor: UI_COLORS.accent,
         bgcolor: `${UI_COLORS.accent}14`,
     },
 });
 
+/** Bottom dock: session life sheet + pins + dossier/mesh deep-links + macros. */
 export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbilityBar }) {
     const dispatch = useDispatch();
     const profile = useSelector((s) => s.player.profile);
@@ -364,9 +364,8 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
     const locations = useSelector((s) => s.world.locations);
     const charactersById = useSelector((s) => s.world.charactersById ?? {});
     const sheetCharacters = useSelector((s) => s.characters.list);
-    const { resourceTracks, stats: statDefs } = useStatSystem(campaignId);
-    const [rollingKey, setRollingKey] = useState(null);
-    const [statsOpen, setStatsOpen] = useState(false);
+    const remotePools = useSelector((s) => s.game.sessionPools ?? {});
+    const { resourceTracks } = useStatSystem(campaignId);
 
     const isDM = isDmRole(profile?.role);
 
@@ -378,8 +377,6 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
             if (c?.id && !byId.has(c.id)) byId.set(c.id, c);
         });
         const all = [...byId.values()];
-
-        // DM: full campaign roster. Players: only tokens they control.
         const visible = isDM ? all : all.filter((c) => canControlToken(c, profile));
         return visible.sort((a, b) => (a.name || "").localeCompare(b.name || "", "es"));
     }, [charactersById, locations, sheetCharacters, isDM, profile]);
@@ -389,6 +386,15 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         : roster[0]?.id || null;
 
     const selected = roster.find((c) => c.id === selectedId) || null;
+
+    const { pinnedIds, togglePin, pinCharacter } = usePinnedCharacters(profile?.uid, campaignId);
+
+    const pinnedChars = useMemo(() => {
+        return pinnedIds
+            .map((id) => roster.find((c) => c.id === id))
+            .filter(Boolean)
+            .filter((c) => c.id !== selectedId);
+    }, [pinnedIds, roster, selectedId]);
 
     const vit = resolveVit(selected);
     const hpMax = resolveHpMax(selected);
@@ -402,42 +408,24 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         ];
     }, [resourceTracks, hpMax]);
 
-    const { pools, setTrack } = useCharacterSessionPools(selected?.id, combatTracks);
+    const { pools, setTrack } = useCharacterSessionPools(selected?.id, combatTracks, { campaignId });
+
+    const resolvePinHp = (char) => {
+        const max = resolveHpMax(char);
+        const tracks = [{ key: "hp", label: "HP", maxDefault: max, defaultFull: true }];
+        const remote = remotePools?.[char.id]?.hp;
+        const local = getSessionPools(char.id, tracks).hp;
+        const current = remote?.current ?? local?.current ?? max;
+        const cur = Math.min(Math.max(Number(current) || 0, 0), max);
+        return { cur, max, pct: max > 0 ? (cur / max) * 100 : 0 };
+    };
 
     const handleSelect = (charId) => {
         if (!profile?.uid || !charId) return;
         dispatch(setActiveCharacterId(charId));
         dispatch(persistActiveCharacter({ uid: profile.uid, characterId: charId }));
+        pinCharacter(charId);
     };
-
-    const handleStatRoll = async (statDef) => {
-        if (!campaignId || !selected || !statDef?.key || rollingKey) return;
-        const value = selected.stats?.[statDef.key] ?? 0;
-        setRollingKey(statDef.key);
-        try {
-            const result = await rollStatInChat(campaignId, profile, selected, statDef, value);
-            dispatch(showSnackbar({
-                message: `${statDef.label}: ${result.total}  [${result.rolls.join(", ")}]`,
-                severity: "info",
-            }));
-        } catch (err) {
-            console.error(err);
-            dispatch(showSnackbar({ message: "No se pudo publicar la tirada", severity: "error" }));
-        } finally {
-            setRollingKey(null);
-        }
-    };
-
-    const statRows = useMemo(() => {
-        const defs = statDefs || [];
-        if (!defs.length) return [];
-        const cols = Math.max(1, Math.ceil(defs.length / 3));
-        const rows = [];
-        for (let i = 0; i < defs.length; i += cols) {
-            rows.push(defs.slice(i, i + cols));
-        }
-        return rows;
-    }, [statDefs]);
 
     if (!profile || !selected) return null;
 
@@ -445,191 +433,202 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
     const effortCur = Math.min(Math.max(pools.effort?.current ?? 0, 0), effortMax);
     const hpCur = Math.min(Math.max(pools.hp?.current ?? hpMax, 0), hpMax);
     const hpPct = hpMax > 0 ? (hpCur / hpMax) * 100 : 0;
+    const canToggleAbilities = typeof onToggleAbilityBar === "function";
 
     return (
-        <>
-            <Box
-                data-no-token-drop
-                sx={{
-                    position: "fixed",
-                    bottom: VTT_HUD.inset,
-                    left: VTT_HUD.inset,
-                    zIndex: 1200,
-                    pointerEvents: "auto",
-                    minWidth: 260,
-                    maxWidth: 320,
-                    p: "10px 12px",
-                    borderRadius: `${VTT_HUD.borderRadius}px`,
-                    border: `1px solid ${VTT_HUD.glassBorder}`,
-                    bgcolor: VTT_HUD.glassBg,
-                    backdropFilter: "blur(14px)",
-                    boxShadow: "0 0 20px rgba(255,102,255,0.06)",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 0.75,
-                }}
-            >
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                    <CharacterAvatarPicker
-                        roster={roster}
-                        selectedId={selectedId}
-                        selected={selected}
-                        onSelect={handleSelect}
-                    />
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                        <CyberTitle
-                            sx={{
-                                fontSize: "0.72rem",
-                                letterSpacing: "0.08em",
-                                color: "#fff",
-                                lineHeight: 1.2,
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                            }}
-                        >
-                            {selected.name || "—"}
-                        </CyberTitle>
-                        <CyberText sx={{ fontFamily: "monospace", fontSize: "0.5rem", color: UI_COLORS.textSecondary }}>
-                            VIT {vit} · HP max {hpMax}
-                        </CyberText>
-                    </Box>
-                </Box>
-
-                <TrackRow label="HP" valueLabel={`${hpCur}/${hpMax}`}>
-                    <Box
-                        sx={{
-                            flex: 1,
-                            height: 10,
-                            borderRadius: 0.5,
-                            bgcolor: "rgba(255,255,255,0.06)",
-                            overflow: "hidden",
-                            cursor: "pointer",
-                            border: `1px solid ${UI_COLORS.border}`,
-                        }}
-                        onClick={(e) => {
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            const ratio = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
-                            setTrack("hp", { current: Math.round(ratio * hpMax) });
-                        }}
-                    >
-                        <Box
-                            sx={{
-                                height: "100%",
-                                width: `${hpPct}%`,
-                                bgcolor: hpPct <= 25 ? "#ff3355" : hpPct <= 50 ? "#f97316" : UI_COLORS.anomaly,
-                                boxShadow: `0 0 8px ${UI_COLORS.anomaly}33`,
-                                transition: "width 0.15s, background-color 0.15s",
-                            }}
-                        />
-                    </Box>
-                </TrackRow>
-
-                <TrackRow label="EFFORT" valueLabel={`${effortCur}/${effortMax}`}>
-                    <EffortBar
-                        current={effortCur}
-                        max={effortMax}
-                        onSet={(v) => setTrack("effort", { current: v })}
-                    />
-                </TrackRow>
-            </Box>
-
-            <Box
-                data-no-token-drop
-                sx={{
-                    position: "fixed",
-                    bottom: VTT_HUD.inset,
-                    left: "50%",
-                    transform: "translateX(-50%)",
-                    zIndex: 1200,
-                    pointerEvents: "auto",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: 0.55,
-                    maxWidth: "min(720px, calc(100vw - 48px))",
-                }}
-            >
-                {statsOpen && statRows.length > 0 && (
+        <Box
+            data-no-token-drop
+            sx={{
+                position: "fixed",
+                bottom: VTT_HUD.inset,
+                left: VTT_HUD.inset,
+                zIndex: 1200,
+                pointerEvents: "auto",
+                display: "flex",
+                alignItems: "flex-end",
+                gap: 0.75,
+                maxWidth: "calc(100vw - 32px)",
+            }}
+        >
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, minWidth: 0 }}>
+                {pinnedChars.length > 0 && (
                     <Box
                         sx={{
                             display: "flex",
-                            flexDirection: "column",
-                            gap: 0.4,
-                            p: 0.55,
-                            borderRadius: `${VTT_HUD.borderRadius}px`,
-                            border: `1px solid ${VTT_HUD.glassBorder}`,
-                            bgcolor: VTT_HUD.glassBg,
-                            backdropFilter: "blur(14px)",
-                            boxShadow: "0 0 18px rgba(255,102,255,0.08)",
+                            alignItems: "flex-end",
+                            gap: 0.65,
+                            px: 0.5,
+                            maxWidth: 320,
+                            overflowX: "auto",
+                            ...CYBER_SCROLL_STYLE,
                         }}
                     >
-                        {statRows.map((row, rowIdx) => (
-                            <Box
-                                key={rowIdx}
-                                sx={{
-                                    display: "flex",
-                                    flexDirection: "row",
-                                    gap: 0.4,
-                                    justifyContent: "center",
-                                }}
-                            >
-                                {row.map((def) => (
-                                    <StatIconButton
-                                        key={def.key}
-                                        statDef={def}
-                                        value={selected.stats?.[def.key] ?? 0}
-                                        busy={rollingKey === def.key}
-                                        onRoll={() => handleStatRoll(def)}
+                        {pinnedChars.map((c) => {
+                            const hp = resolvePinHp(c);
+                            return (
+                                <Box
+                                    key={c.id}
+                                    sx={{
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        alignItems: "center",
+                                        width: 40,
+                                        flexShrink: 0,
+                                    }}
+                                >
+                                    <CharAvatarButton
+                                        char={c}
+                                        pinned
+                                        size={34}
+                                        onClick={() => handleSelect(c.id)}
                                     />
-                                ))}
-                            </Box>
-                        ))}
+                                    <MiniHpBar pct={hp.pct} />
+                                </Box>
+                            );
+                        })}
                     </Box>
                 )}
 
-                {statRows.length > 0 && (
-                    <CyberTooltip
-                        title={statsOpen ? "Cerrar stats" : "Stats / tiradas"}
-                        placement="top"
-                    >
-                        <IconButton
-                            size="small"
-                            onClick={() => setStatsOpen((v) => !v)}
-                            aria-pressed={statsOpen}
-                            aria-label="Panel de stats"
-                            sx={glassBtnSx(statsOpen)}
-                        >
-                            <CasinoIcon sx={{ fontSize: "1.15rem" }} />
-                        </IconButton>
-                    </CyberTooltip>
-                )}
+                <Box
+                    sx={{
+                        minWidth: 260,
+                        maxWidth: 320,
+                        p: "10px 12px",
+                        borderRadius: `${VTT_HUD.borderRadius}px`,
+                        border: `1px solid ${VTT_HUD.glassBorder}`,
+                        bgcolor: VTT_HUD.glassBg,
+                        backdropFilter: "blur(14px)",
+                        boxShadow: "0 0 20px rgba(255,102,255,0.06)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 0.75,
+                        flexShrink: 0,
+                    }}
+                >
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                        <CharacterAvatarPicker
+                            roster={roster}
+                            selectedId={selectedId}
+                            selected={selected}
+                            onSelect={handleSelect}
+                            pinnedIds={pinnedIds}
+                            onTogglePin={togglePin}
+                        />
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <CyberTitle
+                                sx={{
+                                    fontSize: "0.72rem",
+                                    letterSpacing: "0.08em",
+                                    color: "#fff",
+                                    lineHeight: 1.2,
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                }}
+                            >
+                                {selected.name || "—"}
+                            </CyberTitle>
+                            <CyberText sx={{ fontFamily: "monospace", fontSize: "0.5rem", color: UI_COLORS.textSecondary }}>
+                                VIT {vit} · HP max {hpMax}
+                            </CyberText>
+                        </Box>
+                    </Box>
 
-                <Box sx={{ display: "flex", alignItems: "center", gap: 0.65 }}>
-                    <AbilityHotbar
-                        open={abilityBarOpen}
-                        onClose={() => {
-                            if (abilityBarOpen) onToggleAbilityBar?.();
-                        }}
-                    />
-                    {typeof onToggleAbilityBar === "function" && (
+                    <TrackRow label="HP" valueLabel={`${hpCur}/${hpMax}`}>
+                        <Box
+                            sx={{
+                                flex: 1,
+                                height: 10,
+                                borderRadius: 0.5,
+                                bgcolor: "rgba(255,255,255,0.06)",
+                                overflow: "hidden",
+                                cursor: "pointer",
+                                border: `1px solid ${UI_COLORS.border}`,
+                            }}
+                            onClick={(e) => {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const ratio = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
+                                setTrack("hp", { current: Math.round(ratio * hpMax) });
+                            }}
+                        >
+                            <Box
+                                sx={{
+                                    height: "100%",
+                                    width: `${hpPct}%`,
+                                    bgcolor: hpPct <= 25 ? "#ff3355" : hpPct <= 50 ? "#f97316" : UI_COLORS.anomaly,
+                                    boxShadow: `0 0 8px ${UI_COLORS.anomaly}33`,
+                                    transition: "width 0.15s, background-color 0.15s",
+                                }}
+                            />
+                        </Box>
+                    </TrackRow>
+
+                    <TrackRow label="EFFORT" valueLabel={`${effortCur}/${effortMax}`}>
+                        <EffortBar
+                            current={effortCur}
+                            max={effortMax}
+                            onSet={(v) => setTrack("effort", { current: v })}
+                        />
+                    </TrackRow>
+                </Box>
+            </Box>
+
+            <Box
+                sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 0.65,
+                    minWidth: 0,
+                    pb: 0.15,
+                }}
+            >
+                <CyberTooltip title="Abrir dossier (identidad)" placement="top">
+                    <IconButton
+                        size="small"
+                        onClick={() => dispatch(openCharacterSheet({ tab: "IDENTIDAD" }))}
+                        aria-label="Abrir dossier"
+                        sx={glassBtnSx(false)}
+                    >
+                        <BadgeIcon sx={{ fontSize: "1.1rem" }} />
+                    </IconButton>
+                </CyberTooltip>
+                <CyberTooltip title="Abrir Neural Mesh" placement="top">
+                    <IconButton
+                        size="small"
+                        onClick={() => dispatch(openCharacterSheet({ tab: "KIT", kitView: "tree" }))}
+                        aria-label="Abrir Neural Mesh"
+                        sx={glassBtnSx(false)}
+                    >
+                        <AccountTreeIcon sx={{ fontSize: "1.1rem" }} />
+                    </IconButton>
+                </CyberTooltip>
+                {canToggleAbilities && (
+                    <>
                         <CyberTooltip
-                            title={abilityBarOpen ? "Cerrar habilidades" : "Habilidades del personaje"}
+                            title={abilityBarOpen ? "Cerrar macros" : "Macros / habilidades"}
                             placement="top"
                         >
                             <IconButton
                                 size="small"
                                 onClick={onToggleAbilityBar}
                                 aria-pressed={abilityBarOpen}
-                                aria-label="Barra de habilidades"
+                                aria-label="Barra de macros y habilidades"
                                 sx={glassBtnSx(abilityBarOpen)}
                             >
                                 <BoltIcon sx={{ fontSize: "1.15rem" }} />
                             </IconButton>
                         </CyberTooltip>
-                    )}
-                </Box>
+                        {abilityBarOpen && (
+                            <AbilityHotbar
+                                open={abilityBarOpen}
+                                onClose={() => {
+                                    if (abilityBarOpen) onToggleAbilityBar?.();
+                                }}
+                            />
+                        )}
+                    </>
+                )}
             </Box>
-        </>
+        </Box>
     );
 }

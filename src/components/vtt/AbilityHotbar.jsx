@@ -16,7 +16,7 @@ import { listCampaignCharacters } from "../../utils/characterCombat";
 /**
  * Horizontal ability bar for the currently selected combat character.
  * Only `type === "ability"` (no traits / upgrades / masteries / LB).
- * Docked bottom-center via CharacterCombatHud.
+ * Expands to the right of the abilities toggle in CharacterCombatHud.
  */
 export default function AbilityHotbar({ open, onClose }) {
     const [abilities, setAbilities] = useState([]);
@@ -88,10 +88,10 @@ export default function AbilityHotbar({ open, onClose }) {
                 pointerEvents: "auto",
                 display: "flex",
                 alignItems: "center",
-                gap: 0.75,
-                px: 1.25,
-                py: 0.85,
-                maxWidth: "min(640px, calc(100vw - 120px))",
+                gap: 0.65,
+                px: 1,
+                py: 0.55,
+                maxWidth: "min(640px, calc(100vw - 340px))",
                 borderRadius: `${VTT_HUD.borderRadius}px`,
                 border: `1px solid ${VTT_HUD.glassBorder}`,
                 bgcolor: VTT_HUD.glassBg,
@@ -99,33 +99,19 @@ export default function AbilityHotbar({ open, onClose }) {
                 boxShadow: "0 0 20px rgba(255,102,255,0.08)",
             }}
         >
-            <Box sx={{ minWidth: 0, pr: 0.5, borderRight: `1px solid ${UI_COLORS.border}` }}>
-                <CyberText
-                    sx={{
-                        fontFamily: "monospace",
-                        fontSize: "0.48rem",
-                        letterSpacing: "0.12em",
-                        color: UI_COLORS.anomaly,
-                        lineHeight: 1,
-                    }}
-                >
-                    HABILIDADES
-                </CyberText>
-                <CyberText
-                    sx={{
-                        fontFamily: "'Orbitron', sans-serif",
-                        fontSize: "0.58rem",
-                        color: "#fff",
-                        letterSpacing: "0.04em",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        maxWidth: 100,
-                    }}
-                >
-                    {selected?.name || "—"}
-                </CyberText>
-            </Box>
+            <CyberText
+                sx={{
+                    fontFamily: "monospace",
+                    fontSize: "0.48rem",
+                    letterSpacing: "0.12em",
+                    color: UI_COLORS.anomaly,
+                    flexShrink: 0,
+                    pr: 0.4,
+                    borderRight: `1px solid ${UI_COLORS.border}`,
+                }}
+            >
+                HABILIDADES
+            </CyberText>
 
             <Box
                 sx={{
@@ -133,9 +119,9 @@ export default function AbilityHotbar({ open, onClose }) {
                     alignItems: "center",
                     gap: 0.5,
                     overflowX: "auto",
-                    maxWidth: "min(520px, 55vw)",
-                    py: 0.25,
-                    px: 0.25,
+                    maxWidth: "min(520px, 50vw)",
+                    py: 0.15,
+                    px: 0.15,
                     ...CYBER_SCROLL_STYLE,
                 }}
             >
@@ -160,7 +146,7 @@ export default function AbilityHotbar({ open, onClose }) {
                             onClick={() => handleCall(ab)}
                             sx={{
                                 minWidth: 44,
-                                height: 40,
+                                height: 36,
                                 px: 0.75,
                                 borderRadius: 1,
                                 border: `1px solid ${UI_COLORS.accent}55`,
@@ -182,21 +168,23 @@ export default function AbilityHotbar({ open, onClose }) {
                 ))}
             </Box>
 
-            <IconButton
-                size="small"
-                onClick={onClose}
-                aria-label="Cerrar barra de habilidades"
-                sx={{
-                    color: UI_COLORS.accent,
-                    border: `1px solid ${UI_COLORS.border}`,
-                    width: 28,
-                    height: 28,
-                    flexShrink: 0,
-                    "&:hover": { bgcolor: `${UI_COLORS.accent}18` },
-                }}
-            >
-                <CloseIcon sx={{ fontSize: "0.95rem" }} />
-            </IconButton>
+            {typeof onClose === "function" && (
+                <IconButton
+                    size="small"
+                    onClick={onClose}
+                    aria-label="Cerrar barra de habilidades"
+                    sx={{
+                        color: UI_COLORS.accent,
+                        border: `1px solid ${UI_COLORS.border}`,
+                        width: 26,
+                        height: 26,
+                        flexShrink: 0,
+                        "&:hover": { bgcolor: `${UI_COLORS.accent}18` },
+                    }}
+                >
+                    <CloseIcon sx={{ fontSize: "0.9rem" }} />
+                </IconButton>
+            )}
         </Paper>
     );
 }

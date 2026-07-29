@@ -15,6 +15,9 @@ export async function getOrCreateGameSession(campaignId) {
             partyPositions: {},
             tokenPositions: {},
             activeMapId: null,
+            rulers: {},
+            pings: {},
+            sessionPools: {},
         };
         await setDoc(docRef, initial);
         return initial;
@@ -87,4 +90,96 @@ export function subscribeToGameSession(campaignId, callback) {
     return onSnapshot(docRef, (snap) => {
         if (snap.exists()) callback(snap.data());
     });
+}
+
+function newId(prefix) {
+    return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Persist a finished ruler so the whole table can see it.
+ * @param {object} ruler — omit `id`; server/client assigns one
+ */
+export async function addMapRuler(campaignId, ruler) {
+    const id = ruler?.id || newId("ruler");
+    const docRef = gameRef(campaignId);
+    const payload = {
+        id,
+        mapId: ruler.mapId,
+        a: ruler.a,
+        b: ruler.b,
+        straight: ruler.straight ?? 0,
+        diagonal: ruler.diagonal ?? 0,
+        totalCells: ruler.totalCells ?? 0,
+        meters: ruler.meters ?? 0,
+        distanceLabel: ruler.distanceLabel ?? "",
+        createdBy: ruler.createdBy ?? null,
+        createdByName: ruler.createdByName ?? null,
+        createdAt: ruler.createdAt ?? Date.now(),
+    };
+    await setDoc(docRef, { rulers: { [id]: payload } }, { merge: true });
+    return payload;
+}
+
+export async function removeMapRuler(campaignId, rulerId) {
+    if (!campaignId || !rulerId) return;
+    const docRef = gameRef(campaignId);
+    await updateDoc(docRef, {
+        [`rulers.${rulerId}`]: deleteField(),
+    });
+}
+
+/** Broadcast a map ping (auto-expires client-side; writer also prunes). */
+export async function publishMapPing(campaignId, ping, { ttlMs = 5000 } = {}) {
+    const id = ping?.id || newId("ping");
+    const createdAt = ping.createdAt ?? Date.now();
+    const expiresAt = ping.expiresAt ?? createdAt + ttlMs;
+    const docRef = gameRef(campaignId);
+    const payload = {
+        id,
+        mapId: ping.mapId,
+        x: ping.x,
+        y: ping.y,
+        col: ping.col,
+        row: ping.row,
+        createdBy: ping.createdBy ?? null,
+        createdByName: ping.createdByName ?? null,
+        createdAt,
+        expiresAt,
+    };
+    await setDoc(docRef, { pings: { [id]: payload } }, { merge: true });
+
+    // Best-effort cleanup after TTL so the doc doesn't grow forever.
+    setTimeout(() => {
+        updateDoc(docRef, { [`pings.${id}`]: deleteField() }).catch(() => {});
+    }, ttlMs + 250);
+
+    return payload;
+}
+
+export async function removeMapPing(campaignId, pingId) {
+    if (!campaignId || !pingId) return;
+    await updateDoc(gameRef(campaignId), {
+        [`pings.${pingId}`]: deleteField(),
+    });
+}
+
+/**
+ * Shared session combat pools (HP / Effort / tracks) for the table.
+ * Stored at game/{campaignId}.sessionPools.{characterId}
+ */
+export async function updateCharacterSessionPools(campaignId, characterId, pools) {
+    if (!campaignId || !characterId || !pools) return;
+    await setDoc(
+        gameRef(campaignId),
+        {
+            sessionPools: {
+                [characterId]: {
+                    ...pools,
+                    updatedAt: Date.now(),
+                },
+            },
+        },
+        { merge: true },
+    );
 }

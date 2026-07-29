@@ -3,8 +3,8 @@ import * as PIXI from "pixi.js";
 import { useSelector, useDispatch } from "react-redux";
 import {
     openContextMenu,
-    setMeasurePointB,
-    clearMeasureTool,
+    setRulerDraftA,
+    clearRulerDraft,
 } from "../store/uiSlice";
 import { useViewport } from "../context/ViewportContext";
 import { createPixiTooltip } from "./PixiTooltip";
@@ -12,6 +12,8 @@ import { killGsapDeep, safeDestroy } from "./pixiCleanup";
 import { lerpColor } from "../helpers/colors";
 import { RENDER_LAYERS } from "../constants/renderLayers";
 import { UI_COLORS } from "../constants/uiColors";
+import { buildRulerMeasure, snapWorldToGridPoint } from "../utils/gridMath";
+import { addMapRuler } from "../../firebase/services/gameService";
 import gsap from "gsap";
 
 import locationIconPath from "../assets/LocationNode.svg";
@@ -35,7 +37,7 @@ function destroyLocationMarker(entry) {
     safeDestroy(container, { children: true });
 }
 
-function createLocationMarker(locId, texture, dispatch, measureRef, locationsRef) {
+function createLocationMarker(locId, texture, dispatch, rulerRef, locationsRef, sessionRef) {
     const locationContainer = new PIXI.Container();
     locationContainer.eventMode = "static";
     locationContainer.cursor    = "pointer";
@@ -103,26 +105,40 @@ function createLocationMarker(locId, texture, dispatch, measureRef, locationsRef
         const loc = locationsRef.current?.[locId];
         if (!loc) return;
 
-        const isMeasuring =
-            !!measureRef.current.pointA && !measureRef.current.pointB;
-
         if (event.button === 2) {
-            if (isMeasuring) {
-                dispatch(clearMeasureTool());
-            } else {
-                pressStart = { x: event.global.x, y: event.global.y, button: 2 };
-            }
+            pressStart = { x: event.global.x, y: event.global.y, button: 2 };
             return;
         }
 
         if (event.button !== 0) return;
 
-        if (isMeasuring) {
-            dispatch(setMeasurePointB({
-                x:     loc.position.x,
-                y:     loc.position.y,
-                label: loc.name.toUpperCase(),
-            }));
+        const ruler = rulerRef.current;
+        if (ruler?.active && loc.position) {
+            const session = sessionRef.current || {};
+            const point = snapWorldToGridPoint(
+                loc.position.x,
+                loc.position.y,
+                session.map,
+                session.gridConfig,
+            );
+            if (!ruler.draftA) {
+                dispatch(setRulerDraftA(point));
+            } else if (session.campaignId && session.mapId) {
+                const measure = buildRulerMeasure(ruler.draftA, point, session.map);
+                addMapRuler(session.campaignId, {
+                    mapId: session.mapId,
+                    a: ruler.draftA,
+                    b: point,
+                    straight: measure.straight,
+                    diagonal: measure.diagonal,
+                    totalCells: measure.totalCells,
+                    meters: measure.meters,
+                    distanceLabel: measure.distanceLabel,
+                    createdBy: session.uid ?? null,
+                    createdByName: session.nickname ?? null,
+                }).catch(console.error);
+                dispatch(clearRulerDraft());
+            }
             return;
         }
 
@@ -142,6 +158,13 @@ function createLocationMarker(locId, texture, dispatch, measureRef, locationsRef
         pressStart = null;
         if (dist >= RIGHT_CLICK_DRAG_THRESHOLD) return;
         if (button !== 0 && button !== 2) return;
+
+        // Cancel in-progress ruler instead of opening the location menu
+        const ruler = rulerRef.current;
+        if (button === 2 && ruler?.active && ruler?.draftA) {
+            dispatch(clearRulerDraft());
+            return;
+        }
 
         openLocationMenu(event, loc);
     });
@@ -167,16 +190,31 @@ export default function LocationsLayer() {
     const viewport  = useViewport();
     const locations = useSelector((s) => s.world.locations);
     const dispatch  = useDispatch();
+    const rulerTool = useSelector((s) => s.ui.rulerTool);
+    const map = useSelector((s) => s.world.map);
+    const gridConfig = useSelector((s) => s.world.gridConfig);
+    const campaignId = useSelector((s) => s.world.selectedCampaignId);
+    const mapId = useSelector((s) => s.world.activeMapId ?? s.world.map?.id);
+    const profile = useSelector((s) => s.player.profile);
 
-    const { measureTool } = useSelector((s) => s.ui);
-
-    const measureRef    = useRef(measureTool);
+    const rulerRef = useRef(rulerTool);
+    const sessionRef = useRef({});
     const locationsRef  = useRef(locations);
     const layerRef      = useRef(null);
     const markersRef    = useRef(new Map());
     const textureRef    = useRef(null);
 
-    useEffect(() => { measureRef.current = measureTool; }, [measureTool]);
+    useEffect(() => { rulerRef.current = rulerTool; }, [rulerTool]);
+    useEffect(() => {
+        sessionRef.current = {
+            map,
+            gridConfig,
+            campaignId,
+            mapId,
+            uid: profile?.uid,
+            nickname: profile?.nickname,
+        };
+    }, [map, gridConfig, campaignId, mapId, profile]);
     useEffect(() => { locationsRef.current = locations; }, [locations]);
 
     // ── Layer container (once per viewport) ───────────────────────
@@ -226,7 +264,7 @@ export default function LocationsLayer() {
                 let entry = markers.get(loc.id);
                 if (!entry) {
                     entry = createLocationMarker(
-                        loc.id, texture, dispatch, measureRef, locationsRef,
+                        loc.id, texture, dispatch, rulerRef, locationsRef, sessionRef,
                     );
                     syncLocationMarker(entry, loc);
                     layer.addChild(entry.container);

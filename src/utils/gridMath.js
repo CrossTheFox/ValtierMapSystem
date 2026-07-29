@@ -59,6 +59,77 @@ export function snapToGridCenter(x, y, cellSize) {
     };
 }
 
+/** Grid column/row indices for a world point (cell containing the point). */
+export function worldToCell(x, y, cellSize) {
+    const size = cellSize > 0 ? cellSize : DEFAULT_GRID_CELL_PX;
+    return {
+        col: Math.floor(x / size),
+        row: Math.floor(y / size),
+    };
+}
+
+/** World center of a grid cell. */
+export function cellToWorldCenter(col, row, cellSize) {
+    const size = cellSize > 0 ? cellSize : DEFAULT_GRID_CELL_PX;
+    return {
+        x: col * size + size / 2,
+        y: row * size + size / 2,
+    };
+}
+
+/**
+ * Grid path metrics between two cells (5e-style diagonal split).
+ * - diagonal: steps on a 45° diagonal (min of Δcol, Δrow)
+ * - straight: remaining orthogonal steps (|Δcol − Δrow|)
+ * - totalCells: Chebyshev distance max(Δcol, Δrow) — squares of movement
+ */
+export function measureGridCells(colA, rowA, colB, rowB) {
+    const dx = Math.abs(colB - colA);
+    const dy = Math.abs(rowB - rowA);
+    const diagonal = Math.min(dx, dy);
+    const straight = Math.abs(dx - dy);
+    const totalCells = Math.max(dx, dy);
+    return { dx, dy, diagonal, straight, totalCells };
+}
+
+/**
+ * Snap world point to grid cell center + indices (or pass-through if snap disabled).
+ * @returns {{ x: number, y: number, col: number, row: number }}
+ */
+export function snapWorldToGridPoint(x, y, map, gridConfig = {}) {
+    const cell = resolveCellSize(map, gridConfig);
+    if (gridConfig?.snap === false) {
+        const { col, row } = worldToCell(x, y, cell);
+        return { x, y, col, row };
+    }
+    const snapped = snapToGridCenter(x, y, cell);
+    const { col, row } = worldToCell(snapped.x, snapped.y, cell);
+    return { x: snapped.x, y: snapped.y, col, row };
+}
+
+/** Format meters from pixel distance using map scale. */
+export function formatMapDistance(pixelDist, map) {
+    if (!map || !(pixelDist > 0)) return "";
+    const meters = pixelDist * (map.metersPerPixel ?? 1);
+    if (map.unit === "km") {
+        return `${(meters / 1000).toFixed(1)} km`;
+    }
+    return `${Math.round(meters)} m`;
+}
+
+/** Build a shared ruler payload from two grid-snapped points. */
+export function buildRulerMeasure(pointA, pointB, map) {
+    const cells = measureGridCells(pointA.col, pointA.row, pointB.col, pointB.row);
+    const pixelDist = Math.hypot(pointB.x - pointA.x, pointB.y - pointA.y);
+    const meters = map ? pixelDist * (map.metersPerPixel ?? 1) : pixelDist;
+    return {
+        ...cells,
+        pixelDist,
+        meters,
+        distanceLabel: formatMapDistance(pixelDist, map),
+    };
+}
+
 export function resolveTokenSizeKey(char, sizeOverride) {
     if (sizeOverride && TOKEN_SIZE_MULTIPLIERS[sizeOverride]) return sizeOverride;
     const base = char?.tokenSize;

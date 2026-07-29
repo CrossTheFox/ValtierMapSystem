@@ -50,6 +50,8 @@ export const Z_INDEX = {
     /** Nested modals inside Archive / LAB_IA (must sit above wikiOverlay) */
     wikiDialog: 1600,
     wikiLabMenu: 1700,
+    /** Full-screen dice Decrypt / Swarm / Multi reveal */
+    diceReveal: 2050,
     snackbar: 2100,
 };
 

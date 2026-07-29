@@ -4,44 +4,29 @@ import styled from "@emotion/styled";
 import {
     closeContextMenu,
     openLocation,
-    setMeasurePointA,
-    setMeasurePointB,
-    clearMeasureTool,
+    showSnackbar,
 } from "../store/uiSlice";
-import { resolveCellSize, snapToGridCenter } from "../utils/gridMath";
+import { snapWorldToGridPoint } from "../utils/gridMath";
+import { publishMapPing } from "../../firebase/services/gameService";
+import { UI_COLORS } from "../constants/uiColors";
 
-const CYAN = "#00f2ea";
-const PINK = "#ff66ff";
+const CYAN = UI_COLORS.anomaly || "#00f2ea";
 
 export default function MapContextMenu() {
     const dispatch = useDispatch();
-    const { contextMenu, measureTool } = useSelector((s) => s.ui);
+    const contextMenu = useSelector((s) => s.ui.contextMenu);
     const map = useSelector((s) => s.world.map);
+    const mapId = useSelector((s) => s.world.activeMapId ?? s.world.map?.id);
+    const campaignId = useSelector((s) => s.world.selectedCampaignId);
     const gridConfig = useSelector((s) => s.world.gridConfig);
+    const profile = useSelector((s) => s.player.profile);
     const menuRef = useRef(null);
-    const isMeasuring = !!measureTool.pointA;
 
-    const snapWorld = (x, y, label) => {
-        if (gridConfig?.snap === false) {
-            return { x, y, label };
-        }
-        const cell = resolveCellSize(map, gridConfig);
-        const snapped = snapToGridCenter(x, y, cell);
-        return {
-            x: snapped.x,
-            y: snapped.y,
-            label: label?.startsWith("(")
-                ? `(${Math.round(snapped.x)}, ${Math.round(snapped.y)})`
-                : label,
-        };
-    };
-
-    // Close on outside click (ignore right-clicks to allow new menus to open)
     useEffect(() => {
         if (!contextMenu.open) return;
 
         const handler = (e) => {
-            if (e.button === 2) return; // new right-click handled by PIXI, let it through
+            if (e.button === 2) return;
             if (menuRef.current && !menuRef.current.contains(e.target)) {
                 dispatch(closeContextMenu());
             }
@@ -62,30 +47,41 @@ export default function MapContextMenu() {
         dispatch(closeContextMenu());
     };
 
-    const handleMeasureFrom = () => {
-        dispatch(setMeasurePointA(snapWorld(contextMenu.worldX, contextMenu.worldY, pointLabel)));
+    const handlePing = () => {
+        if (!campaignId || !mapId) {
+            dispatch(showSnackbar({ message: "Sin campaña/mapa activo", severity: "warning" }));
+            dispatch(closeContextMenu());
+            return;
+        }
+        const point = snapWorldToGridPoint(
+            contextMenu.worldX,
+            contextMenu.worldY,
+            map,
+            gridConfig,
+        );
+        // Close first: awaiting the write kept the menu visibly hanging on screen.
         dispatch(closeContextMenu());
+        publishMapPing(campaignId, {
+            mapId,
+            x: point.x,
+            y: point.y,
+            col: point.col,
+            row: point.row,
+            createdBy: profile?.uid ?? null,
+            createdByName: profile?.nickname ?? null,
+        }).catch((err) => {
+            console.error(err);
+            dispatch(showSnackbar({ message: "No se pudo publicar el ping", severity: "error" }));
+        });
     };
 
-    const handleMeasureTo = () => {
-        dispatch(setMeasurePointB(snapWorld(contextMenu.worldX, contextMenu.worldY, pointLabel)));
-        dispatch(closeContextMenu());
-    };
-
-    const handleCancel = () => {
-        dispatch(clearMeasureTool());
-        dispatch(closeContextMenu());
-    };
-
-    // Clamp menu to stay inside the viewport
     const menuW = 220;
-    const menuH = contextMenu.type === "location" ? 160 : 120;
+    const menuH = contextMenu.type === "location" ? 140 : 100;
     const x = Math.min(contextMenu.screenX, window.innerWidth - menuW - 8);
     const y = Math.min(contextMenu.screenY, window.innerHeight - menuH - 8);
 
     return (
         <>
-            {/* Invisible backdrop — closes menu on any non-right click outside */}
             <div
                 style={{ position: "fixed", inset: 0, zIndex: 1999, pointerEvents: "none" }}
             />
@@ -96,33 +92,16 @@ export default function MapContextMenu() {
                 </div>
 
                 {contextMenu.type === "location" && (
-                    <button className="menu-item" onClick={handleViewLocation}>
+                    <button type="button" className="menu-item" onClick={handleViewLocation}>
                         <span className="item-icon">⬡</span>
                         VIEW_LOCATION
                     </button>
                 )}
 
-                {!isMeasuring ? (
-                    <button className="menu-item measure" onClick={handleMeasureFrom}>
-                        <span className="item-icon">⊢</span>
-                        MEASURE_FROM_HERE
-                    </button>
-                ) : (
-                    <>
-                        <div className="measuring-hint">
-                            <span className="item-icon">◈</span>
-                            FROM: {measureTool.pointA?.label}
-                        </div>
-                        <button className="menu-item measure" onClick={handleMeasureTo}>
-                            <span className="item-icon">⊣</span>
-                            SET_ENDPOINT_HERE
-                        </button>
-                        <button className="menu-item cancel" onClick={handleCancel}>
-                            <span className="item-icon">✕</span>
-                            CANCEL_MEASUREMENT
-                        </button>
-                    </>
-                )}
+                <button type="button" className="menu-item ping" onClick={handlePing}>
+                    <span className="item-icon">◎</span>
+                    HACER_PING
+                </button>
             </StyledMenu>
         </>
     );
@@ -165,22 +144,6 @@ const StyledMenu = styled.div`
     max-width: 190px;
   }
 
-  .measuring-hint {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 7px 12px 6px;
-    font-family: "Fira Code", monospace;
-    font-size: 0.65rem;
-    color: ${CYAN}bb;
-    letter-spacing: 1px;
-    border-bottom: 1px solid ${CYAN}22;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-transform: uppercase;
-  }
-
   .menu-item {
     display: flex;
     align-items: center;
@@ -190,7 +153,7 @@ const StyledMenu = styled.div`
     background: transparent;
     border: none;
     border-left: 2px solid transparent;
-    color: rgba(255, 255, 255, 0.85);
+    color: ${UI_COLORS.textPrimary};
     font-family: "Fira Code", monospace;
     font-size: 0.75rem;
     text-align: left;
@@ -212,13 +175,10 @@ const StyledMenu = styled.div`
       padding-left: 16px;
     }
 
-    &.cancel {
-      color: rgba(255, 80, 80, 0.8);
-      &:hover {
-        background: rgba(255, 50, 50, 0.1);
-        border-left-color: #ff4d4d;
-        color: #ff4d4d;
-      }
+    &.ping:hover {
+      color: ${UI_COLORS.accent};
+      border-left-color: ${UI_COLORS.accent};
+      background: ${UI_COLORS.accent}14;
     }
   }
 

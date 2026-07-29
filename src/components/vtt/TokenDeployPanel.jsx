@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-    Box, Paper, IconButton, Stack, Select, MenuItem, Chip, Tooltip, ToggleButton, ToggleButtonGroup,
+    Box, Paper, IconButton, Select, MenuItem, Chip, Tooltip, ToggleButton, ToggleButtonGroup,
 } from "@mui/material";
 import PersonPinCircleIcon from "@mui/icons-material/PersonPinCircle";
 import CloseIcon from "@mui/icons-material/Close";
@@ -40,6 +40,70 @@ const FILTERS = [
 function isNpcChar(char) {
     return Boolean(char?.isNpc || char?.isEnemy);
 }
+
+const FONT_BODY = "'Fira Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif";
+
+/**
+ * Roster rows are plain DOM styled from this single static `sx`. Per-row MUI
+ * (`Stack` + `CyberText` × 2 + nested `Box`) meant ~8 emotion serializations
+ * per character and ~180ms of jank each time the tray opened.
+ */
+const ROSTER_SCROLL_SX = {
+    flex: 1,
+    minHeight: 0,
+    overflowY: "auto",
+    px: 0.75,
+    py: 0.5,
+    ...CYBER_SCROLL_STYLE,
+    "& .tk-rows": { display: "flex", flexDirection: "column", gap: "4px" },
+    "& .tk-row": {
+        display: "flex",
+        alignItems: "center",
+        gap: "5px",
+        px: 0.6,
+        py: 0.35,
+        border: `1px solid ${UI_COLORS.border}`,
+        borderRadius: "4px",
+        bgcolor: "transparent",
+        userSelect: "none",
+        cursor: "default",
+    },
+    "& .tk-row.draggable": { cursor: "grab" },
+    "& .tk-row.draggable:active": { cursor: "grabbing" },
+    "& .tk-row.deployed": {
+        border: `1px solid ${UI_COLORS.anomaly}55`,
+        bgcolor: `${UI_COLORS.anomaly}0d`,
+    },
+    "& .tk-row.locked": { opacity: 0.55 },
+    "& .tk-portrait": { position: "relative", pointerEvents: "none" },
+    "& .tk-dot": {
+        position: "absolute",
+        right: -2,
+        bottom: -2,
+        width: 7,
+        height: 7,
+        borderRadius: "50%",
+        bgcolor: "rgba(255,255,255,0.2)",
+        border: `1px solid ${UI_COLORS.backgroundSecondary}`,
+    },
+    "& .tk-row.deployed .tk-dot": { bgcolor: UI_COLORS.anomaly },
+    "& .tk-meta": { flex: 1, minWidth: 0, pointerEvents: "none" },
+    "& .tk-name": {
+        fontFamily: FONT_BODY,
+        fontSize: "0.68rem",
+        lineHeight: 1.2,
+        color: UI_COLORS.textPrimary,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+    },
+    "& .tk-sub": {
+        fontFamily: FONT_BODY,
+        fontSize: "0.5rem",
+        lineHeight: 1.2,
+        color: UI_COLORS.textSecondary,
+    },
+};
 
 /**
  * Token tray: DM sees campaign roster; players see only controllable chars.
@@ -271,47 +335,31 @@ export default function TokenDeployPanel({ open, onClose }) {
                     </CyberText>
                 </Box>
 
-                <Box
-                    sx={{
-                        flex: 1,
-                        minHeight: 0,
-                        overflowY: "auto",
-                        px: 0.75,
-                        py: 0.5,
-                        ...CYBER_SCROLL_STYLE,
-                    }}
-                >
+                <Box sx={ROSTER_SCROLL_SX}>
                     {!filtered.length && (
                         <CyberText sx={{ fontSize: "0.7rem", color: UI_COLORS.textSecondary, p: 1 }}>
                             {isDM ? "Sin resultados." : "No tienes personajes asignados para este mapa."}
                         </CyberText>
                     )}
-                    <Stack spacing={0.5}>
+                    <div className="tk-rows">
                         {filtered.map((char) => {
                             const deployed = Boolean(mapTokens[char.id]);
                             const sizeKey = resolveTokenSizeKey(char, mapTokens[char.id]?.sizeOverride);
                             const npc = isNpcChar(char);
                             const controllable = canControlToken(char, profile);
+                            const rowClass = [
+                                "tk-row",
+                                deployed ? "deployed" : "",
+                                controllable ? "" : "locked",
+                                deployed || !controllable ? "" : "draggable",
+                            ].filter(Boolean).join(" ");
                             return (
-                                <Box
+                                <div
                                     key={char.id}
+                                    className={rowClass}
                                     onPointerDown={(e) => startDrag(char, e)}
-                                    sx={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 0.6,
-                                        px: 0.6,
-                                        py: 0.35,
-                                        border: `1px solid ${deployed ? `${UI_COLORS.anomaly}55` : UI_COLORS.border}`,
-                                        borderRadius: 1,
-                                        bgcolor: deployed ? `${UI_COLORS.anomaly}0d` : "transparent",
-                                        cursor: deployed || !controllable ? "default" : "grab",
-                                        userSelect: "none",
-                                        opacity: controllable ? 1 : 0.55,
-                                        "&:active": { cursor: deployed || !controllable ? "default" : "grabbing" },
-                                    }}
                                 >
-                                    <Box sx={{ position: "relative", pointerEvents: "none" }}>
+                                    <div className="tk-portrait">
                                         <CharAvatar
                                             imagePath={char.tokenImageUrl || char.imageUrl}
                                             name={char.name}
@@ -319,36 +367,14 @@ export default function TokenDeployPanel({ open, onClose }) {
                                             status={char.status}
                                             crop={char.tokenCrop}
                                         />
-                                        <Box
-                                            sx={{
-                                                position: "absolute",
-                                                right: -2,
-                                                bottom: -2,
-                                                width: 7,
-                                                height: 7,
-                                                borderRadius: "50%",
-                                                bgcolor: deployed ? UI_COLORS.anomaly : "rgba(255,255,255,0.2)",
-                                                border: `1px solid ${UI_COLORS.backgroundSecondary}`,
-                                            }}
-                                        />
-                                    </Box>
-                                    <Box sx={{ flex: 1, minWidth: 0, pointerEvents: "none" }}>
-                                        <CyberText
-                                            sx={{
-                                                fontSize: "0.68rem",
-                                                color: UI_COLORS.textPrimary,
-                                                whiteSpace: "nowrap",
-                                                overflow: "hidden",
-                                                textOverflow: "ellipsis",
-                                                lineHeight: 1.2,
-                                            }}
-                                        >
-                                            {char.name || char.id}
-                                        </CyberText>
-                                        <CyberText sx={{ fontSize: "0.5rem", color: UI_COLORS.textSecondary, lineHeight: 1.2 }}>
+                                        <span className="tk-dot" />
+                                    </div>
+                                    <div className="tk-meta">
+                                        <div className="tk-name">{char.name || char.id}</div>
+                                        <div className="tk-sub">
                                             {npc ? "NPC" : "PJ"} · {sizeKey}
-                                        </CyberText>
-                                    </Box>
+                                        </div>
+                                    </div>
                                     {deployed && controllable && (
                                         <Select
                                             size="small"
@@ -390,10 +416,10 @@ export default function TokenDeployPanel({ open, onClose }) {
                                             </IconButton>
                                         </Tooltip>
                                     )}
-                                </Box>
+                                </div>
                             );
                         })}
-                    </Stack>
+                    </div>
                 </Box>
             </Paper>
 
