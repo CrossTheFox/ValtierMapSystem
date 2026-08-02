@@ -24,6 +24,39 @@ const MSG_BODY_SX = {
     lineHeight: 1.45,
 };
 
+/** Format Firestore Timestamp / Date / ms → HH:mm */
+function formatChatTime(createdAt) {
+    if (!createdAt) return null;
+    let d = null;
+    if (typeof createdAt?.toDate === "function") d = createdAt.toDate();
+    else if (createdAt instanceof Date) d = createdAt;
+    else if (typeof createdAt === "number") d = new Date(createdAt);
+    else if (typeof createdAt?.seconds === "number") d = new Date(createdAt.seconds * 1000);
+    if (!d || Number.isNaN(d.getTime())) return null;
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    return `${hh}:${mm}`;
+}
+
+function ChatTime({ createdAt }) {
+    const t = formatChatTime(createdAt);
+    if (!t) return null;
+    return (
+        <Box
+            component="span"
+            sx={{
+                fontFamily: "monospace",
+                fontSize: "0.52rem",
+                color: UI_COLORS.textSecondary,
+                ml: 0.75,
+                flexShrink: 0,
+            }}
+        >
+            {t}
+        </Box>
+    );
+}
+
 const fieldSx = {
     "& .MuiOutlinedInput-root": {
         color: UI_COLORS.textPrimary,
@@ -295,7 +328,10 @@ function DiceChatCard({ msg, avatarByCharacterId }) {
             <div className="dc-head">
                 <RawAvatar path={avatarPath} name={name} />
                 <div className="dc-who">
-                    <div className="dc-name">{name}</div>
+                    <div className="dc-name">
+                        {name}
+                        <ChatTime createdAt={msg.createdAt} />
+                    </div>
                     <div className="dc-formula">
                         {formula}
                         {modeLabel ? ` · ${modeLabel}` : ""}
@@ -351,6 +387,7 @@ function ChatMessage({ msg, glossaryEntities, avatarByCharacterId }) {
             >
                 <CyberText sx={{ fontSize: "0.6rem", color: UI_COLORS.textSecondary }}>
                     {msg.characterName || msg.senderName} · HABILIDAD
+                    <ChatTime createdAt={msg.createdAt} />
                 </CyberText>
                 <CyberTitle sx={{ fontSize: "0.75rem", color: UI_COLORS.accent, my: 0.35 }}>
                     {msg.abilityLabel}
@@ -392,6 +429,7 @@ function ChatMessage({ msg, glossaryEntities, avatarByCharacterId }) {
                     />
                     <CyberText sx={{ fontSize: "0.6rem", color: UI_COLORS.textSecondary }}>
                         {msg.senderName}
+                        <ChatTime createdAt={msg.createdAt} />
                     </CyberText>
                 </Stack>
                 <CyberText
@@ -438,14 +476,20 @@ function ChatMessage({ msg, glossaryEntities, avatarByCharacterId }) {
                         fontWeight: 700,
                         letterSpacing: 0.4,
                         mb: 0.15,
+                        display: "flex",
+                        alignItems: "baseline",
+                        flexWrap: "wrap",
                     }}
                 >
-                    {displayName}
-                    {msg.characterName && msg.senderName && msg.characterName !== msg.senderName && (
-                        <span style={{ color: UI_COLORS.textSecondary, fontWeight: 400 }}>
-                            {" "}· {msg.senderName}
-                        </span>
-                    )}
+                    <span>
+                        {displayName}
+                        {msg.characterName && msg.senderName && msg.characterName !== msg.senderName && (
+                            <span style={{ color: UI_COLORS.textSecondary, fontWeight: 400 }}>
+                                {" "}· {msg.senderName}
+                            </span>
+                        )}
+                    </span>
+                    <ChatTime createdAt={msg.createdAt} />
                 </CyberText>
                 <GlossaryTextRenderer
                     text={msg.text}

@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from "react-redux";
 import {
     getOrCreateGameSession,
     subscribeToGameSession,
+    normalizeInitiative,
 } from "../../firebase/services/gameService";
 import { setGameSession } from "../store/gameSlice";
 
@@ -23,6 +24,7 @@ export function useGameSync() {
                 rulers: data.rulers ?? {},
                 pings: data.pings ?? {},
                 sessionPools: data.sessionPools ?? {},
+                initiative: normalizeInitiative(data.initiative),
             }));
         });
 

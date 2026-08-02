@@ -111,6 +111,94 @@ export function chunk(arr, size) {
     return out.length ? out : [[]];
 }
 
+function slotRect(x, y, w, h, full = false) {
+    return { x, y, w, h, cx: x + w / 2, cy: y + h / 2, full };
+}
+
+/**
+ * Grid tray inside cell 8 (NdM lab · C GRID) — header + die slots + footer TOTAL.
+ * Pure geometry; call once per reveal and cache on anim state.
+ * @returns {{ tray, header, footer, slots: Array<{ slot, delay }> }}
+ */
+export function layoutGridStage(cell, n) {
+    const count = Math.max(1, Math.floor(Number(n) || 1));
+    const inset = 14;
+    const tray = {
+        x: cell.x + inset,
+        y: cell.y + inset,
+        w: cell.w - inset * 2,
+        h: cell.h - inset * 2,
+    };
+    tray.cx = tray.x + tray.w / 2;
+    tray.cy = tray.y + tray.h / 2;
+
+    const headerH = 30;
+    const footerH = count === 1 ? 48 : 56;
+    const pad = count <= 2 ? 10 : 8;
+    const body = {
+        x: tray.x + pad,
+        y: tray.y + headerH,
+        w: tray.w - pad * 2,
+        h: tray.h - headerH - footerH,
+    };
+
+    let cols;
+    let rows;
+    if (count === 1) {
+        cols = 1;
+        rows = 1;
+    } else if (count === 2) {
+        cols = 2;
+        rows = 1;
+    } else if (count === 3) {
+        cols = 3;
+        rows = 1;
+    } else if (count === 4) {
+        cols = 2;
+        rows = 2;
+    } else if (count <= 6) {
+        cols = 3;
+        rows = 2;
+    } else {
+        cols = 3;
+        rows = Math.ceil(count / 3);
+    }
+
+    const gapX = count === 1 ? 0 : 8;
+    const gapY = count === 1 ? 0 : 8;
+    const slotW = (body.w - gapX * (cols - 1)) / cols;
+    const slotH = (body.h - gapY * (rows - 1)) / rows;
+
+    const slots = [];
+    for (let i = 0; i < count; i++) {
+        const c = i % cols;
+        const r = Math.floor(i / cols);
+        const countInRow = Math.min(cols, count - r * cols);
+        const rowW = countInRow * slotW + (countInRow - 1) * gapX;
+        const x0 = body.x + (body.w - rowW) / 2;
+        const x = x0 + c * (slotW + gapX);
+        const y = body.y + r * (slotH + gapY);
+        const innerPad = Math.min(6, slotW * 0.04);
+        slots.push({
+            slot: slotRect(
+                x + innerPad,
+                y + innerPad,
+                slotW - innerPad * 2,
+                slotH - innerPad * 2,
+                count === 1,
+            ),
+            delay: 0,
+        });
+    }
+
+    return {
+        tray,
+        header: { y: tray.y + 8 },
+        footer: { cy: tray.y + tray.h - footerH / 2 },
+        slots,
+    };
+}
+
 /**
  * DM / unknown: chronological chunks of 6.
  * Player POV (viewerKey = senderId): their die in FIRST batch, centered.

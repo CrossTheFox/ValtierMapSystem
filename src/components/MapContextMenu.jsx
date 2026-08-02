@@ -7,8 +7,14 @@ import {
     showSnackbar,
 } from "../store/uiSlice";
 import { snapWorldToGridPoint } from "../utils/gridMath";
-import { publishMapPing } from "../../firebase/services/gameService";
+import {
+    publishMapPing,
+    updateTokenConditions,
+    updateTokenVisibility,
+} from "../../firebase/services/gameService";
 import { UI_COLORS } from "../constants/uiColors";
+import { TOKEN_CONDITIONS, normalizeTokenConditions } from "../constants/tokenConditions";
+import { canControlToken, isDmRole } from "../utils/tokenControl";
 
 const CYAN = UI_COLORS.anomaly || "#00f2ea";
 
@@ -20,6 +26,8 @@ export default function MapContextMenu() {
     const campaignId = useSelector((s) => s.world.selectedCampaignId);
     const gridConfig = useSelector((s) => s.world.gridConfig);
     const profile = useSelector((s) => s.player.profile);
+    const tokenPositions = useSelector((s) => s.game.tokenPositions ?? {});
+    const charactersById = useSelector((s) => s.world.charactersById ?? {});
     const menuRef = useRef(null);
 
     useEffect(() => {
@@ -38,9 +46,20 @@ export default function MapContextMenu() {
 
     if (!contextMenu.open) return null;
 
-    const pointLabel = contextMenu.location?.name
-        ? contextMenu.location.name.toUpperCase()
-        : `(${Math.round(contextMenu.worldX)}, ${Math.round(contextMenu.worldY)})`;
+    const isToken = contextMenu.type === "token" && contextMenu.tokenId;
+    const tokenId = contextMenu.tokenId;
+    const pos = isToken && mapId ? tokenPositions[mapId]?.[tokenId] : null;
+    const char = isToken ? charactersById[tokenId] : null;
+    const canEdit = isToken && canControlToken(char || { id: tokenId }, profile);
+    const isDM = isDmRole(profile?.role);
+    const conditions = normalizeTokenConditions(pos?.conditions);
+    const isHidden = pos?.visible === false;
+
+    const pointLabel = isToken
+        ? (contextMenu.tokenName || tokenId || "TOKEN").toUpperCase()
+        : contextMenu.location?.name
+            ? contextMenu.location.name.toUpperCase()
+            : `(${Math.round(contextMenu.worldX)}, ${Math.round(contextMenu.worldY)})`;
 
     const handleViewLocation = () => {
         dispatch(openLocation(contextMenu.location));
@@ -59,7 +78,6 @@ export default function MapContextMenu() {
             map,
             gridConfig,
         );
-        // Close first: awaiting the write kept the menu visibly hanging on screen.
         dispatch(closeContextMenu());
         publishMapPing(campaignId, {
             mapId,
@@ -75,8 +93,27 @@ export default function MapContextMenu() {
         });
     };
 
-    const menuW = 220;
-    const menuH = contextMenu.type === "location" ? 140 : 100;
+    const handleToggleCondition = (key) => {
+        if (!campaignId || !mapId || !tokenId || !pos) return;
+        const next = conditions.includes(key)
+            ? conditions.filter((k) => k !== key)
+            : [...conditions, key];
+        updateTokenConditions(campaignId, mapId, tokenId, next, pos).catch((err) => {
+            console.error(err);
+            dispatch(showSnackbar({ message: "No se pudo actualizar condición", severity: "error" }));
+        });
+    };
+
+    const handleToggleVisibility = () => {
+        if (!campaignId || !mapId || !tokenId || !pos || !isDM) return;
+        updateTokenVisibility(campaignId, mapId, tokenId, isHidden, pos).catch((err) => {
+            console.error(err);
+            dispatch(showSnackbar({ message: "No se pudo cambiar visibilidad", severity: "error" }));
+        });
+    };
+
+    const menuW = 240;
+    const menuH = isToken ? 280 : contextMenu.type === "location" ? 140 : 100;
     const x = Math.min(contextMenu.screenX, window.innerWidth - menuW - 8);
     const y = Math.min(contextMenu.screenY, window.innerHeight - menuH - 8);
 
@@ -87,7 +124,7 @@ export default function MapContextMenu() {
             />
             <StyledMenu ref={menuRef} style={{ left: x, top: y }}>
                 <div className="menu-header">
-                    {contextMenu.type === "location" ? "◉ LOCATION" : "◉ MAP_POINT"}
+                    {isToken ? "◉ TOKEN" : contextMenu.type === "location" ? "◉ LOCATION" : "◉ MAP_POINT"}
                     <span className="menu-label">{pointLabel}</span>
                 </div>
 
@@ -98,10 +135,39 @@ export default function MapContextMenu() {
                     </button>
                 )}
 
-                <button type="button" className="menu-item ping" onClick={handlePing}>
-                    <span className="item-icon">◎</span>
-                    HACER_PING
-                </button>
+                {!isToken && (
+                    <button type="button" className="menu-item ping" onClick={handlePing}>
+                        <span className="item-icon">◎</span>
+                        HACER_PING
+                    </button>
+                )}
+
+                {isToken && canEdit && (
+                    <>
+                        <div className="menu-section">CONDICIONES</div>
+                        {TOKEN_CONDITIONS.map((c) => {
+                            const on = conditions.includes(c.key);
+                            return (
+                                <button
+                                    key={c.key}
+                                    type="button"
+                                    className={`menu-item cond ${on ? "active" : ""}`}
+                                    onClick={() => handleToggleCondition(c.key)}
+                                >
+                                    <span className="item-icon">{on ? "▣" : "□"}</span>
+                                    {c.label.toUpperCase()}
+                                </button>
+                            );
+                        })}
+                    </>
+                )}
+
+                {isToken && isDM && (
+                    <button type="button" className="menu-item ping" onClick={handleToggleVisibility}>
+                        <span className="item-icon">{isHidden ? "◎" : "◌"}</span>
+                        {isHidden ? "MOSTRAR_A_JUGADORES" : "OCULTAR_A_JUGADORES"}
+                    </button>
+                )}
             </StyledMenu>
         </>
     );
@@ -112,6 +178,8 @@ const StyledMenu = styled.div`
   z-index: 2000;
   pointer-events: auto;
   min-width: 220px;
+  max-height: min(420px, calc(100vh - 24px));
+  overflow-y: auto;
   background: rgba(4, 4, 8, 0.97);
   border: 1px solid ${CYAN};
   box-shadow: 0 0 24px ${CYAN}44, 0 0 6px ${CYAN}22, inset 0 0 20px ${CYAN}08;
@@ -141,7 +209,15 @@ const StyledMenu = styled.div`
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 190px;
+    max-width: 210px;
+  }
+
+  .menu-section {
+    padding: 6px 12px 2px;
+    font-family: "Fira Code", monospace;
+    font-size: 0.52rem;
+    letter-spacing: 0.14em;
+    color: ${UI_COLORS.textSecondary};
   }
 
   .menu-item {
@@ -175,10 +251,21 @@ const StyledMenu = styled.div`
       padding-left: 16px;
     }
 
+    &.active {
+      color: ${UI_COLORS.accent};
+      border-left-color: ${UI_COLORS.accent};
+      background: ${UI_COLORS.accent}12;
+    }
+
     &.ping:hover {
       color: ${UI_COLORS.accent};
       border-left-color: ${UI_COLORS.accent};
       background: ${UI_COLORS.accent}14;
+    }
+
+    &.cond {
+      padding: 7px 12px;
+      font-size: 0.68rem;
     }
   }
 

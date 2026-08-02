@@ -20,9 +20,11 @@ import locationIconPath from "../assets/LocationNode.svg";
 import { UI_COLORS } from "../constants/uiColors";
 import {
     buildRulerMeasure,
+    resolveGridDimensions,
     snapWorldToGridPoint,
 } from "../utils/gridMath";
 import { addMapRuler } from "../../firebase/services/gameService";
+import { EMPTY_TABLE_FILL, isEmptyTableMap } from "../constants/emptyTableMap";
 
 const RIGHT_CLICK_DRAG_THRESHOLD = 5; // px — below this → treat as click, not drag
 
@@ -50,7 +52,9 @@ export default function MapViewportProvider({ children, onViewportReady }) {
     useEffect(() => { rulerToolRef.current = rulerTool; }, [rulerTool]);
     useEffect(() => { isSelectingRef.current = isSelectingPosition; }, [isSelectingPosition]);
     useEffect(() => { campaignIdRef.current = selectedCampaignId; }, [selectedCampaignId]);
-    useEffect(() => { mapIdRef.current = activeMapId ?? map?.id; }, [activeMapId, map?.id]);
+    useEffect(() => {
+        mapIdRef.current = activeMapId ?? map?.id ?? null;
+    }, [activeMapId, map?.id]);
     useEffect(() => { profileRef.current = profile; }, [profile]);
 
     // ── Create viewport ───────────────────────────────────────────
@@ -66,11 +70,19 @@ export default function MapViewportProvider({ children, onViewportReady }) {
             app.renderer.addSystem(PIXI.EventSystem, "events");
         }
 
+        // Match GridLayer extent (cols×cell × rows×cell), not raw map px alone —
+        // ceil(h/cell) can leave the grid taller/wider than map.width/height.
+        const gridDims = resolveGridDimensions(map, gridConfigRef.current);
+        const gridW = gridDims.columns * gridDims.cellSize;
+        const gridH = gridDims.rows * gridDims.cellSize;
+        const worldW = Math.max(map.width || 0, gridW, 1);
+        const worldH = Math.max(map.height || 0, gridH, 1);
+
         const vp = new Viewport({
             screenWidth:  app.screen.width,
             screenHeight: app.screen.height,
-            worldWidth:   map.width,
-            worldHeight:  map.height,
+            worldWidth:   worldW,
+            worldHeight:  worldH,
             ticker: app.ticker,
             events: app.renderer.events,
         });
@@ -85,21 +97,36 @@ export default function MapViewportProvider({ children, onViewportReady }) {
             .clampZoom({ minScale: 0.1, maxScale: 5 });
 
         let mapSprite = null;
+        let blankBoard = null;
         let mapLoadCancelled = false;
 
-        // Load map image
-        (async () => {
-            try {
-                const texture = await loadTexture(map.imageUrl);
-                if (mapLoadCancelled || vp.destroyed) return;
-                mapSprite = new PIXI.Sprite(texture);
-                mapSprite.anchor.set(0);
-                mapSprite.zIndex = RENDER_LAYERS.MAP;
-                vp.addChild(mapSprite);
-            } catch (err) {
-                console.error("Error cargando mapa:", err);
-            }
-        })();
+        const paintBlankBoard = () => {
+            if (mapLoadCancelled || vp.destroyed) return;
+            blankBoard = new PIXI.Graphics();
+            blankBoard.rect(0, 0, worldW, worldH);
+            blankBoard.fill({ color: EMPTY_TABLE_FILL });
+            blankBoard.zIndex = RENDER_LAYERS.MAP;
+            blankBoard.eventMode = "none";
+            vp.addChild(blankBoard);
+        };
+
+        if (map.imageUrl && !isEmptyTableMap(map)) {
+            (async () => {
+                try {
+                    const texture = await loadTexture(map.imageUrl);
+                    if (mapLoadCancelled || vp.destroyed) return;
+                    mapSprite = new PIXI.Sprite(texture);
+                    mapSprite.anchor.set(0);
+                    mapSprite.zIndex = RENDER_LAYERS.MAP;
+                    vp.addChild(mapSprite);
+                } catch (err) {
+                    console.error("Error cargando mapa:", err);
+                    paintBlankBoard();
+                }
+            })();
+        } else {
+            paintBlankBoard();
+        }
 
         app.stage.addChild(vp);
         viewportRef.current = vp;
@@ -112,6 +139,7 @@ export default function MapViewportProvider({ children, onViewportReady }) {
             safeDestroy(ghostRef.current);
             ghostRef.current = null;
             safeDestroy(mapSprite);
+            safeDestroy(blankBoard);
             try {
                 if (vp.parent) vp.parent.removeChild(vp);
             } catch {
@@ -161,6 +189,13 @@ export default function MapViewportProvider({ children, onViewportReady }) {
             const dist = Math.hypot(e.global.x - rightStart.x, e.global.y - rightStart.y);
             rightStart = null;
             if (dist >= RIGHT_CLICK_DRAG_THRESHOLD) return;
+
+            // Token context menu owns RMB on markers
+            let t = e.target;
+            while (t && t !== viewport) {
+                if (t.__tokenId) return;
+                t = t.parent;
+            }
 
             // Cancel in-progress ruler (node A set, waiting for B)
             if (rulerToolRef.current?.active && rulerToolRef.current?.draftA) {

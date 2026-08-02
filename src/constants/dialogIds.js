@@ -7,6 +7,7 @@ export const DIALOG_IDS = {
     SHEET: "sheet",
     SETTINGS: "settings",
     LORE_BROWSER: "loreBrowser",
+    INITIATIVE: "initiative",
 };
 
 export const INITIAL_MINIMIZED_DIALOGS = {
@@ -17,4 +18,5 @@ export const INITIAL_MINIMIZED_DIALOGS = {
     [DIALOG_IDS.SHEET]: false,
     [DIALOG_IDS.SETTINGS]: false,
     [DIALOG_IDS.LORE_BROWSER]: false,
+    [DIALOG_IDS.INITIATIVE]: false,
 };

@@ -41,7 +41,13 @@ export function holdMsForEvent(event) {
         });
         return hot ? HOLD_HOT_MS : HOLD_NORMAL_MS;
     }
-    if (event.kind === "swarm") return HOLD_NORMAL_MS;
+    if (event.kind === "swarm") {
+        const hot = (event.dice || []).some((d) => {
+            const sides = d.sides || event.sides || 20;
+            return d.value === 1 || d.value === sides;
+        });
+        return hot ? HOLD_HOT_MS : HOLD_NORMAL_MS;
+    }
     const sides = event.sides || 20;
     const result = event.result;
     if (result === 1 || result === sides) return HOLD_HOT_MS;

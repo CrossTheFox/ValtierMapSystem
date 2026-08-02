@@ -14,6 +14,7 @@ import { CyberTitle, CyberText } from "../customs/CustomTexts";
 import { UI_COLORS } from "../../constants/uiColors";
 import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
 import { showSnackbar } from "../../store/uiSlice";
+import { loadWorld, preloadWorldAssets } from "../../store/worldSlice";
 import { setActiveMapForPlayers } from "../../../firebase/services/gameService";
 import {
     subscribeMapsByCampaign,
@@ -42,6 +43,11 @@ export default function MapsAdminTab({ campaignId }) {
         return subscribeMapsByCampaign(campaignId, setMaps);
     }, [campaignId]);
 
+    const reloadWorld = async () => {
+        if (!campaignId) return;
+        const world = await dispatch(loadWorld(campaignId)).unwrap();
+        await dispatch(preloadWorldAssets(world)).unwrap();
+    };
     const openEdit = (map) => {
         setEditMap({
             id: map.id,
@@ -78,11 +84,6 @@ export default function MapsAdminTab({ campaignId }) {
 
     const handleDelete = async () => {
         if (!deleteTarget) return;
-        if (maps.length <= 1) {
-            dispatch(showSnackbar({ message: "No puedes eliminar el único mapa de la campaña.", severity: "warning" }));
-            setDeleteTarget(null);
-            return;
-        }
         if (deleteLocCount > 0) {
             dispatch(showSnackbar({
                 message: `Mapa tiene ${deleteLocCount} locación(es). Elimínalas o reasígnalas primero.`,
@@ -94,6 +95,7 @@ export default function MapsAdminTab({ campaignId }) {
         try {
             await deleteMapDoc(deleteTarget.id);
             dispatch(showSnackbar({ message: "Mapa eliminado.", severity: "success" }));
+            await reloadWorld();
         } catch (err) {
             dispatch(showSnackbar({ message: "Error al eliminar mapa.", severity: "error" }));
         } finally {
@@ -127,7 +129,21 @@ export default function MapsAdminTab({ campaignId }) {
                     {createOpen ? "OCULTAR" : "NUEVO MAPA"}
                 </Box>
                 <Collapse in={createOpen} unmountOnExit>
-                    <AddMapForm campaignId={campaignId} onCreated={() => setCreateOpen(false)} />
+                    <AddMapForm
+                        campaignId={campaignId}
+                        onCreated={async () => {
+                            setCreateOpen(false);
+                            try {
+                                await reloadWorld();
+                            } catch (err) {
+                                console.error(err);
+                                dispatch(showSnackbar({
+                                    message: "Mapa creado, pero no se pudo refrescar la mesa.",
+                                    severity: "warning",
+                                }));
+                            }
+                        }}
+                    />
                 </Collapse>
             </AdminSectionShell>
 

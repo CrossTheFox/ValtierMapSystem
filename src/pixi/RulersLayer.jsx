@@ -22,6 +22,9 @@ const CYAN = 0x00f2ea;
 const CYAN_STR = "#00f2ea";
 const PINK = 0xff66ff;
 const DARK_BG = 0x050508;
+/** Destructive delete-chip red (distinct from magenta accents). */
+const DELETE_RED = 0xff2a3a;
+const DELETE_RED_DARK = 0x1a0608;
 
 function appendDashes(g, x1, y1, x2, y2, dashLen, gapLen) {
     const totalLen = Math.hypot(x2 - x1, y2 - y1);
@@ -157,27 +160,31 @@ function makeDeleteButton(onDelete) {
     const btn = new PIXI.Container();
     btn.eventMode = "static";
     btn.cursor = "pointer";
-    btn.hitArea = new PIXI.Circle(0, 0, 14);
+    btn.hitArea = new PIXI.Circle(0, 0, 15);
 
     const g = new PIXI.Graphics();
-    const r = 11;
-    const lw = 2;
+    const r = 12;
+    const ringW = 2.25;
+    const xW = 2.85;
 
-    g.setFillStyle({ color: DARK_BG, alpha: 0.95 });
-    g.circle(0, 0, r);
-    g.fill();
-    g.setStrokeStyle({ width: lw, color: PINK, alpha: 1, cap: "round" });
-    g.circle(0, 0, r);
-    g.stroke();
+    // Soft outer glow
+    g.circle(0, 0, r + 2.5);
+    g.stroke({ width: 4, color: DELETE_RED, alpha: 0.22 });
 
-    // Bold X
-    const arm = r * 0.48;
-    g.setStrokeStyle({ width: lw * 1.35, color: PINK, alpha: 1, cap: "round" });
+    // Chip body
+    g.circle(0, 0, r);
+    g.fill({ color: DELETE_RED_DARK, alpha: 0.97 });
+    g.circle(0, 0, r);
+    g.stroke({ width: ringW, color: DELETE_RED, alpha: 1, cap: "round" });
+
+    // Crisp X (separate stroke passes so Pixi v8 doesn't merge paths oddly)
+    const arm = r * 0.42;
     g.moveTo(-arm, -arm);
     g.lineTo(arm, arm);
+    g.stroke({ width: xW, color: DELETE_RED, alpha: 1, cap: "round", join: "round" });
     g.moveTo(arm, -arm);
     g.lineTo(-arm, arm);
-    g.stroke();
+    g.stroke({ width: xW, color: DELETE_RED, alpha: 1, cap: "round", join: "round" });
 
     btn.addChild(g);
     btn.zIndex = 4;

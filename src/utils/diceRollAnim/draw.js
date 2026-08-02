@@ -1,12 +1,12 @@
 import {
     TIMING,
     MAX_SWARM,
-    SWARM_DURATION,
     modeFromResult,
     durationForMode,
 } from "./timing";
 import {
     cellIndexRect,
+    layoutGridStage,
     layoutSlots,
     matchViewer,
 } from "./layout";
@@ -228,14 +228,17 @@ export function drawUnifiedDie(ctx, w, h, t, state, opts = {}) {
     }
     if (opts.highlight) accent = mix(accent, CYAN, 0.55);
 
-    cellFocus(ctx, cell, accent, 0.5 + 0.5 * Math.sin(t * 7));
-    if (opts.highlight) {
-        ctx.save();
-        ctx.strokeStyle = CYAN;
-        ctx.globalAlpha = 0.35 + 0.25 * Math.sin(t * 8);
-        ctx.lineWidth = 2.5;
-        ctx.strokeRect(cell.x + 6, cell.y + 6, cell.w - 12, cell.h - 12);
-        ctx.restore();
+    // skipFocus: NdM grid tray already frames the stage — N× cellFocus would thrash.
+    if (!opts.skipFocus) {
+        cellFocus(ctx, cell, accent, 0.5 + 0.5 * Math.sin(t * 7));
+        if (opts.highlight) {
+            ctx.save();
+            ctx.strokeStyle = CYAN;
+            ctx.globalAlpha = 0.35 + 0.25 * Math.sin(t * 8);
+            ctx.lineWidth = 2.5;
+            ctx.strokeRect(cell.x + 6, cell.y + 6, cell.w - 12, cell.h - 12);
+            ctx.restore();
+        }
     }
 
     const cx = cell.cx;
@@ -778,70 +781,154 @@ export function animMultiDice(ctx, w, h, t, state, event) {
     return t >= dur;
 }
 
-export function animSwarmCascade(ctx, w, h, t, state, event) {
-    const cell = cellIndexRect(w, h, 8);
-    if (!state.dice) {
-        state.dice = (event?.dice || []).slice(0, MAX_SWARM);
-        state.displayTotal = event?.total;
-        state.rollerName = event?.rollerName || "";
-    }
-    const dice = state.dice;
-    const dur = SWARM_DURATION;
-    const u = clamp01(t / dur);
-    softDim(ctx, w, h, 0.28);
-    cellFocus(ctx, cell, PINK, 0.5 + 0.5 * Math.sin(t * 6));
-
-    if (state.rollerName) {
-        ctx.font = "700 12px Orbitron, sans-serif";
-        ctx.fillStyle = CYAN;
-        ctx.textAlign = "center";
-        ctx.fillText(String(state.rollerName).toUpperCase(), cell.cx, cell.y + 22);
-    }
-
-    const n = dice.length;
-    const maxR = Math.min(28, ((cell.w - 36) / Math.max(n, 1)) * 0.42);
-    const gap = Math.min(maxR * 2.35, (cell.w - 40) / Math.max(n, 1));
-    const ox = cell.cx - ((n - 1) * gap) / 2;
-    const baseY = cell.cy + 6;
-    const trayW = Math.min(cell.w - 28, gap * n + 36);
-    const trayH = maxR * 2.8 + 28;
-    roundRectPath(ctx, cell.cx - trayW / 2, baseY - trayH * 0.55, trayW, trayH, 10);
-    ctx.fillStyle = "rgba(8,10,16,0.86)";
+/** Tray chrome for NdM Grid (lab · C GRID). Cheap; geometry comes from layoutGridStage. */
+export function drawGridTray(ctx, stage, t, meta = {}) {
+    const { tray } = stage;
+    const pulse = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(t * 5));
+    roundRectPath(ctx, tray.x, tray.y, tray.w, tray.h, 14);
+    ctx.fillStyle = "rgba(6,8,14,0.88)";
     ctx.fill();
-    ctx.strokeStyle = "rgba(255,102,255,0.45)";
-    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = PINK;
+    ctx.globalAlpha = 0.35 + pulse * 0.25;
+    ctx.lineWidth = 1.8;
+    ctx.shadowColor = PINK;
+    ctx.shadowBlur = 18;
     ctx.stroke();
-    ctx.font = "600 9px Orbitron, sans-serif";
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+
+    roundRectPath(ctx, tray.x + 5, tray.y + 5, tray.w - 10, tray.h - 10, 11);
+    ctx.strokeStyle = CYAN;
+    ctx.globalAlpha = 0.18 + pulse * 0.12;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    const m = 12;
+    const arm = 14;
+    ctx.strokeStyle = CYAN;
+    ctx.globalAlpha = 0.65;
+    ctx.lineWidth = 2;
+    [
+        [tray.x + m, tray.y + m, arm, arm],
+        [tray.x + tray.w - m, tray.y + m, -arm, arm],
+        [tray.x + m, tray.y + tray.h - m, arm, -arm],
+        [tray.x + tray.w - m, tray.y + tray.h - m, -arm, -arm],
+    ].forEach(([x, y, dx, dy]) => {
+        ctx.beginPath();
+        ctx.moveTo(x + dx, y);
+        ctx.lineTo(x, y);
+        ctx.lineTo(x, y + dy);
+        ctx.stroke();
+    });
+    ctx.globalAlpha = 1;
+
+    ctx.font = "700 11px Orbitron, sans-serif";
     ctx.fillStyle = CYAN;
     ctx.textAlign = "center";
-    ctx.fillText(`SWARM · ${dice.length}/${MAX_SWARM}`, cell.cx, baseY - trayH * 0.55 + 14);
+    ctx.textBaseline = "middle";
+    const who = meta.rollerName ? `${String(meta.rollerName).toUpperCase()} · ` : "";
+    const formula = String(meta.formula || "").toUpperCase() || `${meta.count || "?"}D`;
+    let keep = "";
+    if (meta.statMode === "highest") keep = " · KEEP MAX";
+    else if (meta.statMode === "lowest") keep = " · KEEP MIN";
+    ctx.fillText(`GRID · ${who}${formula}${keep}`, tray.cx, stage.header.y + 6);
+    ctx.textBaseline = "alphabetic";
+}
 
-    dice.forEach((d, i) => {
-        const local = easeOut(clamp01((u - i * 0.08) / 0.42));
-        const x = ox + i * gap;
-        const y = lerp(cell.y - 10, baseY, local);
-        const wobble = (1 - local) * Math.sin(t * 22 + i * 1.7) * 0.35;
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.rotate(wobble);
-        const shown = local > 0.82 ? d.value : 1 + Math.floor(Math.random() * (d.sides || 6));
-        drawDieChip(ctx, 0, 0, maxR, d.label, local > 0.55 ? shown : "·", i % 2 ? PINK : CYAN, local);
-        ctx.restore();
+/**
+ * NdM swarm → Grid tray (lab C GRID 1:1).
+ * Each face runs drawUnifiedDie with its own fail/crit/normal TIMING.
+ * Layout + die states are prepared once; skipDim/skipFocus avoid N× veil/brackets.
+ */
+export function animSwarmCascade(ctx, w, h, t, state, event) {
+    if (!state.prepared) {
+        const dice = (event?.dice || []).slice(0, MAX_SWARM).map((d) => {
+            const sides = Math.max(2, Math.floor(Number(d.sides || event?.sides) || 6));
+            const value = Math.min(sides, Math.max(1, Math.floor(Number(d.value) || 1)));
+            return {
+                sides,
+                value,
+                mode: modeFromResult(value, sides),
+                label: d.label || `d${sides}`,
+            };
+        });
+        const cell = cellIndexRect(w, h, 8);
+        state.prepared = true;
+        state.dice = dice;
+        state.stage = layoutGridStage(cell, dice.length);
+        state.dieStates = dice.map(() => ({}));
+        state.displayTotal = event?.total;
+        state.rollerName = event?.rollerName || "";
+        state.formula = event?.formula || `${dice.length}d${event?.sides || 6}`;
+        state.statMode = event?.statMode || null;
+        state.maxEnd = dice.reduce(
+            (m, d) => Math.max(m, durationForMode(d.mode)),
+            durationForMode("normal"),
+        );
+        // Geometry is resolution-dependent; if the window resized mid-reveal,
+        // rebuild slots without resetting scrambler state.
+        state.layoutW = w;
+        state.layoutH = h;
+    } else if (state.layoutW !== w || state.layoutH !== h) {
+        state.stage = layoutGridStage(cellIndexRect(w, h, 8), state.dice.length);
+        state.layoutW = w;
+        state.layoutH = h;
+    }
+
+    const dice = state.dice;
+    if (!dice?.length) return true;
+
+    softDim(ctx, w, h, 0.28);
+    drawGridTray(ctx, state.stage, t, {
+        rollerName: state.rollerName,
+        formula: state.formula,
+        statMode: state.statMode,
+        count: dice.length,
     });
 
-    if (u > 0.72) {
+    let allDone = true;
+    for (let i = 0; i < dice.length; i++) {
+        const die = dice[i];
+        const entry = state.stage.slots[i];
+        const timing = TIMING[die.mode] || TIMING.normal;
+        const done = drawUnifiedDie(ctx, w, h, t, state.dieStates[i], {
+            skipDim: true,
+            skipFocus: true,
+            slot: entry.slot,
+            sides: die.sides,
+            forceMode: die.mode,
+            timing,
+            roller: {
+                name: die.label,
+                result: die.value,
+                sides: die.sides,
+            },
+            // Tray header carries the roller; per-die YOU badges would N× thrash.
+            highlight: false,
+        });
+        if (!done) allDone = false;
+    }
+
+    const maxEnd = state.maxEnd;
+    const totalAt = Math.max(1.85, maxEnd * 0.78);
+    if (t > totalAt) {
+        const s = easeOut(clamp01((t - totalAt) / 0.35));
         const sum = dice.reduce((a, d) => a + d.value, 0);
         const display = state.displayTotal != null ? state.displayTotal : sum;
-        const s = easeOut(clamp01((u - 0.72) / 0.2));
+        let label = "TOTAL";
+        if (state.statMode === "highest") label = "KEEP MAX";
+        else if (state.statMode === "lowest") label = "KEEP MIN";
         ctx.globalAlpha = s;
-        glowText(ctx, String(display), cell.cx, baseY + trayH * 0.38, 22, GOLD);
+        glowText(ctx, String(display), state.stage.tray.cx, state.stage.footer.cy - 4, 24, GOLD);
         ctx.font = "600 9px Fira Code, monospace";
         ctx.fillStyle = GOLD;
         ctx.textAlign = "center";
-        ctx.fillText("TOTAL", cell.cx, baseY + trayH * 0.38 + 16);
+        ctx.fillText(label, state.stage.tray.cx, state.stage.footer.cy + 16);
         ctx.globalAlpha = 1;
     }
-    return u >= 1;
+
+    return allDone && t >= maxEnd;
 }
 
 /** Dispatch by event.kind. Returns true when animation finished. */

@@ -1,31 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Box, IconButton, CircularProgress, Badge } from "@mui/material";
+import { useEffect, useMemo, useState } from "react";
+import { Box, IconButton } from "@mui/material";
 import { useDispatch, useSelector } from "react-redux";
 import CasinoIcon from "@mui/icons-material/Casino";
-import QueryStatsIcon from "@mui/icons-material/QueryStats";
 import WidgetsIcon from "@mui/icons-material/Widgets";
 import UnfoldLessIcon from "@mui/icons-material/UnfoldLess";
 import StraightenIcon from "@mui/icons-material/Straighten";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
-import DirectionsRunIcon from "@mui/icons-material/DirectionsRun";
-import VisibilityIcon from "@mui/icons-material/Visibility";
-import MenuBookIcon from "@mui/icons-material/MenuBook";
-import FavoriteIcon from "@mui/icons-material/Favorite";
-import CampaignIcon from "@mui/icons-material/Campaign";
-import BuildIcon from "@mui/icons-material/Build";
-import GpsFixedIcon from "@mui/icons-material/GpsFixed";
-import FitnessCenterIcon from "@mui/icons-material/FitnessCenter";
-import ShieldIcon from "@mui/icons-material/Shield";
 import { CyberText } from "../customs/CustomTexts";
 import CyberTooltip from "../customs/CyberTooltip";
 import { UI_COLORS } from "../../constants/uiColors";
 import { VTT_HUD } from "../../constants/vttHudTokens";
-import { useStatSystem } from "../../hooks/useStatSystem";
 import { setRulerMode, showSnackbar } from "../../store/uiSlice";
 import { canControlToken, isDmRole } from "../../utils/tokenControl";
 import { listCampaignCharacters } from "../../utils/characterCombat";
-import { rollStatInChat } from "../../../firebase/services/chatService";
 import { removeMapRuler } from "../../../firebase/services/gameService";
 import DiceRollerBar from "./DiceRollerBar";
 
@@ -35,20 +22,6 @@ const MAX_OPEN_PANELS = 4;
 const TOOL_IDS = {
     RULER: "ruler",
     DICE: "dice",
-    STATS: "stats",
-};
-
-const STAT_ICONS = {
-    sneak: VisibilityOffIcon,
-    traverse: DirectionsRunIcon,
-    sense: VisibilityIcon,
-    study: MenuBookIcon,
-    charm: FavoriteIcon,
-    command: CampaignIcon,
-    tinker: BuildIcon,
-    excel: GpsFixedIcon,
-    smash: FitnessCenterIcon,
-    endure: ShieldIcon,
 };
 
 const glassBtnSx = (active) => ({
@@ -115,60 +88,6 @@ function ToolRow({ open, button, panel }) {
     );
 }
 
-function StatIconButton({ statDef, value, busy, onRoll }) {
-    const Icon = STAT_ICONS[statDef.key] || CasinoIcon;
-    const n = Math.max(0, Math.floor(Number(value) || 0));
-    const tip = [
-        `${statDef.label || statDef.key}: ${n}`,
-        statDef.description,
-        n <= 0 ? "Click: 2d6 → mínimo" : `Click: ${n}d6 → máximo`,
-    ].filter(Boolean).join(" · ");
-
-    return (
-        <CyberTooltip title={tip} placement="right">
-            <Badge
-                badgeContent={n}
-                color="default"
-                overlap="circular"
-                sx={{
-                    "& .MuiBadge-badge": {
-                        fontFamily: "'Fira Code', monospace",
-                        fontSize: "0.55rem",
-                        minWidth: 16,
-                        height: 16,
-                        bgcolor: n <= 0 ? UI_COLORS.accentStrong : UI_COLORS.anomaly,
-                        color: "#0a0a12",
-                        border: `1px solid ${UI_COLORS.backgroundSecondary}`,
-                    },
-                }}
-            >
-                <IconButton
-                    size="small"
-                    disabled={busy}
-                    onClick={onRoll}
-                    sx={{
-                        width: 34,
-                        height: 34,
-                        borderRadius: 1,
-                        border: `1px solid ${UI_COLORS.border}`,
-                        bgcolor: VTT_HUD.glassBg,
-                        color: busy ? UI_COLORS.anomaly : UI_COLORS.textSecondary,
-                        backdropFilter: "blur(10px)",
-                        "&:hover": {
-                            color: UI_COLORS.accent,
-                            borderColor: UI_COLORS.accent,
-                            bgcolor: `${UI_COLORS.accent}16`,
-                        },
-                        "&.Mui-disabled": { opacity: 0.55 },
-                    }}
-                >
-                    {busy ? <CircularProgress size={14} sx={{ color: UI_COLORS.anomaly }} /> : <Icon sx={{ fontSize: "1.05rem" }} />}
-                </IconButton>
-            </Badge>
-        </CyberTooltip>
-    );
-}
-
 /**
  * Roll20-style left tools tray under the campaign/map surface.
  * Master toggle reveals sub-buttons; each opens a panel to its right, growing down.
@@ -184,13 +103,10 @@ export default function LeftToolsRail() {
     const sheetCharacters = useSelector((s) => s.characters.list);
     const rulers = useSelector((s) => s.game.rulers ?? {});
     const rulerActive = useSelector((s) => !!s.ui.rulerTool?.active);
-    const { stats: statDefs } = useStatSystem(campaignId);
 
     const [toolsRailOpen, setToolsRailOpen] = useState(false);
     /** Open panel ids in open-order (oldest → newest). */
     const [openOrder, setOpenOrder] = useState([]);
-    // Ref lock — setState(rollingKey) swapped every stat icon to CircularProgress and flashed the tray.
-    const rollingRef = useRef(null);
 
     const isDM = isDmRole(profile?.role);
 
@@ -259,21 +175,6 @@ export default function LeftToolsRail() {
         });
     };
 
-    const handleStatRoll = async (statDef) => {
-        if (!campaignId || !selected || !statDef?.key || rollingRef.current) return;
-        const value = selected.stats?.[statDef.key] ?? 0;
-        rollingRef.current = statDef.key;
-        try {
-            await rollStatInChat(campaignId, profile, selected, statDef, value);
-            // Result is shown via DiceRevealOverlay + chat (avoid snackbar overlap).
-        } catch (err) {
-            console.error(err);
-            dispatch(showSnackbar({ message: "No se pudo publicar la tirada", severity: "error" }));
-        } finally {
-            rollingRef.current = null;
-        }
-    };
-
     const handleDeleteRuler = async (rulerId) => {
         if (!campaignId || !rulerId) return;
         try {
@@ -286,10 +187,8 @@ export default function LeftToolsRail() {
 
     if (!profile) return null;
 
-    const hasStats = selected && (statDefs || []).length > 0;
     const rulerOpen = isPanelOpen(TOOL_IDS.RULER);
     const diceOpen = isPanelOpen(TOOL_IDS.DICE);
-    const statsOpen = isPanelOpen(TOOL_IDS.STATS);
 
     return (
         <Box
@@ -304,7 +203,7 @@ export default function LeftToolsRail() {
             }}
         >
             <CyberTooltip
-                title={toolsRailOpen ? "Replegar herramientas" : "Herramientas (dados / stats)"}
+                title={toolsRailOpen ? "Replegar herramientas" : "Herramientas (regla / dados)"}
                 placement="right"
             >
                 <IconButton
@@ -451,7 +350,7 @@ export default function LeftToolsRail() {
                                 </CyberTooltip>
                             )}
                             panel={(
-                                <Box sx={panelShellSx}>
+                                <Box sx={{ ...panelShellSx, maxWidth: "min(280px, calc(100vw - 72px))" }}>
                                     <CyberText
                                         sx={{
                                             fontFamily: "monospace",
@@ -463,61 +362,6 @@ export default function LeftToolsRail() {
                                         DADOS
                                     </CyberText>
                                     <DiceRollerBar character={selected} layout="stack" />
-                                </Box>
-                            )}
-                        />
-                    )}
-
-                    {hasStats && (
-                        <ToolRow
-                            open={statsOpen}
-                            button={(
-                                <CyberTooltip
-                                    title={statsOpen ? "Cerrar stats" : "Stats del personaje"}
-                                    placement="right"
-                                >
-                                    <IconButton
-                                        size="small"
-                                        onClick={() => togglePanel(TOOL_IDS.STATS)}
-                                        aria-pressed={statsOpen}
-                                        aria-label="Panel de stats"
-                                        sx={glassBtnSx(statsOpen)}
-                                    >
-                                        <QueryStatsIcon sx={{ fontSize: "1.15rem" }} />
-                                    </IconButton>
-                                </CyberTooltip>
-                            )}
-                            panel={(
-                                <Box sx={panelShellSx}>
-                                    <CyberText
-                                        sx={{
-                                            fontFamily: "monospace",
-                                            fontSize: "0.48rem",
-                                            letterSpacing: "0.12em",
-                                            color: UI_COLORS.anomaly,
-                                        }}
-                                    >
-                                        STATS
-                                    </CyberText>
-                                    <Box
-                                        sx={{
-                                            display: "flex",
-                                            flexDirection: "row",
-                                            flexWrap: "wrap",
-                                            alignItems: "center",
-                                            gap: 0.4,
-                                        }}
-                                    >
-                                        {(statDefs || []).map((def) => (
-                                            <StatIconButton
-                                                key={def.key}
-                                                statDef={def}
-                                                value={selected.stats?.[def.key] ?? 0}
-                                                busy={false}
-                                                onRoll={() => handleStatRoll(def)}
-                                            />
-                                        ))}
-                                    </Box>
                                 </Box>
                             )}
                         />

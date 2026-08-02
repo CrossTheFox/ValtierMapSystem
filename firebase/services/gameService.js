@@ -18,6 +18,13 @@ export async function getOrCreateGameSession(campaignId) {
             rulers: {},
             pings: {},
             sessionPools: {},
+            initiative: {
+                open: false,
+                started: false,
+                entries: [],
+                activeIndex: 0,
+                round: 1,
+            },
         };
         await setDoc(docRef, initial);
         return initial;
@@ -35,7 +42,7 @@ export async function updatePartyPosition(campaignId, mapId, position) {
 }
 
 /**
- * @param {object|null} position — `{ x, y, sizeOverride? }` or null to remove
+ * @param {object|null} position — `{ x, y, sizeOverride?, conditions?, visible? }` or null to remove
  */
 export async function updateTokenPosition(campaignId, mapId, tokenId, position) {
     const docRef = gameRef(campaignId);
@@ -72,17 +79,72 @@ export async function placeTokenOnBoard(campaignId, mapId, tokenId, position, lo
     }
 }
 
+/**
+ * Batch place/move tokens (multi-drag). One merge write for positions + parallel location syncs.
+ * @param {Array<{ tokenId: string, position: object, locationId?: string|null }>} updates
+ */
+export async function placeTokensOnBoard(campaignId, mapId, updates) {
+    if (!campaignId || !mapId || !Array.isArray(updates) || updates.length === 0) return;
+    if (updates.length === 1) {
+        const u = updates[0];
+        return placeTokenOnBoard(campaignId, mapId, u.tokenId, u.position, u.locationId ?? null);
+    }
+    const mapPatch = {};
+    for (const u of updates) {
+        if (!u?.tokenId || !u.position) continue;
+        mapPatch[u.tokenId] = u.position;
+    }
+    if (Object.keys(mapPatch).length === 0) return;
+    const docRef = gameRef(campaignId);
+    await setDoc(docRef, { tokenPositions: { [mapId]: mapPatch } }, { merge: true });
+    await Promise.all(
+        updates
+            .filter((u) => u?.tokenId && u.locationId)
+            .map((u) => updateCharacterFields(u.tokenId, { locationId: u.locationId })),
+    );
+}
+
 export async function removeTokenFromMap(campaignId, mapId, tokenId) {
     return updateTokenPosition(campaignId, mapId, tokenId, null);
 }
 
-export async function updateTokenSizeOverride(campaignId, mapId, tokenId, sizeOverride, existingPos) {
-    const base = existingPos && typeof existingPos === "object" ? existingPos : { x: 0, y: 0 };
-    return updateTokenPosition(campaignId, mapId, tokenId, {
+function mergeTokenPos(existingPos, patch) {
+    const base = existingPos && typeof existingPos === "object" ? { ...existingPos } : { x: 0, y: 0 };
+    return {
+        ...base,
         x: base.x ?? 0,
         y: base.y ?? 0,
-        sizeOverride: sizeOverride || null,
-    });
+        ...patch,
+    };
+}
+
+export async function updateTokenSizeOverride(campaignId, mapId, tokenId, sizeOverride, existingPos) {
+    return updateTokenPosition(
+        campaignId,
+        mapId,
+        tokenId,
+        mergeTokenPos(existingPos, { sizeOverride: sizeOverride || null }),
+    );
+}
+
+/** @param {string[]} conditions */
+export async function updateTokenConditions(campaignId, mapId, tokenId, conditions, existingPos) {
+    return updateTokenPosition(
+        campaignId,
+        mapId,
+        tokenId,
+        mergeTokenPos(existingPos, { conditions: Array.isArray(conditions) ? conditions : [] }),
+    );
+}
+
+/** @param {boolean} visible */
+export async function updateTokenVisibility(campaignId, mapId, tokenId, visible, existingPos) {
+    return updateTokenPosition(
+        campaignId,
+        mapId,
+        tokenId,
+        mergeTokenPos(existingPos, { visible: visible !== false }),
+    );
 }
 
 export function subscribeToGameSession(campaignId, callback) {
@@ -182,4 +244,38 @@ export async function updateCharacterSessionPools(campaignId, characterId, pools
         },
         { merge: true },
     );
+}
+
+/** Shared initiative tracker (DM writes; all clients read). */
+export function normalizeInitiative(raw) {
+    const src = raw && typeof raw === "object" ? raw : {};
+    const entries = Array.isArray(src.entries)
+        ? src.entries
+            .filter((e) => e && e.id)
+            .map((e, i) => ({
+                uid: e.uid || `legacy-${e.id}-${i}`,
+                id: String(e.id),
+                name: e.name || String(e.id),
+                init: Number.isFinite(Number(e.init)) ? Math.floor(Number(e.init)) : 0,
+            }))
+        : [];
+    const n = entries.length;
+    let activeIndex = Math.floor(Number(src.activeIndex) || 0);
+    if (n <= 0) activeIndex = 0;
+    else activeIndex = ((activeIndex % n) + n) % n;
+    const round = Math.max(1, Math.floor(Number(src.round) || 1));
+    return {
+        open: src.open === true,
+        started: src.started === true,
+        entries,
+        activeIndex,
+        round,
+    };
+}
+
+export async function updateInitiative(campaignId, initiative) {
+    if (!campaignId) return;
+    const payload = normalizeInitiative(initiative);
+    await setDoc(gameRef(campaignId), { initiative: payload }, { merge: true });
+    return payload;
 }

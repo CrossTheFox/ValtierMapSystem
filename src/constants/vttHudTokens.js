@@ -43,6 +43,12 @@ export const VTT_RIGHT_DOCK = {
 };
 
 export const VTT_DIALOG_SIZE = {
+    /** Compact floating panels (initiative, etc.). */
+    md: {
+        width: "min(440px, 92vw)",
+        height: "min(560px, 82vh)",
+        borderRadius: 2,
+    },
     /** Near full-bleed on 1080p / 1440p / ultrawide (no hard 1100–1280 caps). */
     lg: {
         width: "min(96vw, 100%)",

@@ -24,8 +24,10 @@ const uiSlice = createSlice({
             screenY: 0,
             worldX: 0,
             worldY: 0,
-            type: "map",      // "map" | "location"
+            type: "map",      // "map" | "location" | "token"
             location: null,
+            tokenId: null,
+            tokenName: null,
         },
         measureTool: {
             pointA: null,     // legacy local measure (kept for compat)
@@ -49,6 +51,7 @@ const uiSlice = createSlice({
             sheet: false,        // CharactersSettingsDialog (dossier)
             settings: false,     // AdminSettingsDialog
             loreBrowser: false,  // LoreDialog en modo browse (sin selectedLore)
+            initiative: false,   // InitiativeTurnBar (DM)
         },
         /**
          * Deep-link target when opening the character dossier.
@@ -61,6 +64,10 @@ const uiSlice = createSlice({
         },
         /** IC speech bubbles over map tokens: characterId → { messageId, text, expiresAt } */
         tokenSpeech: {},
+        /** Tokens selected on the active map (multi-select / marquee). */
+        selectedTokenIds: [],
+        /** Ephemeral turn-focus flash on the map (local, not Firestore). */
+        turnFocus: null, // { id, x, y, mapId, createdAt }
     },
     reducers: {
         selectLocationPreview(state, action) {
@@ -142,7 +149,18 @@ const uiSlice = createSlice({
 
         // ── Context Menu ──────────────────────────────────────────
         openContextMenu(state, action) {
-            state.contextMenu = { open: true, ...action.payload };
+            state.contextMenu = {
+                open: true,
+                screenX: 0,
+                screenY: 0,
+                worldX: 0,
+                worldY: 0,
+                type: "map",
+                location: null,
+                tokenId: null,
+                tokenName: null,
+                ...action.payload,
+            };
         },
         closeContextMenu(state) {
             state.contextMenu.open = false;
@@ -265,6 +283,39 @@ const uiSlice = createSlice({
                 }
             }
         },
+
+        // ── Token selection ───────────────────────────────────────
+        setSelectedTokenIds(state, action) {
+            const ids = Array.isArray(action.payload) ? action.payload : [];
+            state.selectedTokenIds = [...new Set(ids.filter(Boolean).map(String))];
+        },
+        toggleTokenSelected(state, action) {
+            const id = action.payload != null ? String(action.payload) : null;
+            if (!id) return;
+            const idx = state.selectedTokenIds.indexOf(id);
+            if (idx >= 0) state.selectedTokenIds.splice(idx, 1);
+            else state.selectedTokenIds.push(id);
+        },
+        clearTokenSelection(state) {
+            state.selectedTokenIds = [];
+        },
+        setTurnFocus(state, action) {
+            const p = action.payload;
+            if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) {
+                state.turnFocus = null;
+                return;
+            }
+            state.turnFocus = {
+                id: p.id || `tf-${Date.now()}`,
+                x: p.x,
+                y: p.y,
+                mapId: p.mapId ?? null,
+                createdAt: p.createdAt ?? Date.now(),
+            };
+        },
+        clearTurnFocus(state) {
+            state.turnFocus = null;
+        },
     },
 });
 
@@ -303,6 +354,11 @@ export const {
     showTokenSpeech,
     dismissTokenSpeech,
     pruneExpiredTokenSpeech,
+    setSelectedTokenIds,
+    toggleTokenSelected,
+    clearTokenSelection,
+    setTurnFocus,
+    clearTurnFocus,
 } = uiSlice.actions;
 
 export default uiSlice.reducer;

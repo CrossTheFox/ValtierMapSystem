@@ -45,6 +45,14 @@ const gameSlice = createSlice({
         pings: {},
         /** Shared session pools: characterId → { hp, effort, ..., updatedAt } */
         sessionPools: {},
+        /** Shared initiative tracker (DM writes). */
+        initiative: {
+            open: false,
+            started: false,
+            entries: [],
+            activeIndex: 0,
+            round: 1,
+        },
     },
     reducers: {
         setPartyPositions(state, action) {
@@ -64,6 +72,16 @@ const gameSlice = createSlice({
             if ("rulers" in data) assignMap(state, "rulers", data.rulers);
             if ("pings" in data) assignMap(state, "pings", data.pings);
             if ("sessionPools" in data) assignMap(state, "sessionPools", data.sessionPools);
+            if ("initiative" in data) {
+                const next = data.initiative ?? {
+                    open: false,
+                    started: false,
+                    entries: [],
+                    activeIndex: 0,
+                    round: 1,
+                };
+                if (!samePlain(state.initiative, next)) state.initiative = next;
+            }
         },
         setRulers(state, action) {
             assignMap(state, "rulers", action.payload);
@@ -73,6 +91,16 @@ const gameSlice = createSlice({
         },
         setSessionPools(state, action) {
             assignMap(state, "sessionPools", action.payload);
+        },
+        setInitiative(state, action) {
+            const next = action.payload ?? {
+                open: false,
+                started: false,
+                entries: [],
+                activeIndex: 0,
+                round: 1,
+            };
+            if (!samePlain(state.initiative, next)) state.initiative = next;
         },
     },
 });
@@ -85,5 +113,6 @@ export const {
     setRulers,
     setPings,
     setSessionPools,
+    setInitiative,
 } = gameSlice.actions;
 export default gameSlice.reducer;

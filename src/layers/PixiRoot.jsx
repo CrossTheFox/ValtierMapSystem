@@ -6,6 +6,7 @@ import MapViewportProvider from "../pixi/MapViewport";
 import LocationsLayer from "../pixi/LocationsLayer";
 import RulersLayer from "../pixi/RulersLayer";
 import PingLayer from "../pixi/PingLayer";
+import TurnFocusLayer from "../pixi/TurnFocusLayer";
 import GridLayer from "../pixi/GridLayer";
 import TokenLayer from "../pixi/TokenLayer";
 import TokenSpeechLayer from "../pixi/TokenSpeechLayer";
@@ -53,6 +54,7 @@ export default function PixiRoot({ onViewportReady }) {
                     <LocationsLayer />
                     <RulersLayer />
                     <PingLayer />
+                    <TurnFocusLayer />
                     <TokenLayer />
                     <TokenSpeechLayer />
                 </MapViewportProvider>

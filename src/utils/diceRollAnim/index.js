@@ -17,6 +17,7 @@ export {
 export {
     cellIndexRect,
     layoutSlots,
+    layoutGridStage,
     centerSlotIndex,
     alignSlotsToScreenCenter,
     arrangeBatchCentered,
@@ -38,6 +39,7 @@ export {
     animSwarmCascade,
     pickHeroAndRail,
     drawRollerRail,
+    drawGridTray,
 } from "./draw";
 
 export {

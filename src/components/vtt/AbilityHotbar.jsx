@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Box, IconButton, Paper } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { useSelector } from "react-redux";
@@ -10,53 +10,32 @@ import { VTT_HUD } from "../../constants/vttHudTokens";
 import { getAbilitiesByIds } from "../../../firebase/services/characterService";
 import { callAbilityInChat } from "../../../firebase/services/chatService";
 import { filterCallableAbilities } from "../../utils/callableAbilities";
-import { canControlToken, isDmRole } from "../../utils/tokenControl";
-import { listCampaignCharacters } from "../../utils/characterCombat";
 
 /**
  * Horizontal ability bar for the currently selected combat character.
  * Only `type === "ability"` (no traits / upgrades / masteries / LB).
  * Expands to the right of the abilities toggle in CharacterCombatHud.
+ *
+ * @param {object} props
+ * @param {boolean} props.open
+ * @param {() => void} [props.onClose]
+ * @param {object|null} props.character — active combat character from parent HUD
  */
-export default function AbilityHotbar({ open, onClose }) {
+export default function AbilityHotbar({ open, onClose, character }) {
     const [abilities, setAbilities] = useState([]);
     const [loading, setLoading] = useState(false);
 
     const campaignId = useSelector((s) => s.world.selectedCampaignId);
     const profile = useSelector((s) => s.player.profile);
-    const locations = useSelector((s) => s.world.locations);
-    const charactersById = useSelector((s) => s.world.charactersById ?? {});
-    const sheetCharacters = useSelector((s) => s.characters.list);
-    const isDM = isDmRole(profile?.role);
-
-    const roster = useMemo(() => {
-        const byId = new Map(
-            listCampaignCharacters(charactersById, locations).map((c) => [c.id, c]),
-        );
-        (sheetCharacters || []).forEach((c) => {
-            if (c?.id && !byId.has(c.id)) byId.set(c.id, c);
-        });
-        const all = [...byId.values()];
-        return isDM ? all : all.filter((c) => canControlToken(c, profile));
-    }, [charactersById, locations, sheetCharacters, isDM, profile]);
-
-    const selected = useMemo(() => {
-        const id = profile?.activeCharacterId;
-        if (id) {
-            const hit = roster.find((c) => c.id === id);
-            if (hit) return hit;
-        }
-        return roster[0] || null;
-    }, [profile?.activeCharacterId, roster]);
 
     useEffect(() => {
-        if (!open || !selected?.unlockedAbilities?.length) {
+        if (!open || !character?.unlockedAbilities?.length) {
             setAbilities([]);
             return undefined;
         }
         let cancelled = false;
         setLoading(true);
-        getAbilitiesByIds(selected.unlockedAbilities)
+        getAbilitiesByIds(character.unlockedAbilities)
             .then((list) => {
                 if (!cancelled) setAbilities(filterCallableAbilities(list));
             })
@@ -65,14 +44,14 @@ export default function AbilityHotbar({ open, onClose }) {
                 if (!cancelled) setLoading(false);
             });
         return () => { cancelled = true; };
-    }, [open, selected?.id, selected?.unlockedAbilities]);
+    }, [open, character?.id, character?.unlockedAbilities]);
 
     const handleCall = async (ability) => {
-        if (!campaignId || !selected) return;
+        if (!campaignId || !character) return;
         await callAbilityInChat(campaignId, profile, {
             ...ability,
-            characterId: selected.id,
-            characterName: selected.name,
+            characterId: character.id,
+            characterName: character.name,
         });
     };
 

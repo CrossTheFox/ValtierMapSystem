@@ -18,6 +18,7 @@ import MapSelectorHUD from "../components/vtt/MapSelectorHUD";
 import CharacterCombatHud from "../components/vtt/CharacterCombatHud";
 import LeftToolsRail from "../components/vtt/LeftToolsRail";
 import VttDiceChatDock from "../components/vtt/VttDiceChatDock";
+import InitiativeTurnBar from "../components/vtt/InitiativeTurnBar";
 import {
     CHAT_MESSAGE_TYPES,
     subscribeToChatMessages,
@@ -38,6 +39,7 @@ const MemoCyberSnackbar = memo(CyberSnackbar);
 const MemoCharactersGlobalDialog = memo(CharactersGlobalDialog);
 const MemoCharactersSettingsDialog = memo(CharactersSettingsDialog);
 const MemoAdminSettingsDialog = memo(AdminSettingsDialog);
+const MemoInitiativeTurnBar = memo(InitiativeTurnBar);
 const MemoMapSelectorHUD = memo(MapSelectorHUD);
 const MemoTopRightHUD = memo(TopRightHUD);
 const MemoCharacterCombatHud = memo(CharacterCombatHud);
@@ -72,6 +74,7 @@ export default function UIOverlay() {
     const activeMapId = useSelector((s) => s.world.activeMapId ?? s.world.map?.id);
     // Stable empty fallback — never allocate `{}` in the selector (re-render storm).
     const tokenPositions = useSelector((s) => s.game.tokenPositions) || EMPTY_TOKEN_POSITIONS;
+    const initiativeOpen = useSelector((s) => s.game.initiative?.open === true);
 
     useEffect(() => {
         speechSeededRef.current = false;
@@ -171,6 +174,8 @@ export default function UIOverlay() {
                     onClose={closeSettings}
                 />
             )}
+
+            {isAuthenticated && initiativeOpen && <MemoInitiativeTurnBar />}
 
             <MemoCyberSnackbar />
 

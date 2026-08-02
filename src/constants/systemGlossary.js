@@ -766,7 +766,7 @@ export const SYSTEM_GLOSSARY_SECTIONS = [
             {
                 term: "VIT / HP",
                 definition:
-                    "Vitalidad del personaje. HP máximo = VIT × 4. La vida actual de sesión se ajusta en el HUD de combate del mapa.",
+                    "Vitalidad del personaje. HP máximo de hoja = VIT × 4. En sesión, cada VIT perdido reduce el HP máximo en ¼ (HP_sesión = VIT_actual × 4). Si el HP llega a 0, se pierde 1 VIT y el HP se rellena al nuevo máximo; con el último VIT, el personaje cae.",
             },
             {
                 term: "Estados de sesión",

@@ -13,9 +13,10 @@ import CheckIcon from "@mui/icons-material/Check";
 import PeopleAltIcon from "@mui/icons-material/PeopleAlt";
 import AutoStoriesIcon from "@mui/icons-material/AutoStories";
 import HubIcon from "@mui/icons-material/Hub";
+import SportsKabaddiIcon from "@mui/icons-material/SportsKabaddi";
 import { switchMap, setGridConfig, persistMapGridConfig } from "../../store/worldSlice";
-import { openDialog, openWikiOverlay, restoreDialog } from "../../store/uiSlice";
-import { setActiveMapForPlayers } from "../../../firebase/services/gameService";
+import { openDialog, openWikiOverlay, restoreDialog, showSnackbar } from "../../store/uiSlice";
+import { setActiveMapForPlayers, updateInitiative, normalizeInitiative } from "../../../firebase/services/gameService";
 import { CyberText, CyberTitle } from "../customs/CustomTexts";
 import { UI_COLORS } from "../../constants/uiColors";
 import { VTT_HUD } from "../../constants/vttHudTokens";
@@ -23,6 +24,7 @@ import { cyberMenuItemSx, cyberMenuPaperSx } from "../../constants/designSystem"
 import { DIALOG_IDS } from "../../constants/dialogIds";
 import { DEFAULT_GRID_COLUMNS, resolveCellSize } from "../../utils/gridMath";
 import { isDmRole } from "../../utils/tokenControl";
+import { isEmptyTableMap } from "../../constants/emptyTableMap";
 
 const navIconSx = (active) => ({
     width: 32,
@@ -51,17 +53,19 @@ export default function MapSelectorHUD({ children = null }) {
     const gridConfig = useSelector((s) => s.world.gridConfig);
     const gameActiveMapId = useSelector((s) => s.game.activeMapId);
     const { openDialogs, wikiOverlay } = useSelector((s) => s.ui);
+    const initiative = useSelector((s) => s.game.initiative);
 
     const [gridAnchor, setGridAnchor] = useState(null);
     const [mapMenuAnchor, setMapMenuAnchor] = useState(null);
     const [colsDraft, setColsDraft] = useState(String(gridConfig?.columns ?? DEFAULT_GRID_COLUMNS));
 
     const isDM = isDmRole(role);
+    const emptyTable = isEmptyTableMap(map) || !maps?.length;
     const displayMapId = isDM ? activeMapId : (gameActiveMapId ?? activeMapId);
     const currentMap = maps?.find((m) => m.id === displayMapId) || map;
     const viewingPublished = Boolean(displayMapId && gameActiveMapId && displayMapId === gameActiveMapId);
     const resolvedCell = resolveCellSize(map, gridConfig);
-    const mapId = activeMapId ?? map?.id;
+    const mapId = emptyTable ? null : (activeMapId ?? map?.id);
     const mapLocked = !isDM && !!gameActiveMapId;
     const campaignLabel = (campaignName || "VALT6-01").toUpperCase();
 
@@ -184,6 +188,32 @@ export default function MapSelectorHUD({ children = null }) {
                             <HubIcon sx={{ fontSize: "1.05rem" }} />
                         </IconButton>
                     </Tooltip>
+                    {isDM && (
+                        <Tooltip title={initiative?.open ? "Cerrar iniciativa" : "Abrir iniciativa"} placement="bottom">
+                            <IconButton
+                                size="small"
+                                onClick={async () => {
+                                    if (!campaignId) return;
+                                    const cur = normalizeInitiative(initiative);
+                                    try {
+                                        await updateInitiative(campaignId, {
+                                            ...cur,
+                                            open: !cur.open,
+                                        });
+                                    } catch (err) {
+                                        console.error(err);
+                                        dispatch(showSnackbar({
+                                            message: "No se pudo actualizar iniciativa",
+                                            severity: "error",
+                                        }));
+                                    }
+                                }}
+                                sx={navIconSx(!!initiative?.open)}
+                            >
+                                <SportsKabaddiIcon sx={{ fontSize: "1.05rem" }} />
+                            </IconButton>
+                        </Tooltip>
+                    )}
                 </Box>
             </Box>
 
@@ -232,7 +262,7 @@ export default function MapSelectorHUD({ children = null }) {
                                 textAlign: "left",
                             }}
                         >
-                            {currentMap?.name ?? (maps?.length ? "Mapa" : "Sin mapas")}
+                            {emptyTable ? "Sin mapa" : (currentMap?.name ?? "Mapa")}
                         </Box>
                         {viewingPublished && (
                             <Chip

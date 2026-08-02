@@ -12,6 +12,7 @@ import {
     mergeGridConfig,
     normalizeMapGridConfig,
 } from "../constants/gridConfig";
+import { createEmptyTableMap } from "../constants/emptyTableMap";
 
 function serializeFirestore(doc) {
     const data = doc.data();
@@ -96,16 +97,24 @@ export const loadWorld = createAsyncThunk(
     "world/load",
     async (campaignId) => {
         const maps = await getMapsByCampaign(campaignId);
+        const campaignSnap = await getDoc(doc(db, "campaigns", campaignId));
+        const campaignName = campaignSnap.exists() ? campaignSnap.data().name ?? null : null;
 
         if (!maps.length) {
-            throw new Error("No map found for campaign");
+            const placeholder = createEmptyTableMap(campaignId);
+            return {
+                maps: [],
+                map: placeholder,
+                activeMapId: null,
+                locations: {},
+                charactersById: {},
+                campaignName,
+            };
         }
 
         const map = maps[0];
         const mapId = map.id;
         const { locations, charactersById } = await loadLocationsForMap(mapId, campaignId);
-
-        const campaignSnap = await getDoc(doc(db, "campaigns", campaignId));
 
         return {
             maps,
@@ -113,7 +122,7 @@ export const loadWorld = createAsyncThunk(
             activeMapId: mapId,
             locations,
             charactersById,
-            campaignName: campaignSnap.exists() ? campaignSnap.data().name ?? null : null,
+            campaignName,
         };
     }
 );
