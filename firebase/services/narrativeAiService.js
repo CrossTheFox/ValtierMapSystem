@@ -22,12 +22,16 @@ import {
     SITUATION_RESPONSE_SCHEMA,
     NARRATIVE_IMPACT_RESPONSE_SCHEMA,
     CASCADE_RESPONSE_SCHEMA,
+    CASCADE_SCOUT_RESPONSE_SCHEMA,
+    CASCADE_SCOUT_MODEL_ID,
     buildSituationSystemPrompt,
     buildNarrativeImpactSystemPrompt,
     buildCascadeSystemPrompt,
+    buildCascadeScoutSystemPrompt,
     buildSituationUserPrompt,
     buildNarrativeImpactUserPrompt,
     buildCascadeUserPrompt,
+    buildCascadeScoutUserPrompt,
 } from "../../src/constants/wiki/narrativeAiSchemas";
 import { getAiRelationTypeList } from "../../src/constants/wikiRelationTypes";
 import { resolveGenerationParams } from "../../src/constants/wiki/narrativeAiConfig";
@@ -36,8 +40,9 @@ import { resolveGeminiApiKey } from "../../src/utils/aiApiKeys";
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function getSchema(mode) {
-    if (mode === AI_MODES.SITUATION)        return SITUATION_RESPONSE_SCHEMA;
-    if (mode === AI_MODES.CASCADE)          return CASCADE_RESPONSE_SCHEMA;
+    if (mode === AI_MODES.SITUATION)     return SITUATION_RESPONSE_SCHEMA;
+    if (mode === AI_MODES.CASCADE)       return CASCADE_RESPONSE_SCHEMA;
+    if (mode === AI_MODES.CASCADE_SCOUT) return CASCADE_SCOUT_RESPONSE_SCHEMA;
     return NARRATIVE_IMPACT_RESPONSE_SCHEMA;
 }
 
@@ -46,9 +51,11 @@ function getSystemPrompt(mode, guardrailsText) {
     let prompt;
     if (mode === AI_MODES.SITUATION)        prompt = buildSituationSystemPrompt();
     else if (mode === AI_MODES.CASCADE)     prompt = buildCascadeSystemPrompt(typeList);
+    else if (mode === AI_MODES.CASCADE_SCOUT) prompt = buildCascadeScoutSystemPrompt();
     else                                    prompt = buildNarrativeImpactSystemPrompt(typeList);
 
-    if (guardrailsText?.trim()) {
+    // Scout does not need guardrails (no narrative elaboration)
+    if (guardrailsText?.trim() && mode !== AI_MODES.CASCADE_SCOUT) {
         prompt = `${prompt}\n\n${guardrailsText.trim()}`;
     }
     return prompt;
@@ -61,7 +68,19 @@ function getUserPrompt(mode, contextText, { intent, instruction, resolvedMention
     if (mode === AI_MODES.CASCADE) {
         return buildCascadeUserPrompt(contextText, instruction ?? "", resolvedMentions ?? []);
     }
+    if (mode === AI_MODES.CASCADE_SCOUT) {
+        return buildCascadeScoutUserPrompt(contextText, instruction ?? "");
+    }
     return buildNarrativeImpactUserPrompt(contextText, instruction ?? "");
+}
+
+/**
+ * Resolve the model ID to use for a given mode.
+ * CASCADE_SCOUT always uses flash-lite (classification task, not narrative elaboration).
+ */
+function resolveModelId(mode, requestedModelId) {
+    if (mode === AI_MODES.CASCADE_SCOUT) return CASCADE_SCOUT_MODEL_ID;
+    return requestedModelId;
 }
 
 // ── Gemini providers ──────────────────────────────────────────────────────────
@@ -72,11 +91,14 @@ const GEMINI_BASE_DELAY_MS = 2000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const CASCADE_OUTPUT_TOKENS = 8192;
-const DEFAULT_OUTPUT_TOKENS = 4096;
+const CASCADE_OUTPUT_TOKENS = 6144;
+const CASCADE_SCOUT_OUTPUT_TOKENS = 2048;
+const DEFAULT_OUTPUT_TOKENS = 8192;
 
 function outputTokenLimit(mode) {
-    return mode === AI_MODES.CASCADE ? CASCADE_OUTPUT_TOKENS : DEFAULT_OUTPUT_TOKENS;
+    if (mode === AI_MODES.CASCADE)       return CASCADE_OUTPUT_TOKENS;
+    if (mode === AI_MODES.CASCADE_SCOUT) return CASCADE_SCOUT_OUTPUT_TOKENS;
+    return DEFAULT_OUTPUT_TOKENS;
 }
 
 function getGenConfig(mode, generationParams) {
@@ -92,12 +114,16 @@ async function callGeminiDirect({ mode, contextText, modelId, intent, instructio
         );
     }
 
+    const effectiveModelId = resolveModelId(mode, modelId);
     const systemPrompt = getSystemPrompt(mode, guardrailsText);
     const userPrompt   = getUserPrompt(mode, contextText, { intent, instruction, resolvedMentions });
     const schema       = getSchema(mode);
-    const modelsToTry  = modelId === "gemini-2.5-flash"
-        ? ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
-        : [modelId];
+    // Scout uses flash-lite directly; no fallback needed (already the fallback model)
+    const modelsToTry  = mode === AI_MODES.CASCADE_SCOUT
+        ? [effectiveModelId]
+        : effectiveModelId === "gemini-2.5-flash"
+            ? ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
+            : [effectiveModelId];
 
     const gen = getGenConfig(mode, generationParams);
 
@@ -150,9 +176,10 @@ async function callGeminiDirect({ mode, contextText, modelId, intent, instructio
 }
 
 async function callGemini({ mode, contextText, modelId, intent, instruction, resolvedMentions, guardrailsText, generationParams }) {
-    const schema = getSchema(mode);
-    const gen    = getGenConfig(mode, generationParams);
-    const model  = getStructuredGeminiModel(modelId, schema, {
+    const schema          = getSchema(mode);
+    const gen             = getGenConfig(mode, generationParams);
+    const effectiveModel  = resolveModelId(mode, modelId);
+    const model  = getStructuredGeminiModel(effectiveModel, schema, {
         maxOutputTokens: gen.maxOutputTokens,
         temperature:     gen.temperature,
         topP:            gen.topP,

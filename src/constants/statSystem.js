@@ -18,8 +18,12 @@ export const STAT_SYSTEM = DEFAULT_STAT_SYSTEM;
 /** Default ICON-style pools; override per campaign via stat_systems.resourceTracks */
 export const DEFAULT_RESOURCE_TRACKS = [
     { key: "effort", label: "Effort", maxDefault: 3, stateKey: "exhausted", stateLabel: "Exhausted" },
-    { key: "strain", label: "Strain", maxDefault: 5, stateKey: "broken", stateLabel: "Broken" }
 ];
+
+/** Strain removed — narrative/tactical unified on Effort only. */
+export function filterResourceTracks(tracks) {
+    return (tracks || []).filter((t) => t?.key && t.key !== "strain");
+}
 
 /** Empty bond object — one per character in Firestore field `bond` */
 export const emptyBond = () => ({
@@ -40,10 +44,4 @@ export const defaultEffort = (max = 3) => ({
     current: 0,
     max,
     exhausted: false
-});
-
-export const defaultStrain = (max = 5) => ({
-    current: 0,
-    max,
-    broken: false
 });

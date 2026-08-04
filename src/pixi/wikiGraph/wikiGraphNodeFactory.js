@@ -3,15 +3,17 @@
  *
  * Resolves the display texture for a wiki entity node in the graph.
  *
- * Fallback chain:
- *   1. wikiEntity.imageUrl (Firebase Storage or HTTPS URL)
- *   2. VTT character image (via assetLoader, if linkedVttCharacterId is set)
- *   3. Symbol sprite drawn with PIXI.Graphics (entity-type icon)
+ * Fallback chain (via resolveWikiEntityImageCandidates — tries each until load works):
+ *   1. wikiEntity.imageUrl
+ *   2. VTT character image (linked / title match)
+ *   3. VTT location image (linked / title match)
+ *   4. Symbol sprite drawn with PIXI.Graphics (entity-type icon)
  */
 
 import * as PIXI from "pixi.js";
 import { loadFirebaseAsset } from "../../../firebase/services/assetLoader";
 import { NODE_COLORS, NODE_SYMBOLS, NODE_RADIUS } from "./wikiGraphTypes";
+import { resolveWikiEntityImageCandidates } from "../../utils/resolveWikiEntityImage";
 
 // Module-level cache — bounded to avoid unbounded GPU memory in large wikis.
 const _textureCache = new Map();
@@ -56,10 +58,13 @@ export function drawSymbolNode(entityType) {
     const symbol = NODE_SYMBOLS[entityType] ?? "?";
 
     const g = new PIXI.Graphics();
-    g.setFillStyle({ color, alpha: 0.18 });
+    g.setFillStyle({ color: 0x0a0a12, alpha: 0.92 });
     g.circle(0, 0, NODE_RADIUS);
     g.fill();
-    g.setStrokeStyle({ width: 1.5, color, alpha: 0.85 });
+    g.setFillStyle({ color, alpha: 0.08 });
+    g.circle(0, 0, NODE_RADIUS);
+    g.fill();
+    g.setStrokeStyle({ width: 1.8, color, alpha: 0.9 });
     g.circle(0, 0, NODE_RADIUS);
     g.stroke();
     container.addChild(g);
@@ -69,7 +74,7 @@ export function drawSymbolNode(entityType) {
         style: new PIXI.TextStyle({
             fontSize: 18,
             fill: color,
-            fontFamily: "sans-serif",
+            fontFamily: "'Fira Code', monospace",
             align: "center",
         }),
     });
@@ -81,33 +86,45 @@ export function drawSymbolNode(entityType) {
 
 /**
  * Build a circular avatar sprite from a loaded texture.
+ * Image uses contain-fit inside the circle — original aspect ratio is preserved.
  * @param {PIXI.Texture} texture
  * @param {string} entityType
+ * @param {number} [radius=NODE_RADIUS]
  * @returns {PIXI.Container}
  */
-function makeAvatarSprite(texture, entityType) {
+function makeAvatarSprite(texture, entityType, radius = NODE_RADIUS) {
     const container = new PIXI.Container();
+    const color = NODE_COLORS[entityType] ?? 0x888888;
+    const innerR = radius - 2;
 
-    // Circular mask
+    const fill = new PIXI.Graphics();
+    fill.setFillStyle({ color: 0x0a0a12, alpha: 0.92 });
+    fill.circle(0, 0, radius);
+    fill.fill();
+    fill.setFillStyle({ color, alpha: 0.08 });
+    fill.circle(0, 0, radius);
+    fill.fill();
+    container.addChild(fill);
+
     const mask = new PIXI.Graphics();
     mask.setFillStyle({ color: 0xffffff });
-    mask.circle(0, 0, NODE_RADIUS - 2);
+    mask.circle(0, 0, innerR);
     mask.fill();
     container.addChild(mask);
 
     const sprite = new PIXI.Sprite(texture);
-    const size = (NODE_RADIUS - 2) * 2;
-    sprite.width = size;
-    sprite.height = size;
+    const texW = texture.orig?.width ?? texture.width ?? 1;
+    const texH = texture.orig?.height ?? texture.height ?? 1;
+    const maxDim = innerR * 2;
+    const fitScale = Math.min(maxDim / texW, maxDim / texH);
+    sprite.scale.set(fitScale);
     sprite.anchor.set(0.5);
     sprite.mask = mask;
     container.addChild(sprite);
 
-    // Ring
     const ring = new PIXI.Graphics();
-    const color = NODE_COLORS[entityType] ?? 0x888888;
     ring.setStrokeStyle({ width: 2, color, alpha: 0.9 });
-    ring.circle(0, 0, NODE_RADIUS - 1);
+    ring.circle(0, 0, radius - 1);
     ring.stroke();
     container.addChild(ring);
 
@@ -119,25 +136,16 @@ function makeAvatarSprite(texture, entityType) {
  * Resolves asynchronously; consumers can start with symbol and swap texture in.
  *
  * @param {object} entity - wikiEntity
- * @param {{ [charId]: string }} vttCharacterImages - map charId → imageUrl from world.locations
+ * @param {Record<string, object>} locations - world.locations (pins + nested characters)
+ * @param {Record<string, object>|null} [charactersById] - campaign roster (includes null locationId)
  * @returns {Promise<"symbol"|PIXI.Container>} — "symbol" means use drawSymbolNode; otherwise ready container
  */
-export async function resolveNodeVisual(entity, vttCharacterImages = {}) {
-    // 1. Wiki-level imageUrl
-    if (entity.imageUrl) {
-        const tex = await loadTextureSafe(entity.imageUrl);
+export async function resolveNodeVisual(entity, locations = {}, charactersById = null) {
+    const candidates = resolveWikiEntityImageCandidates(entity, locations, charactersById);
+    for (const imagePath of candidates) {
+        const tex = await loadTextureSafe(imagePath);
         if (tex) return makeAvatarSprite(tex, entity.entityType);
     }
 
-    // 2. VTT character image
-    if (entity.linkedVttCharacterId) {
-        const imgUrl = vttCharacterImages[entity.linkedVttCharacterId];
-        if (imgUrl) {
-            const tex = await loadTextureSafe(imgUrl);
-            if (tex) return makeAvatarSprite(tex, entity.entityType);
-        }
-    }
-
-    // 3. Symbol fallback
     return "symbol";
 }

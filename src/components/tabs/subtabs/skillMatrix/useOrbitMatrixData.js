@@ -21,8 +21,12 @@ import {
  *
  * @param {Record<string, unknown>} character
  * @param {number} layoutView — lado del cuadrado lógico (px) para geometría
+ * @param {{ singleJob?: boolean, focusClassId?: string|null }} [opts]
+ *   singleJob: una órbita 360° por job (no gajos multiclass). focusClassId selecciona el job.
  */
-export function useOrbitMatrixData(character, layoutView) {
+export function useOrbitMatrixData(character, layoutView, opts = {}) {
+    const singleJob = opts.singleJob !== false; // default: per-job full orbit
+    const focusClassIdOpt = opts.focusClassId ?? null;
     const dispatch = useDispatch();
     const { loading: legLoad, allAbilities: legAll, treeData: legTree } = useSkillMatrixAbilities(character);
     const [mcLoading, setMcLoading] = useState(true);
@@ -31,14 +35,21 @@ export function useOrbitMatrixData(character, layoutView) {
     const wheelModel = useMemo(() => buildWheelModel(character), [character?.assignedClassIds, character?.activeClassId]);
     const { mode, ids, jobCount, activeClassId, activeIdx } = wheelModel;
 
+    const focusClassId = useMemo(() => {
+        if (focusClassIdOpt && ids.includes(focusClassIdOpt)) return focusClassIdOpt;
+        if (activeClassId && ids.includes(activeClassId)) return activeClassId;
+        return ids[0] || null;
+    }, [focusClassIdOpt, activeClassId, ids]);
+
     const assignedKey = Array.isArray(character?.assignedClassIds) ? character.assignedClassIds.join(",") : "";
     const activeKey = character?.activeClassId || "";
 
     const geom = useMemo(() => {
-        const view = layoutView;
+        const view = Math.max(240, layoutView);
         const cx = view / 2;
         const cy = view / 2;
-        const rOut = view * 0.48;
+        // Leave room for outer node radius (~23px) + stroke so rings are not clipped
+        const rOut = Math.max(90, view * 0.5 - 32);
         return { view, cx, cy, rOut };
     }, [layoutView]);
 
@@ -77,16 +88,62 @@ export function useOrbitMatrixData(character, layoutView) {
     const unlocked = character?.unlockedAbilities;
     const checkU = useCallback((key) => unlocked?.includes(key), [unlocked]);
 
-    const halfSpan = HALF_SPAN_BY_COUNT[jobCount] ?? 60;
-    const bases = BASE_BISECTORS_BY_COUNT[jobCount] || BASE_BISECTORS_BY_COUNT[3];
+    const halfSpan = singleJob ? 180 : (HALF_SPAN_BY_COUNT[jobCount] ?? 60);
+    const bases = singleJob
+        ? [-90]
+        : (BASE_BISECTORS_BY_COUNT[jobCount] || BASE_BISECTORS_BY_COUNT[3]);
 
     const sectorLayouts = useMemo(() => {
         const out = [];
         const { cx, cy, rOut } = geom;
+        void cx;
+        void cy;
+        void rOut;
 
         if (mode === "multiclass") {
             if (!mcPayload?.byKey || !mcPayload.keysByClassId) return null;
             const { metaById, byKey, keysByClassId } = mcPayload;
+
+            // One full 360° orbit for the focused job only
+            if (singleJob && focusClassId) {
+                const classId = focusClassId;
+                const slotIndex = Math.max(0, ids.indexOf(classId));
+                const bis = -90;
+                const span = 180;
+                const keys = keysByClassId[classId] || [];
+                const laneAbs = keys.map((k) => byKey[k]).filter(Boolean);
+                const meta = metaById[classId] || {};
+                const accent = archGlow(meta.classArchetype);
+                if (!laneAbs.length) {
+                    return [{
+                        slotIndex,
+                        classId,
+                        bis,
+                        halfSpan: span,
+                        label: "JOB",
+                        accent: "rgba(255,255,255,0.2)",
+                        displayName: (meta.displayName || classId).toString(),
+                        isActive: true,
+                        empty: true,
+                    }];
+                }
+                const root = findClassRootFromList(laneAbs);
+                const tree = buildTreeData(laneAbs, unlocked);
+                const layout = layoutSectorBranch(bis, span, tree, root, accent, laneAbs, geom);
+                return [{
+                    slotIndex,
+                    classId,
+                    bis,
+                    halfSpan: span,
+                    label: "JOB",
+                    accent,
+                    displayName: (meta.displayName || classId).toString(),
+                    isActive: true,
+                    layout,
+                    empty: false,
+                }];
+            }
+
             for (let i = 0; i < jobCount; i++) {
                 const classId = ids[i];
                 const bis = normalizeDeg(bases[i] ?? -90);
@@ -133,14 +190,15 @@ export function useOrbitMatrixData(character, layoutView) {
         const root = findClassRootFromList(legAll);
         const accent = archGlow(root?.classArchetype);
         const bis = -90;
-        const layout = layoutSectorBranch(bis, 90, legTree, root, accent, legAll, geom);
+        const span = singleJob ? 180 : 90;
+        const layout = layoutSectorBranch(bis, span, legTree, root, accent, legAll, geom);
         return [
             {
                 slotIndex: 0,
                 classId: null,
                 bis,
-                halfSpan: 90,
-                label: "HOJA",
+                halfSpan: span,
+                label: "JOB",
                 accent,
                 displayName: (character?.name || "PERSONAJE").toString().toUpperCase(),
                 isActive: true,
@@ -148,7 +206,10 @@ export function useOrbitMatrixData(character, layoutView) {
                 empty: false,
             },
         ];
-    }, [mode, mcPayload, ids, jobCount, activeClassId, legTree, legAll, unlocked, character?.name, geom, halfSpan, bases]);
+    }, [
+        mode, mcPayload, ids, jobCount, activeClassId, legTree, legAll, unlocked,
+        character?.name, geom, halfSpan, bases, singleJob, focusClassId,
+    ]);
 
     const guideMeta = useMemo(() => orbitGuideMeta(geom), [geom]);
 
@@ -185,5 +246,7 @@ export function useOrbitMatrixData(character, layoutView) {
         jobCount,
         activeClassId,
         activeIdx,
+        singleJob,
+        focusClassId,
     };
 }

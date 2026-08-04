@@ -56,14 +56,14 @@ export function computeGraphLayout(entities, relations, { width = 1200, height =
             "link",
             forceLink(links)
                 .id((d) => d.id)
-                .distance(140)
+                .distance(200)
                 .strength(0.5)
         )
-        .force("charge", forceManyBody().strength(-280))
+        .force("charge", forceManyBody().strength(-420))
         .force("center", forceCenter(width / 2, height / 2))
-        .force("collide", forceCollide(NODE_RADIUS + 10))
-        .force("x", forceX(width / 2).strength(0.04))
-        .force("y", forceY(height / 2).strength(0.04))
+        .force("collide", forceCollide(NODE_RADIUS + 22))
+        .force("x", forceX(width / 2).strength(0.025))
+        .force("y", forceY(height / 2).strength(0.025))
         .stop();
 
     // Run synchronously for TICK_COUNT iterations

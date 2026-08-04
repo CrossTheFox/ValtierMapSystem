@@ -3,8 +3,9 @@ import { useDispatch, useSelector } from "react-redux";
 import {
     getOrCreateGameSession,
     subscribeToGameSession,
+    normalizeInitiative,
 } from "../../firebase/services/gameService";
-import { setPartyPositions } from "../store/gameSlice";
+import { setGameSession } from "../store/gameSlice";
 
 export function useGameSync() {
     const dispatch   = useDispatch();
@@ -13,11 +14,18 @@ export function useGameSync() {
     useEffect(() => {
         if (!campaignId) return;
 
-        // Ensure the document exists before subscribing
         getOrCreateGameSession(campaignId).catch(console.error);
 
         const unsub = subscribeToGameSession(campaignId, (data) => {
-            dispatch(setPartyPositions(data.partyPositions ?? {}));
+            dispatch(setGameSession({
+                partyPositions: data.partyPositions ?? {},
+                tokenPositions: data.tokenPositions ?? {},
+                activeMapId: data.activeMapId ?? null,
+                rulers: data.rulers ?? {},
+                pings: data.pings ?? {},
+                sessionPools: data.sessionPools ?? {},
+                initiative: normalizeInitiative(data.initiative),
+            }));
         });
 
         return unsub;

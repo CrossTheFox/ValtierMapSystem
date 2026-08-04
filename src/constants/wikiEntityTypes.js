@@ -9,6 +9,8 @@ export const WIKI_ENTITY_TYPES = {
     ESPECIE: "especie",
     /** Crónica — lore narrativo desbloqueable (migrado desde `encyclopedia`). */
     CRONICA: "cronica",
+    /** Término de reglas / glosario — definiciones con hover en habilidades y wiki. */
+    GLOSARIO: "glosario",
 };
 
 /** Etiquetas en español para la UI. */
@@ -22,6 +24,7 @@ export const WIKI_ENTITY_TYPE_LABELS = {
     [WIKI_ENTITY_TYPES.IDIOMA]: "Idioma",
     [WIKI_ENTITY_TYPES.ESPECIE]: "Especie",
     [WIKI_ENTITY_TYPES.CRONICA]: "Crónica",
+    [WIKI_ENTITY_TYPES.GLOSARIO]: "Glosario",
 };
 
 /**
@@ -37,6 +40,7 @@ export const WIKI_ENTITY_CREATION_ORDER = [
     WIKI_ENTITY_TYPES.PERSONAJE,
     WIKI_ENTITY_TYPES.RELIQUIA,
     WIKI_ENTITY_TYPES.EVENTO_HISTORICO,
+    WIKI_ENTITY_TYPES.GLOSARIO,
 ];
 
 /** Tipos que aparecen en el editor general (cronica se gestiona por su propio flujo). */
@@ -47,6 +51,35 @@ export const WIKI_ENTITY_TYPE_OPTIONS = WIKI_ENTITY_CREATION_ORDER.map((value) =
     value,
     label: WIKI_ENTITY_TYPE_LABELS[value],
 }));
+
+/** Orden de visualización en el archivo narrativo (listado, filtros y agrupación). */
+export const WIKI_ARCHIVE_DISPLAY_ORDER = [
+    WIKI_ENTITY_TYPES.PERSONAJE,
+    WIKI_ENTITY_TYPES.LOCACION,
+    WIKI_ENTITY_TYPES.ORGANIZACION,
+    WIKI_ENTITY_TYPES.ESPECIE,
+    WIKI_ENTITY_TYPES.RELIQUIA,
+    WIKI_ENTITY_TYPES.IDEOLOGIA,
+    WIKI_ENTITY_TYPES.IDIOMA,
+    WIKI_ENTITY_TYPES.EVENTO_HISTORICO,
+    WIKI_ENTITY_TYPES.CRONICA,
+    WIKI_ENTITY_TYPES.GLOSARIO,
+];
+
+export const WIKI_ARCHIVE_TYPE_OPTIONS = WIKI_ARCHIVE_DISPLAY_ORDER.map((value) => ({
+    value,
+    label: WIKI_ENTITY_TYPE_LABELS[value],
+}));
+
+/** @param {{ entityType?: string, title?: string }} a @param {{ entityType?: string, title?: string }} b */
+export function compareEntitiesByArchiveOrder(a, b) {
+    const ia = WIKI_ARCHIVE_DISPLAY_ORDER.indexOf(a.entityType);
+    const ib = WIKI_ARCHIVE_DISPLAY_ORDER.indexOf(b.entityType);
+    const ra = ia === -1 ? 999 : ia;
+    const rb = ib === -1 ? 999 : ib;
+    if (ra !== rb) return ra - rb;
+    return (a.title || "").localeCompare(b.title || "", "es", { sensitivity: "base" });
+}
 
 /** Tipo `entityType` inferido desde categoría de entrada encyclopedia legacy. */
 export function inferEntityTypeFromLoreCategory(category = "") {

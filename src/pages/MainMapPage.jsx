@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { useSelector } from "react-redux";
 import { Box } from "@mui/material";
 
@@ -12,20 +12,28 @@ import CyberPattern from "../components/animations/CyberPattern";
 import { UI_COLORS } from "../constants/uiColors";
 import { RENDER_LAYERS } from "../constants/renderLayers";
 import { StyledWrapper } from "../styles/LandingPageStyles";
+import { ViewportContext } from "../context/ViewportContext";
 
 import CampaignSelector from "./CampaignSelector";
 
 import { useWorldSync } from "../hooks/useWorldSync";
 import { useGameSync } from "../hooks/useGameSync";
+import { useActiveMapSync } from "../hooks/useActiveMapSync";
+import { useMapGridSync } from "../hooks/useMapGridSync";
+import { usePlayerProfileSync } from "../hooks/usePlayerProfileSync";
 
 export default function MainMapPage() {
     const mainContainerRef = useRef(null);
+    const [viewport, setViewport] = useState(null);
     const { worldStatus, assetsStatus, selectedCampaignId } = useSelector((state) => state.world);
 
     const isReady = worldStatus === "succeeded" && assetsStatus === "succeeded";
 
     useWorldSync();
     useGameSync();
+    useActiveMapSync();
+    useMapGridSync();
+    usePlayerProfileSync();
 
     useEffect(() => {
         if (isReady && mainContainerRef.current) {
@@ -73,33 +81,35 @@ export default function MainMapPage() {
     }
 
     return (
-        <Box sx={{ 
-            position: "relative", 
-            width: "100vw", 
-            height: "100vh", 
-            bgcolor: UI_COLORS.backgroundPrimary || "#0e0e14", 
-            overflow: "hidden" 
-        }}>
-            {!isReady && <CyberLoader />}
+        <ViewportContext.Provider value={viewport}>
+            <Box sx={{
+                position: "relative",
+                width: "100vw",
+                height: "100vh",
+                bgcolor: UI_COLORS.backgroundPrimary || "#0e0e14",
+                overflow: "hidden",
+            }}>
+                {!isReady && <CyberLoader />}
 
-            <Box 
-                ref={mainContainerRef} 
-                sx={{ 
-                    width: "100%", 
-                    height: "100%",
-                    visibility: isReady ? "visible" : "hidden",
-                    position: "absolute",
-                    zIndex: RENDER_LAYERS.MAP,
-                    WebkitMaskRepeat: "no-repeat",
-                    WebkitMaskPosition: "center",
-                    maskRepeat: "no-repeat",
-                    maskPosition: "center",
-                }}
-            >
-                <PixiRoot />
+                <Box
+                    ref={mainContainerRef}
+                    sx={{
+                        width: "100%",
+                        height: "100%",
+                        visibility: isReady ? "visible" : "hidden",
+                        position: "absolute",
+                        zIndex: RENDER_LAYERS.MAP,
+                        WebkitMaskRepeat: "no-repeat",
+                        WebkitMaskPosition: "center",
+                        maskRepeat: "no-repeat",
+                        maskPosition: "center",
+                    }}
+                >
+                    <PixiRoot onViewportReady={setViewport} />
+                </Box>
+
+                {isReady && <UIOverlay />}
             </Box>
-
-            {isReady && <UIOverlay />}
-        </Box>
+        </ViewportContext.Provider>
     );
 }

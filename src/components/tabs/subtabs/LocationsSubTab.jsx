@@ -1,13 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Accordion, AccordionSummary, AccordionDetails, Stack, IconButton, Tooltip, Grid } from '@mui/material';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import { Box, Stack, IconButton, Tooltip, Grid } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import AddLocationAltIcon from '@mui/icons-material/AddLocationAlt';
 import EditLocationAltIcon from '@mui/icons-material/EditLocationAlt';
 import { CyberTitle, CyberText } from '../../customs/CustomTexts';
-import { CyberAutocomplete } from '../../customs/CyberAutocomplete';
 import { CyberInput, CyberButton } from '../../customs/CyberInputs';
-import { CyberTextField } from '../../customs/CyberTextField';
 import { updateCampaignElement, createCampaignElement } from '../../../../firebase/services/campaignService';
 import { deleteStorageFile, uploadLocationImage } from '../../../../firebase/services/assetLoader';
 import { useDispatch, useSelector } from 'react-redux';
@@ -18,15 +15,18 @@ import { useCampaignWikiEntities } from '../../../hooks/useCampaignWikiEntities'
 import { linkWikiLocacionToVtt } from '../../../../firebase/services/wikiVttLinkService';
 import { fetchWikiEntities } from '../../../store/wikiSlice';
 import AutoStoriesIcon from '@mui/icons-material/AutoStories';
+import { VttToWikiLinkBadge } from '../../wiki/VttWikiLinkBadge';
 import { UI_COLORS } from '../../../constants/uiColors';
+import { CYBER_SCROLL_STYLE } from '../../../constants/cyberScrollStyle';
 import { EntityImageManager } from '../../EntityImageManager';
 import useDialogActions from '../../../hooks/useDialogActions';
+import { DIALOG_IDS } from '../../../constants/dialogIds';
 
 export default function LocationsSubTab({ currentCampaignId, locations, maps }) {
     const dispatch = useDispatch();
     const { isSelectingPosition, selectedWorldPosition } = useSelector((state) => state.ui);
     const uid = useSelector((state) => state.player.profile?.uid);
-    const { forceMinimize } = useDialogActions();
+    const { forceMinimize } = useDialogActions(DIALOG_IDS.LOCATION);
     const wikiEntities = useCampaignWikiEntities(currentCampaignId);
 
     const [selectedItem, setSelectedItem] = useState(null);
@@ -142,64 +142,88 @@ export default function LocationsSubTab({ currentCampaignId, locations, maps }) 
         : "SET_WORLD_POSITION";
 
     return (
-        <Stack spacing={3}>             
-            <Stack direction="row" spacing={1} alignItems="center">
-                <CyberAutocomplete
-                    sx={{ width: '50%' }}
-                    options={locations}
-                    getOptionLabel={(option) => option.name || ""}
-                    value={selectedItem}
-                    onChange={(e, val) => setSelectedItem(val)}
-                    renderInput={(params) => (
-                        <CyberTextField
-                            {...params} 
-                            label="SEARCH_LOCATIONS_DATABASE" 
-                            placeholder="AWAITING_INPUT..."
-                        />
-                    )}
-                    slotProps={{
-                        paper: {
-                            sx: {
-                                backgroundColor: '#0a0a0a',
-                                color: '#fff',
-                                borderRadius: 0,
-                                border: `1px solid ${UI_COLORS.accent || "#00f2ea"}33`,
-                                fontFamily: 'Michroma, sans-serif',
-                                '& .MuiAutocomplete-listbox': {
-                                    '& .MuiAutocomplete-option': {
-                                        '&:hover': { backgroundColor: `${UI_COLORS.accent || "#00f2ea"}22` },
-                                        '&[aria-selected="true"]': { backgroundColor: `${UI_COLORS.accent || "#00f2ea"}44` }
-                                    }
-                                }
-                            }
-                        }
-                    }}
-                />
-                <Tooltip title="ADD_NEW_ENTRY">
-                    <IconButton 
+        <Box
+            sx={{
+                display: "flex",
+                height: "100%",
+                minHeight: 420,
+                border: `1px solid ${UI_COLORS.border}`,
+                borderRadius: 1,
+                overflow: "hidden",
+            }}
+        >
+            <Box
+                sx={{
+                    width: 240,
+                    flexShrink: 0,
+                    borderRight: `1px solid ${UI_COLORS.border}`,
+                    bgcolor: `${UI_COLORS.backgroundPrimary}aa`,
+                    display: "flex",
+                    flexDirection: "column",
+                    minHeight: 0,
+                }}
+            >
+                <Box sx={{ p: 1.25, borderBottom: `1px solid ${UI_COLORS.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <CyberTitle sx={{ fontSize: "0.65rem", color: UI_COLORS.anomaly, letterSpacing: "0.1em" }}>
+                        LOCACIONES
+                    </CyberTitle>
+                    <IconButton
+                        size="small"
                         onClick={handleAddNew}
-                        sx={{ 
-                            border: `1px solid ${UI_COLORS.accent}33`, 
-                            borderRadius: 0,
-                            color: UI_COLORS.accent 
+                        sx={{
+                            color: UI_COLORS.accent,
+                            border: `1px solid ${UI_COLORS.accent}55`,
+                            borderRadius: 0.75,
+                            width: 28,
+                            height: 28,
                         }}
                     >
-                        <AddIcon />
+                        <AddIcon sx={{ fontSize: "1rem" }} />
                     </IconButton>
-                </Tooltip>
-            </Stack>
+                </Box>
+                <Box sx={{ flex: 1, overflowY: "auto", ...CYBER_SCROLL_STYLE }}>
+                    {(locations || []).map((loc) => {
+                        const active = selectedItem?.id === loc.id;
+                        return (
+                            <Box
+                                key={loc.id}
+                                onClick={() => setSelectedItem(loc)}
+                                sx={{
+                                    px: 1.5,
+                                    py: 1.05,
+                                    cursor: "pointer",
+                                    borderLeft: `3px solid ${active ? UI_COLORS.anomaly : "transparent"}`,
+                                    bgcolor: active ? `${UI_COLORS.anomaly}12` : "transparent",
+                                    "&:hover": { bgcolor: "rgba(255,255,255,0.04)" },
+                                }}
+                            >
+                                <CyberText sx={{ fontSize: "0.72rem", color: active ? UI_COLORS.anomaly : UI_COLORS.textPrimary }}>
+                                    {loc.name || loc.id}
+                                </CyberText>
+                                <CyberText sx={{ fontSize: "0.55rem", color: UI_COLORS.textSecondary, fontFamily: "'Fira Code', monospace" }}>
+                                    {loc.mapId ? String(loc.mapId).slice(0, 8) : "sin mapa"}
+                                </CyberText>
+                            </Box>
+                        );
+                    })}
+                    {selectedItem?.isNew && (
+                        <Box sx={{ px: 1.5, py: 1, borderLeft: `3px solid ${UI_COLORS.accent}`, bgcolor: `${UI_COLORS.accent}12` }}>
+                            <CyberText sx={{ fontSize: "0.72rem", color: UI_COLORS.accent }}>
+                                {selectedItem.name || "Nueva locación"}
+                            </CyberText>
+                            <CyberText sx={{ fontSize: "0.55rem", color: UI_COLORS.textSecondary }}>sin guardar</CyberText>
+                        </Box>
+                    )}
+                </Box>
+            </Box>
 
-            {selectedItem && (
-                <Accordion sx={{ 
-                    backgroundColor: 'rgba(0,0,0,0.3)', 
-                    border: `1px solid ${UI_COLORS.accent || "#00f2ea"}66`,
-                    borderRadius: 0,
-                    mb: 4 
-                }}>
-                    <AccordionSummary expandMoreIcon={<ExpandMoreIcon sx={{color: '#00f2ea'}} />}>
-                        <CyberText sx={{ color: '#00f2ea' }}>PROTOCOL: EDIT_{selectedItem.name.toUpperCase()}</CyberText>
-                    </AccordionSummary>
-                    <AccordionDetails>
+            <Box sx={{ flex: 1, minWidth: 0, overflowY: "auto", p: 2, ...CYBER_SCROLL_STYLE }}>
+            {!selectedItem ? (
+                <CyberText sx={{ color: UI_COLORS.textSecondary, fontSize: "0.75rem" }}>
+                    Selecciona o crea una locación.
+                </CyberText>
+            ) : (
+                <>
                         <Grid container spacing={3}>
                             <Grid size={7}> 
                                 <Stack spacing={3}>
@@ -249,9 +273,14 @@ export default function LocationsSubTab({ currentCampaignId, locations, maps }) 
 
                                     <Box sx={{ border: `1px solid ${UI_COLORS.accent}33`, p: 2, borderRadius: 0 }}>
                                         <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
-                                            <CyberText sx={{ color: UI_COLORS.accent, fontSize: '0.75rem' }}>
-                                                NARRATIVE_ARCHIVE_LINK
-                                            </CyberText>
+                                            <Stack direction="row" alignItems="center" gap={1}>
+                                                <CyberText sx={{ color: UI_COLORS.accent, fontSize: '0.75rem' }}>
+                                                    NARRATIVE_ARCHIVE_LINK
+                                                </CyberText>
+                                                {linkedNarrativeEntity && (
+                                                    <VttToWikiLinkBadge wikiEntity={linkedNarrativeEntity} compact />
+                                                )}
+                                            </Stack>
                                             <Tooltip title={selectedItem.id ? "Abrir o crear ficha en el archivo" : "Guarda la ubicación primero"}>
                                                 <span>
                                                     <IconButton
@@ -312,9 +341,9 @@ export default function LocationsSubTab({ currentCampaignId, locations, maps }) 
                                 COMMIT_CHANGES
                             </CyberButton>
                         </Box>
-                    </AccordionDetails>
-                </Accordion>
+                </>
             )}
-        </Stack>
+            </Box>
+        </Box>
     );
 }

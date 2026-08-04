@@ -6,13 +6,14 @@
  * Propagation animation updates alpha/pulses/edges in place (no full rebuild).
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSelector } from "react-redux";
 import * as PIXI from "pixi.js";
 import { Viewport } from "pixi-viewport";
 import { Box } from "@mui/material";
 import HubIcon from "@mui/icons-material/Hub";
 import { UI_COLORS } from "../../constants/uiColors";
+import WikiGraphHud from "../../components/wiki/WikiGraphHud";
 import { computeGraphLayout } from "./wikiGraphLayout";
 import {
     NODE_COLORS,
@@ -36,7 +37,9 @@ import {
     tickLivePropagation,
 } from "./wikiGraphPropagationRuntime";
 
-const BG_COLOR = 0x0e0e14;
+const BG_COLOR = 0x0a0a12;
+const GRID_COLOR = 0x2a2a3d;
+const GRID_STEP = 50;
 const PAN_DURATION_MS = 720;
 const LAYOUT_WORLD = 2000;
 const NODE_LABEL_SPACE = 24;
@@ -151,7 +154,11 @@ function destroyNodeLayer(nodeLayer, app) {
     }
 }
 
-function teardownWikiGraphApp(app, viewport, { resizeObserver, panFrameRef, particleLayer } = {}) {
+function teardownWikiGraphApp(
+    app,
+    viewport,
+    { resizeObserver, panFrameRef, particleLayer, propagationOnTick, nodeLayers = [] } = {}
+) {
     if (panFrameRef?.current != null) {
         cancelAnimationFrame(panFrameRef.current);
         panFrameRef.current = null;
@@ -162,6 +169,27 @@ function teardownWikiGraphApp(app, viewport, { resizeObserver, panFrameRef, part
     if (app?._wikiResizeHandler) {
         window.removeEventListener("resize", app._wikiResizeHandler);
         app._wikiResizeHandler = null;
+    }
+
+    if (app?.ticker) {
+        if (propagationOnTick) {
+            try {
+                app.ticker.remove(propagationOnTick);
+            } catch {
+                /* teardown order */
+            }
+        }
+        try {
+            app.ticker.stop();
+        } catch {
+            /* idem */
+        }
+    }
+
+    if (app) {
+        for (const layer of nodeLayers) {
+            destroyNodeLayer(layer, app);
+        }
     }
 
     if (app && particleLayer) {
@@ -253,6 +281,21 @@ function addNodeBackdrop(container, radius) {
     container.addChild(backdrop);
 }
 
+function drawGraphGrid(worldSize = LAYOUT_WORLD) {
+    const grid = new PIXI.Graphics();
+    grid.setStrokeStyle({ width: 0.5, color: GRID_COLOR, alpha: 0.4 });
+    for (let x = 0; x <= worldSize; x += GRID_STEP) {
+        grid.moveTo(x, 0);
+        grid.lineTo(x, worldSize);
+    }
+    for (let y = 0; y <= worldSize; y += GRID_STEP) {
+        grid.moveTo(0, y);
+        grid.lineTo(worldSize, y);
+    }
+    grid.stroke();
+    return grid;
+}
+
 function ensureLayout(entities, relations, layoutRef) {
     const entityIds = entities.map((e) => e.id).sort().join(",");
     const relationIds = relations.map((r) => r.id).sort().join(",");
@@ -274,12 +317,23 @@ function ensureLayout(entities, relations, layoutRef) {
 export default function WikiGraphCanvas({
     entities = [],
     relations = [],
+    /** Full entity list for legend counts (defaults to entities). */
+    legendEntities = null,
     selectedEntityId,
+    selectedEntity = null,
     onSelectEntity,
+    onClearSelection,
+    onOpenEntityDetail,
     detailPanelOpen = false,
     labPanelOpen = true,
     propagationState = null,
+    hiddenTypes = null,
+    soloType = null,
+    onToggleType,
+    onSoloType,
+    onClearSolo,
 }) {
+    const legendSource = legendEntities ?? entities;
     const containerRef = useRef(null);
     const appRef = useRef(null);
     const viewportRef = useRef(null);
@@ -308,6 +362,7 @@ export default function WikiGraphCanvas({
     });
     const entityByIdRef = useRef(new Map());
     const lastRenderKeyRef = useRef("");
+    const propagationOnTickRef = useRef(null);
     const [ready, setReady] = useState(false);
 
     selectedEntityIdRef.current = selectedEntityId;
@@ -315,15 +370,7 @@ export default function WikiGraphCanvas({
     propagationRef.current = propagationState;
 
     const locations = useSelector((s) => s.world.locations);
-    const vttCharacterImages = useMemo(() => {
-        const map = {};
-        for (const loc of Object.values(locations)) {
-            for (const char of loc.characters || []) {
-                if (char.id && char.imageUrl) map[char.id] = char.imageUrl;
-            }
-        }
-        return map;
-    }, [locations]);
+    const charactersById = useSelector((s) => s.world.charactersById ?? {});
 
     // ── Init Pixi app ───────────────────────────────────────────────────────
     useEffect(() => {
@@ -361,6 +408,8 @@ export default function WikiGraphCanvas({
             vp.eventMode = "static";
             app.stage.addChild(vp);
             viewportRef.current = vp;
+
+            vp.addChildAt(drawGraphGrid(), 0);
 
             const edgeLayer = new PIXI.Graphics();
             vp.addChild(edgeLayer);
@@ -433,7 +482,10 @@ export default function WikiGraphCanvas({
                 resizeObserver: resizeObserverRef.current,
                 panFrameRef,
                 particleLayer: particleLayerRef.current,
+                propagationOnTick: propagationOnTickRef.current,
+                nodeLayers: [nodeLayerRef.current, selectedNodeLayerRef.current],
             });
+            propagationOnTickRef.current = null;
             resizeObserverRef.current = null;
             appRef.current = null;
             viewportRef.current = null;
@@ -449,24 +501,47 @@ export default function WikiGraphCanvas({
 
     // ── Rebuild node structure (NOT on propagation ticks) ───────────────────
     useEffect(() => {
-        if (!ready || !nodeLayerRef.current || entities.length === 0) return;
+        if (!ready || !nodeLayerRef.current) return;
 
         const app = appRef.current;
         const viewport = viewportRef.current;
         const nodeLayer = nodeLayerRef.current;
         const selectedNodeLayer = selectedNodeLayerRef.current;
+        const edgeBack = edgeLayerRef.current;
+        const edgeFront = edgeLayerFrontRef.current;
+
+        destroyNodeLayer(nodeLayer, app);
+        destroyNodeLayer(selectedNodeLayer, app);
+        nodeRegistryRef.current.clear();
+
+        if (entities.length === 0) {
+            edgeBack?.clear();
+            edgeFront?.clear();
+            layoutRef.current = null;
+            lastRenderKeyRef.current = "";
+            return;
+        }
 
         syncViewportScreen(viewport, app, containerRef.current);
 
         const { nodes, links } = ensureLayout(entities, relations, layoutRef);
         const loadGen = ++imageLoadGenRef.current;
 
-        destroyNodeLayer(nodeLayer, app);
-        destroyNodeLayer(selectedNodeLayer, app);
-        nodeRegistryRef.current.clear();
-
         const entityById = new Map(entities.map((e) => [e.id, e]));
         entityByIdRef.current = entityById;
+
+        const positions = new Map(nodes.map((n) => [n.id, n]));
+        if (edgeBack && edgeFront) {
+            drawEdges(
+                edgeBack,
+                edgeFront,
+                links,
+                positions,
+                selectedEntityId,
+                buildEffectivePropagation(propagationRef.current, liveAnimRef.current)
+            );
+            lastRenderKeyRef.current = "";
+        }
 
         for (const node of nodes) {
             const entity = entityById.get(node.id);
@@ -488,7 +563,7 @@ export default function WikiGraphCanvas({
             if (isSelected) symbolNode.scale.set(NODE_RADIUS_SELECTED / NODE_RADIUS);
             container.addChild(symbolNode);
 
-            resolveNodeVisual(entity, vttCharacterImages).then((visual) => {
+            resolveNodeVisual(entity, locations, charactersById).then((visual) => {
                 if (
                     destroyedRef.current
                     || loadGen !== imageLoadGenRef.current
@@ -497,21 +572,25 @@ export default function WikiGraphCanvas({
                 ) {
                     return;
                 }
+                const symbolIndex = container.getChildIndex(symbolNode);
                 container.removeChild(symbolNode);
                 symbolNode.destroy({ children: true });
                 if (isSelected) visual.scale.set(NODE_RADIUS_SELECTED / NODE_RADIUS);
-                container.addChildAt(visual, 0);
+                // Keep avatar above the edge-masking backdrop (index 0), not beneath it.
+                container.addChildAt(visual, symbolIndex);
             });
 
             const label = new PIXI.Text({
                 text: (entity.title || "").slice(0, 18) + (entity.title?.length > 18 ? "…" : ""),
                 style: new PIXI.TextStyle({
-                    fontSize: isSelected ? 13 : 11,
+                    fontSize: isSelected ? 10 : 9,
                     fill: nodeColor,
-                    fontFamily: "Fira Sans, sans-serif",
+                    fontFamily: "'Fira Code', monospace",
+                    letterSpacing: 1,
                     align: "center",
                 }),
             });
+            label.alpha = isSelected ? 1 : 0.6;
             label.anchor.set(0.5, 0);
             label.position.set(0, displayRadius + 5);
             container.addChild(label);
@@ -538,7 +617,7 @@ export default function WikiGraphCanvas({
         return () => {
             imageLoadGenRef.current += 1;
         };
-    }, [ready, entities, relations, selectedEntityId, vttCharacterImages]);
+    }, [ready, entities, relations, selectedEntityId, locations, charactersById]);
 
     // ── Propagation visuals via Pixi ticker (no React re-render per wave) ───
     useEffect(() => {
@@ -605,6 +684,7 @@ export default function WikiGraphCanvas({
         };
 
         const onTick = (ticker) => {
+            if (destroyedRef.current) return;
             const prop = propagationRef.current;
             if (prop?.mode !== "live" || !prop?.active) return;
             if (tickLivePropagation(prop, liveAnim, ticker.deltaMS)) {
@@ -612,11 +692,21 @@ export default function WikiGraphCanvas({
             }
         };
 
+        propagationOnTickRef.current = onTick;
         app.ticker.add(onTick);
         renderPropagation(true);
 
         return () => {
-            app.ticker.remove(onTick);
+            if (app?.ticker) {
+                try {
+                    app.ticker.remove(onTick);
+                } catch {
+                    /* app may already be destroyed */
+                }
+            }
+            if (propagationOnTickRef.current === onTick) {
+                propagationOnTickRef.current = null;
+            }
             detachEdgePropagation(app, particleLayerRef.current);
         };
     }, [ready, propagationState, selectedEntityId]);
@@ -665,6 +755,31 @@ export default function WikiGraphCanvas({
         };
     }, [ready, selectedEntityId, detailPanelOpen, labPanelOpen]);
 
+    const handleZoomIn = useCallback(() => {
+        const vp = viewportRef.current;
+        if (!vp) return;
+        vp.zoom(Math.min(vp.scale.x * 1.25, 4), true);
+    }, []);
+
+    const handleZoomOut = useCallback(() => {
+        const vp = viewportRef.current;
+        if (!vp) return;
+        vp.zoom(Math.max(vp.scale.x / 1.25, 0.15), true);
+    }, []);
+
+    const handleResetView = useCallback(() => {
+        const vp = viewportRef.current;
+        const nodes = layoutRef.current?.nodes;
+        if (!vp || !nodes?.length) return;
+        cancelViewportPan(vp);
+        const selectedId = selectedEntityIdRef.current;
+        if (selectedId) {
+            centerOnNode(vp, nodes, selectedId, { animate: false });
+        } else {
+            fitGraphToNodes(vp, nodes);
+        }
+    }, []);
+
     return (
         <Box
             sx={{
@@ -674,13 +789,30 @@ export default function WikiGraphCanvas({
                 minHeight: 0,
                 width: "100%",
                 height: "100%",
-                bgcolor: "#0e0e14",
+                bgcolor: "#0a0a12",
             }}
         >
             <div
                 ref={containerRef}
                 style={{ width: "100%", height: "100%", overflow: "hidden" }}
             />
+            {legendSource.length > 0 && (
+                <WikiGraphHud
+                    entities={legendSource}
+                    relations={relations}
+                    selectedEntity={selectedEntity}
+                    hiddenTypes={hiddenTypes}
+                    soloType={soloType}
+                    onToggleType={onToggleType}
+                    onSoloType={onSoloType}
+                    onClearSolo={onClearSolo}
+                    onZoomIn={handleZoomIn}
+                    onZoomOut={handleZoomOut}
+                    onResetView={handleResetView}
+                    onClearSelection={onClearSelection}
+                    onOpenEntityDetail={onOpenEntityDetail}
+                />
+            )}
             {entities.length === 0 && (
                 <Box
                     sx={{
@@ -696,7 +828,9 @@ export default function WikiGraphCanvas({
                 >
                     <HubIcon sx={{ color: `${UI_COLORS.accent}44`, fontSize: "3rem" }} />
                     <span style={{ color: UI_COLORS.textSecondary, fontFamily: "Fira Sans", fontSize: "0.85rem" }}>
-                        No hay entidades para mostrar en la red.
+                        {legendSource.length > 0
+                            ? "Ningún nodo visible con los filtros de tipo actuales."
+                            : "No hay entidades para mostrar en la red."}
                     </span>
                 </Box>
             )}

@@ -1,42 +1,76 @@
 import { Box } from "@mui/material";
 import { useDispatch, useSelector } from "react-redux";
-import { closeDialog, setIsMinimized, setSelectedLore } from "../../store/uiSlice";
-import { UI_COLORS } from "../../constants/uiColors";
+import {
+    closeDialog,
+    closeWikiOverlay,
+    restoreDialog,
+    setSelectedLore,
+} from "../../store/uiSlice";
+import { DIALOG_IDS } from "../../constants/dialogIds";
+import { UI_COLORS, PANEL, TYPO, SIZE } from "../../constants/designSystem";
 
 /**
- * Bottom-center pill that lists every open HUD dialog.
- * Appears only when 2+ dialogs are active so users can navigate without
- * losing context. Clicking a chip for a minimized dialog restores it.
+ * Bottom-center pill listing minimized HUD dialogs.
+ * Visible whenever at least one open dialog is minimized.
  */
 export default function DialogStackBar() {
     const dispatch = useDispatch();
-    const { openDialogs, selectedLocation, selectedLore, isMinimized, locationDialogOpen } = useSelector((s) => s.ui);
+    const {
+        openDialogs,
+        selectedLocation,
+        selectedLore,
+        minimizedDialogs,
+        locationDialogOpen,
+        wikiOverlay,
+    } = useSelector((s) => s.ui);
 
     const stack = [
-        locationDialogOpen && selectedLocation && { id: "location", label: "LOCACIÓN", minimized: isMinimized },
-        selectedLore && { id: "lore", label: "CHRONICLE", minimized: isMinimized },
-        openDialogs.loreBrowser && { id: "loreBrowser", label: "LORE" },
-        openDialogs.characters && { id: "characters", label: "CHARS" },
-        openDialogs.sheet && { id: "sheet", label: "SHEET" },
-        openDialogs.settings && { id: "settings", label: "CONFIG" },
+        locationDialogOpen && selectedLocation && {
+            id: DIALOG_IDS.LOCATION,
+            label: "LOCACIÓN",
+            minimized: minimizedDialogs[DIALOG_IDS.LOCATION],
+        },
+        selectedLore && {
+            id: DIALOG_IDS.LORE,
+            label: "CHRONICLE",
+            minimized: minimizedDialogs[DIALOG_IDS.LORE],
+        },
+        openDialogs.loreBrowser && {
+            id: DIALOG_IDS.LORE_BROWSER,
+            label: "LORE",
+            minimized: minimizedDialogs[DIALOG_IDS.LORE_BROWSER],
+        },
+        openDialogs.sheet && {
+            id: DIALOG_IDS.SHEET,
+            label: "DOSSIER",
+            minimized: minimizedDialogs[DIALOG_IDS.SHEET],
+        },
+        openDialogs.settings && {
+            id: DIALOG_IDS.SETTINGS,
+            label: "VTT CFG",
+            minimized: minimizedDialogs[DIALOG_IDS.SETTINGS],
+        },
+        wikiOverlay.open && {
+            id: DIALOG_IDS.WIKI,
+            label: "ARCHIVE",
+            minimized: minimizedDialogs[DIALOG_IDS.WIKI],
+        },
     ].filter(Boolean);
 
-    if (stack.length < 2) return null;
+    if (!stack.some((item) => item.minimized)) return null;
 
     const handleChipClick = (item) => {
-        if (item.id === "location" || item.id === "lore") {
-            if (item.minimized) dispatch(setIsMinimized(false));
-        }
-        // For other dialogs they're full-size dialogs — no minimize state needed
+        if (item.minimized) dispatch(restoreDialog(item.id));
     };
 
     const handleChipClose = (e, item) => {
         e.stopPropagation();
-        if (item.id === "location") {
-            // Don't close from here — just un-minimize
-            if (item.minimized) dispatch(setIsMinimized(false));
-        } else if (item.id === "lore") {
+        if (item.id === DIALOG_IDS.LOCATION) {
+            if (item.minimized) dispatch(restoreDialog(item.id));
+        } else if (item.id === DIALOG_IDS.LORE) {
             dispatch(setSelectedLore(null));
+        } else if (item.id === DIALOG_IDS.WIKI) {
+            dispatch(closeWikiOverlay());
         } else {
             dispatch(closeDialog(item.id));
         }
@@ -55,8 +89,8 @@ export default function DialogStackBar() {
                 gap: 0.75,
                 px: 1.5,
                 py: 0.75,
-                bgcolor: "rgba(5,5,8,0.92)",
-                border: "1px solid rgba(255,255,255,0.1)",
+                bgcolor: PANEL.glassBg,
+                border: `1px solid ${PANEL.glassBorder}`,
                 borderRadius: "99px",
                 backdropFilter: "blur(12px)",
                 animation: "fadeIn 0.2s ease-out",
@@ -80,9 +114,9 @@ export default function DialogStackBar() {
                         border: `1px solid ${item.minimized ? UI_COLORS.accent + "88" : "rgba(255,255,255,0.15)"}`,
                         bgcolor: item.minimized ? `${UI_COLORS.accent}15` : "transparent",
                         color: item.minimized ? UI_COLORS.accent : "rgba(255,255,255,0.55)",
-                        fontFamily: "'Fira Code', monospace",
-                        fontSize: "0.58rem",
-                        letterSpacing: "0.1em",
+                        fontFamily: TYPO.mono,
+                        fontSize: SIZE.chipFont,
+                        letterSpacing: SIZE.chipLetterSpacing,
                         cursor: item.minimized ? "pointer" : "default",
                         transition: "border-color 0.15s, color 0.15s",
                     }}

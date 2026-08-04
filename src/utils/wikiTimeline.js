@@ -24,7 +24,11 @@ const BRANCH_ORDER = { left: 0, center: 1, right: 2 };
 
 /**
  * @param {object} entity
- * @returns {{ calendar: string, date: string, branch: string, isCore: boolean, anchorId: string|null }}
+ * @returns {{
+ *   calendar: string, date: string, branch: string, isCore: boolean,
+ *   anchorId: string|null, eventKind: string, certainty: string,
+ *   narrativeArc: string, narrativeArcId: string|null,
+ * }}
  */
 export function getTimelineMeta(entity) {
     const t = entity?.customFields?.timeline;
@@ -37,7 +41,30 @@ export function getTimelineMeta(entity) {
         eventKind: t?.eventKind || "otro",
         certainty: t?.certainty || "canon",
         narrativeArc: t?.narrativeArc || "",
+        narrativeArcId: typeof t?.narrativeArcId === "string" && t.narrativeArcId
+            ? t.narrativeArcId
+            : null,
     };
+}
+
+/**
+ * Resolve display label for an event's arc using campaign catalog (dual-read).
+ * @param {object} entity
+ * @param {{ id: string, label: string }[]} [arcs]
+ * @returns {{ arcId: string|null, label: string }}
+ */
+export function resolveEventArc(entity, arcs = []) {
+    const meta = getTimelineMeta(entity);
+    if (meta.narrativeArcId) {
+        const found = arcs.find((a) => a.id === meta.narrativeArcId);
+        if (found) return { arcId: found.id, label: found.label };
+        return { arcId: meta.narrativeArcId, label: meta.narrativeArc || meta.narrativeArcId };
+    }
+    const label = (meta.narrativeArc || "").trim();
+    if (!label) return { arcId: null, label: "" };
+    const byLabel = arcs.find((a) => a.label === label);
+    if (byLabel) return { arcId: byLabel.id, label: byLabel.label };
+    return { arcId: null, label };
 }
 
 /**
@@ -55,8 +82,71 @@ export function buildTimelineCustomFields(partial = {}) {
             eventKind: partial.eventKind || "otro",
             certainty: partial.certainty || "canon",
             narrativeArc: partial.narrativeArc || "",
+            narrativeArcId: partial.narrativeArcId || null,
         },
     };
+}
+
+/**
+ * Count events per arc (by resolved id or legacy label key).
+ * @param {object[]} entities
+ * @param {{ id: string, label: string }[]} [arcs]
+ * @returns {Map<string, number>}
+ */
+export function countEventsByArc(entities = [], arcs = []) {
+    const counts = new Map();
+    for (const ent of entities) {
+        if (ent.entityType !== WIKI_ENTITY_TYPES.EVENTO_HISTORICO) continue;
+        const { arcId, label } = resolveEventArc(ent, arcs);
+        const key = arcId || (label ? `label:${label}` : "__none__");
+        counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return counts;
+}
+
+/**
+ * Insert arc band markers when the resolved arc changes between consecutive rows.
+ * Progress = event count for that arc (all events in catalog / legacy label).
+ * @param {Array<{ type: string, row?: object, gapYears?: number, label?: string }>} displayItems
+ * @param {{ id: string, label: string, order?: number, color?: string|null }[]} arcs
+ * @param {object[]} [entities]
+ * @returns {Array<object>}
+ */
+export function insertArcBands(displayItems = [], arcs = [], entities = []) {
+    if (!displayItems.length) return displayItems;
+    const totals = countEventsByArc(entities, arcs);
+    const out = [];
+    let lastKey = null;
+
+    for (const item of displayItems) {
+        if (item.type !== "row") {
+            out.push(item);
+            continue;
+        }
+        const firstNode = item.row?.nodes?.[0];
+        if (!firstNode) {
+            out.push(item);
+            continue;
+        }
+        const { arcId, label } = resolveEventArc(firstNode.entity, arcs);
+        const key = arcId || (label ? `label:${label}` : "__none__");
+
+        if (key !== lastKey && key !== "__none__") {
+            const catalog = arcId ? arcs.find((a) => a.id === arcId) : null;
+            const total = totals.get(key) || 0;
+            out.push({
+                type: "arc-band",
+                arcId: arcId || null,
+                label: catalog?.label || label,
+                color: catalog?.color || null,
+                total,
+                done: total,
+            });
+        }
+        lastKey = key;
+        out.push(item);
+    }
+    return out;
 }
 
 /**

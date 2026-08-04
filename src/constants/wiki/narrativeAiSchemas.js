@@ -17,6 +17,10 @@ export const AI_MODES = {
     SITUATION:        "situation",
     NARRATIVE_IMPACT: "narrative_impact",
     CASCADE:          "cascade",
+    /** Pasa 1 del Two-pass cascade (AutoWorldBuilder §4.1, SENNA Examiner pattern).
+     *  Evalúa quién se ve afectado y qué tipo de cambio predice, antes de que la Pasa 2
+     *  genere los impacts completos. Usa gemini-2.5-flash-lite (tarea de clasificación). */
+    CASCADE_SCOUT:    "cascade_scout",
 };
 
 export const AI_MODE_LABELS = {
@@ -283,18 +287,32 @@ El contexto incluye el subgrafo de personajes afectados, organizados en ONDAS (d
 Cada personaje tiene ARQUETIPO DE REACCIÓN, ESTADO NARRATIVO, PATRÓN DE ESTRÉS y RASGOS NARRATIVOS
 que definen cómo reacciona ante eventos externos. Úsalos para generar reacciones coherentes.
 
+PRESUPUESTO DE SALIDA (aplica SIEMPRE):
+- emotionalReaction: ≤ 15 palabras. Solo la emoción dominante, sin elaboración.
+- narrativeHook: ≤ 15 palabras. Solo el gancho jugable, sin contexto extra.
+- changes[].reason: ≤ 8 palabras. Solo la causa directa.
+- justificationPath: solo títulos separados por " → " (ej. "Oni → descendiente_de → Zorgun"). Sin frases.
+- personalityShift.reason: ≤ 10 palabras.
+- eventSummary: ≤ 25 palabras.
+- dmNotes: ≤ 20 palabras (o string vacío si no hay nada crítico).
+- ONDAS ≥ 2: emotionalReaction y narrativeHook pueden ser ≤ 8 palabras cada uno.
+- NUNCA repitas información que ya está en otro campo del mismo objeto.
+
 REGLAS ABSOLUTAS:
 1. Solo usa entidades que aparezcan en el contexto. Nunca inventes entidades.
-2. El array "impacts" debe tener exactamente UN objeto por cada personaje listado en "Personajes que DEBEN tener un impacto" (no generes impacts para locaciones u organizaciones — esas van en collectiveImpacts).
-3. Para cada impacto, relationType debe ser uno de estos identificadores exactos (snake_case): ${relationTypeList}.
-4. "justificationPath" debe ser una cadena de títulos reales del grafo: "A → relación → B → relación → C".
-5. Si el arquetipo indica indiferencia real (ej. "Pragmático" sin vínculo fuerte), el impacto puede ser mínimo (changes vacío, emotionalReaction breve).
-6. Si el evento requiere crear una entidad nueva (ej. el hijo, el asesino), ponla en blockedSuggestions.
-7. Responde ÚNICAMENTE con JSON válido según el esquema. Nada antes ni después del JSON.
-8. "eventTitle" debe ser un título corto y concreto para el evento histórico propuesto.
-9. Si el evento cambia el estado narrativo del personaje (narrativeState), incluye un objeto "personalityShift" con from/to/reason.
-10. Para entity_state_update: usa "field" = "narrativeState" (personaje) o "collectiveMood" (locacion/organizacion), y "newValue" como uno de los enums conocidos.
-11. Si hay entidades colectivas en "Entidades colectivas con posible impacto", incluye su reacción en "collectiveImpacts" si el evento las afecta.
+2. El array "impacts" debe tener exactamente UN objeto por cada personaje listado en "Personajes que DEBEN tener un impacto" (no generes impacts para locaciones u organizaciones — esas van en collectiveImpacts). Prioridad: fidelidad a VÍNCULOS (tipo/fuerza/label) con el ancla; los datos concretos (relationType, strengthDelta) son más importantes que la prosa.
+3. Máximo 2 objetos en "changes" por impacto (prioriza relation_update/add/remove sobre dm_note; añade entity_state_update solo si el estado cambia claramente).
+4. Para cada change de tipo relation_*: NUNCA dejes relationType vacío — usa uno de: ${relationTypeList}. Incluye fromEntityTitle y toEntityTitle exactos del contexto.
+5. Para entity_state_update: NUNCA dejes field vacío — usa "narrativeState" (personaje) o "collectiveMood" (locación/org). newValue DEBE ser un enum de la regla 11 (nunca prosa). fromEntityTitle = título del impacto.
+6. strengthDelta: en relation_update es el CAMBIO numérico sobre el peso actual (ej. -3); en relation_add es el peso ABSOLUTO de la nueva arista (escala -10..+10).
+7. Si el arquetipo indica indiferencia real (ej. "Pragmático" sin vínculo fuerte), el impacto puede ser mínimo (changes vacío).
+8. Si el evento requiere crear una entidad nueva (ej. el hijo, el asesino), ponla en blockedSuggestions.
+9. Responde ÚNICAMENTE con JSON válido según el esquema. Nada antes ni después del JSON.
+10. "eventTitle" debe ser un título corto y concreto para el evento histórico propuesto.
+11. Si el evento cambia el estado narrativo del personaje (narrativeState), incluye un objeto "personalityShift" con from/to/reason. "to" DEBE ser uno de estos enums exactos: estable, deprimida, furiosa, quebrada, obsesiva, corrupta_zarken, paranoica, indiferente, otro.
+12. Si hay entidades colectivas en "Entidades colectivas con posible impacto", incluye su reacción en "collectiveImpacts" si el evento las afecta.
+13. Campos del schema que no apliquen al kind: usa string vacío (""), nunca los omitas.
+14. Relación existente: usa from/to en la MISMA dirección que el vínculo del grafo (ej. si Oni→Zorgun es descendiente_de, actualiza ESA arista; NUNCA inventes la inversa Zorgun→Oni descendiente_de). newLabel solo para tipo "otro"; en tipos conocidos deja newLabel="".
 
 MEMORIA DE PERSONALIDAD (uso obligatorio cuando está disponible):
 - narrativeState: estado emocional/narrativo actual del personaje.
@@ -312,7 +330,8 @@ ARQUETIPO DE REACCIÓN (guía de comportamiento):
 
 AUTO-VERIFICACIÓN (antes de responder):
 - ¿Cada entidad en "impacts" existe en el contexto?
-- ¿Cada "fromEntityTitle" y "toEntityTitle" en changes existe en el contexto?
+- ¿Cada relation_* tiene relationType no vacío + from/to del contexto?
+- ¿Cada entity_state_update tiene field="narrativeState"|"collectiveMood" y newValue enum?
 - ¿El arquetipo + stressResponse del personaje son coherentes con la reacción propuesta?
 - ¿La onda asignada coincide con la distancia en el grafo indicada en el contexto?
 - ¿Los personnajes con bondNotes relevantes tienen reacción emocional acorde?`;
@@ -372,19 +391,36 @@ export const CASCADE_RESPONSE_SCHEMA = {
                                     enum: ["relation_add", "relation_update",
                                            "relation_remove", "entity_state_update", "dm_note"],
                                 },
-                                fromEntityTitle: { type: "string" },
-                                toEntityTitle:   { type: "string" },
-                                relationType:    { type: "string" },
+                                fromEntityTitle: {
+                                    type: "string",
+                                    description: "Título exacto del origen. Obligatorio en relation_* y entity_state_update; \"\" si dm_note.",
+                                },
+                                toEntityTitle: {
+                                    type: "string",
+                                    description: "Título exacto del destino. Obligatorio en relation_*; \"\" si no aplica.",
+                                },
+                                relationType: {
+                                    type: "string",
+                                    description: "snake_case del tipo de vínculo. Obligatorio en relation_*; \"\" si no aplica.",
+                                },
                                 strengthDelta:   { type: "number" },
                                 newLabel:        { type: "string" },
-                                // entity_state_update fields:
-                                field:    { type: "string" },
-                                newValue: { type: "string" },
-                                // dm_note fields:
+                                field: {
+                                    type: "string",
+                                    description: "entity_state_update: \"narrativeState\" o \"collectiveMood\". \"\" si no aplica.",
+                                },
+                                newValue: {
+                                    type: "string",
+                                    description: "Nuevo valor del field (enum narrativeState). \"\" si no aplica.",
+                                },
                                 noteText: { type: "string" },
                                 reason:   { type: "string" },
                             },
-                            required: ["kind", "reason"],
+                            required: [
+                                "kind", "reason",
+                                "fromEntityTitle", "toEntityTitle",
+                                "relationType", "field", "newValue",
+                            ],
                         },
                     },
                     justificationPath: { type: "string" },
@@ -415,16 +451,35 @@ export const CASCADE_RESPONSE_SCHEMA = {
                                     enum: ["relation_add", "relation_update",
                                            "relation_remove", "entity_state_update", "dm_note"],
                                 },
-                                fromEntityTitle: { type: "string" },
-                                toEntityTitle:   { type: "string" },
-                                relationType:    { type: "string" },
+                                fromEntityTitle: {
+                                    type: "string",
+                                    description: "Título exacto del origen. Obligatorio en relation_* y entity_state_update; \"\" si dm_note.",
+                                },
+                                toEntityTitle: {
+                                    type: "string",
+                                    description: "Título exacto del destino. Obligatorio en relation_*; \"\" si no aplica.",
+                                },
+                                relationType: {
+                                    type: "string",
+                                    description: "snake_case del tipo de vínculo. Obligatorio en relation_*; \"\" si no aplica.",
+                                },
                                 strengthDelta:   { type: "number" },
-                                field:    { type: "string" },
-                                newValue: { type: "string" },
+                                field: {
+                                    type: "string",
+                                    description: "entity_state_update: \"narrativeState\" o \"collectiveMood\". \"\" si no aplica.",
+                                },
+                                newValue: {
+                                    type: "string",
+                                    description: "Nuevo valor del field. \"\" si no aplica.",
+                                },
                                 noteText: { type: "string" },
                                 reason:   { type: "string" },
                             },
-                            required: ["kind", "reason"],
+                            required: [
+                                "kind", "reason",
+                                "fromEntityTitle", "toEntityTitle",
+                                "relationType", "field", "newValue",
+                            ],
                         },
                     },
                     confidence: { type: "string", enum: ["alta", "media", "baja"] },
@@ -462,6 +517,80 @@ export const CASCADE_RESPONSE_SCHEMA = {
                "proposedEvent", "blockedSuggestions", "dmNotes"],
 };
 
+// ── CASCADE SCOUT — Two-pass Pasa 1 ──────────────────────────────────────────
+//
+// Activado cuando expectedImpacts >= CASCADE_SCOUT_THRESHOLD.
+// El Scout evalúa el grafo y genera un seed mínimo para que el Impact
+// sepa exactamente a quién afectar y cómo. Inspirado en:
+//   - AutoWorldBuilder (Chen et al., 2026): auditor separado del generador
+//   - SENNA Examiner (Jørgensen et al., 2025): pre-evalúa antes del Narrator
+//   - PANGeA multi-step prompting: cada paso es seed del siguiente
+
+/** Número mínimo de impacts esperados para activar el two-pass Scout. */
+export const CASCADE_SCOUT_THRESHOLD = 5;
+
+/** Modelo para Pasa 1 (tarea de clasificación, no de elaboración narrativa). */
+export const CASCADE_SCOUT_MODEL_ID = "gemini-2.5-flash-lite";
+
+/**
+ * System prompt mínimo para el Scout.
+ * Propósito: identificar y clasificar impactos, NO elaborar narrativa.
+ */
+export function buildCascadeScoutSystemPrompt() {
+    return `Eres un evaluador de impacto narrativo para ICON TTRPG, campaña Valtia-01.
+Se te da un evento, una entidad ancla y una lista de personajes posiblemente afectados con sus vínculos.
+Para cada personaje de la lista, predice brevemente cómo le afecta el evento.
+
+REGLAS ABSOLUTAS:
+1. Genera exactamente un objeto por cada personaje de la lista "Personajes a evaluar". No omitas ninguno.
+2. Solo usa personajes que aparezcan en la lista. Nunca inventes entidades.
+3. emotionalKeyword: 2-3 palabras (ej. "angustia intensa", "calculada frialdad", "indiferencia táctica").
+4. topChangeType: elige solo uno: relation_update, relation_add, relation_remove, entity_state_update, none.
+5. topChangeDesc: ≤ 15 palabras que describan el cambio principal (o "sin cambio" si topChangeType es none).
+6. wave: copia la onda del personaje tal como aparece en la lista (no la cambies).
+7. Responde ÚNICAMENTE con JSON válido según el esquema. Nada antes ni después del JSON.`;
+}
+
+/**
+ * User prompt para el Scout.
+ */
+export function buildCascadeScoutUserPrompt(scoutContextText, event) {
+    return `${scoutContextText}
+
+Evento catalizador: "${event}"
+
+Para CADA personaje de la lista anterior, evalúa cómo le afecta este evento y devuelve exactamente un objeto en el array "impacts".`;
+}
+
+/**
+ * Schema mínimo para el Scout (Pasa 1).
+ * Intencionalmente pequeño: el modelo solo clasifica, no elabora.
+ */
+export const CASCADE_SCOUT_RESPONSE_SCHEMA = {
+    type: "object",
+    properties: {
+        impacts: {
+            type: "array",
+            items: {
+                type: "object",
+                properties: {
+                    entityTitle:      { type: "string" },
+                    wave:             { type: "number" },
+                    emotionalKeyword: { type: "string" },
+                    topChangeType: {
+                        type: "string",
+                        enum: ["relation_update", "relation_add", "relation_remove",
+                               "entity_state_update", "none"],
+                    },
+                    topChangeDesc: { type: "string" },
+                },
+                required: ["entityTitle", "wave", "emotionalKeyword", "topChangeType", "topChangeDesc"],
+            },
+        },
+    },
+    required: ["impacts"],
+};
+
 // ── CASCADE wave configuration ────────────────────────────────────────────────
 
 /**
@@ -470,28 +599,33 @@ export const CASCADE_RESPONSE_SCHEMA = {
  */
 export const CASCADE_CONTEXT_OPTS = {
     maxDepth:      3,
-    maxEntities:   60,
-    maxRelations:  100,
-    maxChars:      22000,
+    maxEntities:   36,
+    maxRelations:  48,
+    maxChars:      14000,
     maxWaves:      3,
-    maxImpactsPerWave: 10,
+    maxImpactsPerWave: 4,
+    /** Hard cap on characters that MUST appear in "impacts" (relation-first packing). */
+    maxTotalImpacts: 12,
 };
 
 /**
- * Returns context opts scaled for a given propagation depth (2–8).
- * Larger depth → more entities, relations and context chars sent to the LLM.
+ * Returns context opts scaled for a given propagation depth (1–8).
+ * Depth expands reach, but growth is intentional soft so long campaigns stay token-sane.
+ * Prefer depth 3–4 in play; 6–8 is experimental.
  *
- * @param {number} depth — integer 2–8
+ * @param {number} depth — integer 1–8
  */
-export function cascadeOptsForDepth(depth = 4) {
+export function cascadeOptsForDepth(depth = 3) {
     const d = Math.max(1, Math.min(8, Math.round(depth)));
     return {
         maxDepth:          d,
         maxWaves:          d,
-        maxEntities:       20 + d * 10,    // 40–100
-        maxRelations:      30 + d * 15,    // 60–150
-        maxChars:          12000 + d * 2500, // 17k–32k
-        maxImpactsPerWave: 12,
+        // depth 3 → 30 ents / 40 rels; depth 8 → 60 / 80 (antes 100 / 150)
+        maxEntities:       12 + d * 6,
+        maxRelations:      16 + d * 8,
+        maxChars:          7000 + d * 1200,
+        maxImpactsPerWave: 4,
+        maxTotalImpacts:   Math.min(12, 4 + d),
     };
 }
 

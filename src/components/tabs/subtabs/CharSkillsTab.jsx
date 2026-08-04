@@ -2,8 +2,10 @@ import React, { useState, useEffect, useMemo } from "react";
 import { Box, Stack, CircularProgress, Paper, Grid, Collapse } from "@mui/material";
 import ViewModuleIcon from "@mui/icons-material/ViewModule";
 import ViewListIcon from "@mui/icons-material/ViewList";
+import { useSelector } from "react-redux";
 import { getAbilitiesByIds } from "../../../../firebase/services/characterService";
 import { CyberTitle, CyberText } from "../../customs/CustomTexts";
+import GlossaryTextRenderer from "../../shared/GlossaryTextRenderer";
 import { UI_COLORS } from "../../../constants/uiColors";
 import { formatClassLabel } from "../../../constants/characterSheetTokens";
 
@@ -34,7 +36,7 @@ function CostBadge({ cost }) {
     );
 }
 
-const SkillCard = ({ ability, upgrades = [], accentColor = UI_COLORS.accent, listMode = false }) => (
+const SkillCard = ({ ability, upgrades = [], accentColor = UI_COLORS.accent, listMode = false, glossaryEntities = [] }) => (
     <Paper
         elevation={0}
         sx={{
@@ -79,9 +81,11 @@ const SkillCard = ({ ability, upgrades = [], accentColor = UI_COLORS.accent, lis
                 </Box>
             )}
             {ability.content && (
-                <CyberText sx={{ fontSize: listMode ? "0.78rem" : "0.85rem", lineHeight: 1.5, color: "#fff", opacity: 0.9 }}>
-                    {ability.content}
-                </CyberText>
+                <GlossaryTextRenderer
+                    text={ability.content}
+                    entities={glossaryEntities}
+                    sx={{ fontSize: listMode ? "0.78rem" : "0.85rem", lineHeight: 1.5, color: "#fff", opacity: 0.9 }}
+                />
             )}
             {upgrades.length > 0 && (
                 <Stack spacing={0.75} sx={{ mt: "auto", pt: 1.5, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
@@ -91,7 +95,7 @@ const SkillCard = ({ ability, upgrades = [], accentColor = UI_COLORS.accent, lis
                                 MOD: {upg.label?.toUpperCase()}
                             </CyberText>
                             {upg.content && (
-                                <CyberText sx={{ fontSize: "0.76rem", opacity: 0.8, color: "#fff" }}>{upg.content}</CyberText>
+                                <GlossaryTextRenderer text={upg.content} entities={glossaryEntities} sx={{ fontSize: "0.76rem", opacity: 0.8, color: "#fff" }} />
                             )}
                         </Box>
                     ))}
@@ -101,7 +105,7 @@ const SkillCard = ({ ability, upgrades = [], accentColor = UI_COLORS.accent, lis
     </Paper>
 );
 
-const GenericSkillSection = ({ group, upgrades, listMode }) => {
+const GenericSkillSection = ({ group, upgrades, listMode, glossaryEntities = [] }) => {
     const [isOpen, setIsOpen] = useState(true);
 
     const cards = group.items.map((item) => (
@@ -111,6 +115,7 @@ const GenericSkillSection = ({ group, upgrades, listMode }) => {
             upgrades={upgrades.filter((u) => u.parentId === item.key)}
             accentColor={group.color}
             listMode={listMode}
+            glossaryEntities={glossaryEntities}
         />
     ));
 
@@ -159,6 +164,7 @@ export default function CharSkillsTab({ character, playerMode = false }) {
     const [loading, setLoading] = useState(true);
     const [jobFilter, setJobFilter] = useState("ALL");
     const [listMode, setListMode] = useState(false);
+    const wikiEntities = useSelector((s) => s.wiki?.entities ?? []);
 
     const jobOptions = useMemo(() => {
         const ids = character?.assignedClassIds || [];
@@ -336,7 +342,7 @@ export default function CharSkillsTab({ character, playerMode = false }) {
                     </Box>
                 ) : (
                     groups.map((group) => (
-                        <GenericSkillSection key={group.id} group={group} upgrades={mods} listMode={playerMode && listMode} />
+                        <GenericSkillSection key={group.id} group={group} upgrades={mods} listMode={playerMode && listMode} glossaryEntities={wikiEntities} />
                     ))
                 )}
                 {groups.length === 0 && (

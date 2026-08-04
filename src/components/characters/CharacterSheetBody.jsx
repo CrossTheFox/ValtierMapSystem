@@ -1,31 +1,35 @@
 import { Box } from "@mui/material";
 
-import CharacterSheetMetaStrip from "./CharacterSheetMetaStrip";
-import CharacterSheetTabs from "./CharacterSheetTabs";
-import CharStatsTab from "./CharStatsTab";
-import CharBioTab from "./CharBioTab";
-import CharBondTab from "./CharBondTab";
-import CharSkillsTab from "../tabs/subtabs/CharSkillsTab";
-import CharTreeTab from "../tabs/subtabs/CharTreeTab";
 import { CyberText } from "../customs/CustomTexts";
 import { UI_COLORS } from "../../constants/uiColors";
-import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
+import { normalizeSheetTab } from "./CharacterSheetTabs";
+import DossierIdView from "./DossierIdView";
+import DossierKitView from "./DossierKitView";
+import CharTreeTab from "../tabs/subtabs/CharTreeTab";
 
-const TXT = { color: "rgba(255,255,255,0.92)" };
-
+/**
+ * Dossier Holodeck body — routes to ID / KIT / MESH views.
+ * Tabs live in the parent chrome; this component is pure content.
+ */
 export default function CharacterSheetBody({
     character,
     activeTab,
     onTabChange,
+    kitView = "tree",
+    onKitViewChange,
     statDefinitions = [],
+    maxStat = 4,
     wikiEntities = [],
+    avatarSize,
 }) {
-    const matrixFill = activeTab === "SKILL_MATRIX";
+    const tab = normalizeSheetTab(activeTab);
 
     if (!character) {
         return (
             <Box sx={{ p: 4 }}>
-                <CyberText sx={TXT}>No characters found.</CyberText>
+                <CyberText sx={{ color: UI_COLORS.textPrimary }}>
+                    No hay personaje activo. Elígelo en el HUD inferior.
+                </CyberText>
             </Box>
         );
     }
@@ -37,41 +41,28 @@ export default function CharacterSheetBody({
                 flexDirection: "column",
                 flex: 1,
                 minHeight: 0,
-                bgcolor: UI_COLORS.backgroundPrimary || "#12121a",
                 overflow: "hidden",
+                position: "relative",
+                bgcolor: "rgba(8,8,14,0.55)",
             }}
         >
-            {/* Fixed chrome ~10–12% */}
-            <CharacterSheetMetaStrip character={character} wikiEntities={wikiEntities} />
-            <CharacterSheetTabs value={activeTab} onChange={onTabChange} />
+            {tab === "IDENTIDAD" && (
+                <DossierIdView
+                    character={character}
+                    statDefinitions={statDefinitions}
+                    maxStat={maxStat}
+                />
+            )}
 
-            {/* Scrollable content ~88–90% */}
-            <Box
-                sx={{
-                    flex: 1,
-                    minHeight: 0,
-                    display: "flex",
-                    flexDirection: "column",
-                    overflow: matrixFill ? "hidden" : "auto",
-                    ...(!matrixFill ? CYBER_SCROLL_STYLE : {}),
-                }}
-            >
-                {activeTab === "STATS" && (
-                    <CharStatsTab character={character} statDefinitions={statDefinitions} />
-                )}
-                {activeTab === "BIO" && (
-                    <CharBioTab character={character} wikiEntities={wikiEntities} />
-                )}
-                {activeTab === "SKILLS" && (
-                    <CharSkillsTab character={character} playerMode />
-                )}
-                {activeTab === "SKILL_MATRIX" && (
-                    <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                        <CharTreeTab character={character} playerMode fillAvailable />
-                    </Box>
-                )}
-                {activeTab === "BOND" && <CharBondTab character={character} />}
-            </Box>
+            {tab === "KIT" && (
+                <DossierKitView character={character} />
+            )}
+
+            {tab === "MESH" && (
+                <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                    <CharTreeTab character={character} compactChrome />
+                </Box>
+            )}
         </Box>
     );
 }

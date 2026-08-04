@@ -107,8 +107,10 @@ export function resolveMentionClick(entityId, { entities = [], locations = {} })
             : null;
     }
 
-    const wikiEntity = entities.find((e) => e.id === entityId);
-    return wikiEntity ? { type: "wiki", entityId, entity: wikiEntity } : null;
+    const wikiEntity =
+        entities.find((e) => e.id === entityId) ||
+        entities.find((e) => e.slug === entityId);
+    return wikiEntity ? { type: "wiki", entityId: wikiEntity.id, entity: wikiEntity } : null;
 }
 
 /**

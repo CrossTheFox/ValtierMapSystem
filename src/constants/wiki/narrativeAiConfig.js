@@ -1,9 +1,9 @@
 /**
  * Configuración de IA narrativa por campaña (Firestore: aiRules + aiGeneration).
  */
-import { WIKI_ENTITY_TYPES } from "../wikiEntityTypes";
-import { CHARACTER_KIND, POPULATION_ORDER } from "./entityFieldSchemas";
-import { resolvedEntitiesFromText } from "../../utils/resolveWikiMentions";
+import { WIKI_ENTITY_TYPES } from "../wikiEntityTypes.js";
+import { CHARACTER_KIND, POPULATION_ORDER } from "./entityFieldSchemas.js";
+import { resolvedEntitiesFromText } from "../../utils/resolveWikiMentions.js";
 
 /** @param {object} entity */
 export function getPersonajeMeta(entity) {
@@ -280,8 +280,10 @@ export function buildAiGuardrailsPrompt(rules, { deadTitles = [], explicitDeadTi
  * @param {string} mode
  */
 export function resolveGenerationParams(generation, mode) {
-    const cascadeDefault = 8192;
-    const defaultDefault = 4096;
+    // Each impact targets ~80-120 tokens of lean data; 6144 comfortably covers 12+ impacts.
+    // Keeping this low forces the model to stay concise (vague word limits alone aren't enough).
+    const cascadeDefault = 6144;
+    const defaultDefault = 8192;
     const modeDefault = mode === "cascade" ? cascadeDefault : defaultDefault;
     return {
         temperature:     generation.temperature ?? DEFAULT_AI_GENERATION.temperature,

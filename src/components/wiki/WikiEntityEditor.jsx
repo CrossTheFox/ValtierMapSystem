@@ -2,21 +2,29 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
     Box,
     TextField,
-    FormControl,
-    InputLabel,
-    Select,
-    MenuItem,
     FormHelperText,
     Chip,
     Divider,
     ToggleButton,
     ToggleButtonGroup,
+    Grid,
 } from "@mui/material";
 import LockIcon from "@mui/icons-material/Lock";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import PeopleIcon from "@mui/icons-material/People";
 import { useDispatch, useSelector } from "react-redux";
 import { CyberTitle, CyberText } from "../customs/CustomTexts";
-import { UI_COLORS } from "../../constants/uiColors";
+import { UI_COLORS, primaryButtonSx, secondaryButtonSx, ACTION_LABELS } from "../../constants/designSystem";
+import {
+    wikiEditorInputSx,
+    wikiEditorScrollbarSx,
+    wikiEditorIdentityCardSx,
+    wikiEditorOptionalSectionSx,
+} from "../../constants/wikiEditorStyles";
+import {
+    resolveWikiEntityImagePath,
+    resolveWikiEntityImageSource,
+} from "../../utils/resolveWikiEntityImage";
 import { WIKI_ENTITY_TYPES, WIKI_ENTITY_TYPE_OPTIONS, WIKI_ENTITY_TYPE_LABELS } from "../../constants/wikiEntityTypes";
 import {
     TIMELINE_BRANCH,
@@ -37,9 +45,11 @@ import {
 import WikiMentionInput from "./WikiMentionInput";
 import WikiVttLinkPicker from "./WikiVttLinkPicker";
 import WikiDateInput from "./WikiDateInput";
+import WikiSearchableSelect, { enumToSearchOptions } from "./WikiSearchableSelect";
 import WikiCustomFieldsPanel from "./WikiCustomFieldsPanel";
 import WikiCreationOrderHint from "./WikiCreationOrderHint";
 import WikiImageUpload from "./WikiImageUpload";
+import WikiAiImpactBlocks from "./WikiAiImpactBlocks";
 import { saveWikiEntity, fetchWikiEntities } from "../../store/wikiSlice";
 import { slugify } from "../../utils/wikiSlug";
 import { buildMentionCandidates } from "../../utils/wikiNavigation";
@@ -47,7 +57,7 @@ import {
     reconcileOrgMembers,
     reconcilePersonajeMemberships,
 } from "../../../firebase/services/membershipService";
-import { linkWikiLocacionToVtt } from "../../../firebase/services/wikiVttLinkService";
+import { linkWikiLocacionToVtt, linkWikiPersonajeToVtt } from "../../../firebase/services/wikiVttLinkService";
 import {
     uploadWikiEntityImage,
     uploadWikiInlineImage,
@@ -59,34 +69,14 @@ import {
     collectReferencedWikiPaths,
 } from "../../utils/wikiPendingUploads";
 
-const inputSx = {
-    "& .MuiOutlinedInput-root": {
-        bgcolor: UI_COLORS.backgroundPrimary,
-        color: UI_COLORS.textPrimary,
-        fontFamily: "'Fira Sans', sans-serif",
-        fontSize: "0.85rem",
-        "& fieldset": { borderColor: UI_COLORS.border },
-        "&:hover fieldset": { borderColor: `${UI_COLORS.accent}88` },
-        "&.Mui-focused fieldset": { borderColor: UI_COLORS.accent },
-    },
-    "& .MuiInputLabel-root": { color: UI_COLORS.textSecondary, fontFamily: "'Fira Sans', sans-serif", fontSize: "0.8rem" },
-    "& .MuiInputLabel-root.Mui-focused": { color: UI_COLORS.accent },
-};
+const inputSx = wikiEditorInputSx;
+const scrollbarSx = wikiEditorScrollbarSx;
 
-const selectSx = {
-    color: UI_COLORS.textPrimary,
-    fontFamily: "'Fira Sans', sans-serif",
-    fontSize: "0.82rem",
-    bgcolor: UI_COLORS.backgroundPrimary,
-    "& .MuiSelect-select": { color: UI_COLORS.textPrimary },
-    "& .MuiOutlinedInput-notchedOutline": { borderColor: UI_COLORS.border },
-    "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: `${UI_COLORS.accent}88` },
-    "&.Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: UI_COLORS.accent },
-    "& .MuiSvgIcon-root": { color: UI_COLORS.textSecondary },
-};
-
-/** Todos los tipos narrativos son creables en el archivo (incl. locación). */
-const EDITOR_ENTITY_TYPE_OPTIONS = WIKI_ENTITY_TYPE_OPTIONS;
+const TIMELINE_BRANCH_OPTIONS = [
+    { value: TIMELINE_BRANCH.LEFT, label: "Izquierda (paralelo)" },
+    { value: TIMELINE_BRANCH.CENTER, label: "Centro" },
+    { value: TIMELINE_BRANCH.RIGHT, label: "Derecha (paralelo)" },
+];
 
 /** Label contextual para el campo de imagen según tipo de entidad. */
 const IMAGE_LABEL_BY_TYPE = {
@@ -101,6 +91,38 @@ const IMAGE_LABEL_BY_TYPE = {
     [WIKI_ENTITY_TYPES.IDIOMA]: "Símbolo o muestra del idioma",
 };
 
+/** Todos los tipos narrativos son creables en el archivo (incl. locación). */
+const EDITOR_ENTITY_TYPE_OPTIONS = WIKI_ENTITY_TYPE_OPTIONS;
+
+function EditorSection({ title, children, sx = {}, variant = "default" }) {
+    const isOptional = variant === "optional";
+    return (
+        <Box
+            sx={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 1.25,
+                ...(isOptional ? wikiEditorOptionalSectionSx : {}),
+                ...sx,
+            }}
+        >
+            {title && (
+                <CyberTitle
+                    variant="caption"
+                    sx={{
+                        color: isOptional ? UI_COLORS.textSecondary : UI_COLORS.accent,
+                        fontSize: isOptional ? "0.6rem" : "0.65rem",
+                        letterSpacing: 2,
+                    }}
+                >
+                    {title}
+                </CyberTitle>
+            )}
+            {children}
+        </Box>
+    );
+}
+
 /**
  * Inline entity editor (create or edit).
  * No nested dialogs — lives directly in the center panel of the overlay.
@@ -110,6 +132,7 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
     const uid = useSelector((s) => s.player.profile?.uid);
     const entities = useSelector((s) => s.wiki.entities);
     const locations = useSelector((s) => s.world.locations);
+    const charactersById = useSelector((s) => s.world.charactersById ?? {});
 
     const mentionCandidates = buildMentionCandidates(entities, locations, entity?.id);
 
@@ -264,6 +287,14 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
 
     const isTimelineEvent = form.entityType === WIKI_ENTITY_TYPES.EVENTO_HISTORICO;
     const timelineMeta = getTimelineMeta({ customFields: form.customFields });
+    const narrativeArcs = useSelector((s) => s.wiki.narrativeSettings?.narrativeArcs || []);
+    const arcSelectOptions = useMemo(
+        () => [
+            { value: "", label: "Sin arco" },
+            ...narrativeArcs.map((a) => ({ value: a.id, label: a.label })),
+        ],
+        [narrativeArcs],
+    );
 
     const setTimelineField = useCallback((field, value) => {
         setForm((prev) => ({
@@ -278,10 +309,49 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
         }));
     }, []);
 
+    const setTimelineArc = useCallback((arcId) => {
+        const id = arcId || null;
+        const label = id
+            ? (narrativeArcs.find((a) => a.id === id)?.label || "")
+            : "";
+        setForm((prev) => ({
+            ...prev,
+            customFields: {
+                ...prev.customFields,
+                ...buildTimelineCustomFields({
+                    ...getTimelineMeta({ customFields: prev.customFields }),
+                    narrativeArcId: id,
+                    narrativeArc: label,
+                }),
+            },
+        }));
+    }, [narrativeArcs]);
+
     // Generic per-type structured fields (especie, personaje, locacion, etc.)
     const entityMeta = getEntityMeta({ customFields: form.customFields }, form.entityType);
     const showCustomPanel =
         hasCustomFieldPanel(form.entityType) && form.entityType !== WIKI_ENTITY_TYPES.EVENTO_HISTORICO;
+
+    const showVttLink =
+        form.entityType === WIKI_ENTITY_TYPES.LOCACION ||
+        form.entityType === WIKI_ENTITY_TYPES.PERSONAJE;
+
+    const imageFallback = useMemo(() => {
+        // Always compute VTT fallback so a broken wiki imageUrl can still preview.
+        const draft = { ...entity, ...form, imageUrl: "" };
+        const path = resolveWikiEntityImagePath(draft, locations, charactersById);
+        if (!path) return null;
+        return {
+            path,
+            source: resolveWikiEntityImageSource(draft, locations, charactersById),
+        };
+    }, [entity, form, locations, charactersById]);
+
+    const imageVariant =
+        form.entityType === WIKI_ENTITY_TYPES.PERSONAJE ||
+        form.entityType === WIKI_ENTITY_TYPES.ESPECIE
+            ? "portrait"
+            : "banner";
 
     const setMetaField = useCallback((field, value) => {
         setForm((prev) => ({
@@ -331,13 +401,26 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
             if (
                 savedId &&
                 campaignId &&
-                form.entityType === WIKI_ENTITY_TYPES.LOCACION &&
-                form.linkedVttLocationId
+                form.entityType === WIKI_ENTITY_TYPES.LOCACION
             ) {
                 await linkWikiLocacionToVtt(
                     campaignId,
                     savedId,
-                    form.linkedVttLocationId,
+                    form.linkedVttLocationId || null,
+                    uid
+                );
+                dispatch(fetchWikiEntities({ campaignId }));
+            }
+
+            if (
+                savedId &&
+                campaignId &&
+                form.entityType === WIKI_ENTITY_TYPES.PERSONAJE
+            ) {
+                await linkWikiPersonajeToVtt(
+                    campaignId,
+                    savedId,
+                    form.linkedVttCharacterId || null,
                     uid
                 );
                 dispatch(fetchWikiEntities({ campaignId }));
@@ -360,68 +443,144 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
                 height: "100%",
                 minHeight: 0,
                 overflowY: "auto",
-                p: 2.5,
-                pb: 3.5,
+                p: 2,
+                pb: 3,
                 boxSizing: "border-box",
                 display: "flex",
                 flexDirection: "column",
-                gap: 2,
+                gap: 1.5,
                 ...scrollbarSx,
             }}
         >
-            <Box
-                sx={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    justifyContent: "space-between",
-                    gap: 2,
-                    flexWrap: "wrap",
-                }}
-            >
-                <CyberTitle variant="h6" sx={{ color: UI_COLORS.accent, fontSize: "1rem", flexShrink: 0 }}>
-                    {isNew ? "NUEVA_FICHA" : "EDITAR_FICHA"}
-                </CyberTitle>
+            <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 1.5, flexWrap: "wrap" }}>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap", flex: 1, minWidth: 0 }}>
+                    <CyberTitle variant="h6" sx={{ color: UI_COLORS.accent, fontSize: "0.95rem", flexShrink: 0 }}>
+                        {isNew ? "NUEVA_FICHA" : "EDITAR_FICHA"}
+                    </CyberTitle>
+                    {onCancel && (
+                        <Box
+                            component="button"
+                            type="button"
+                            onClick={onCancel}
+                            sx={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 0.5,
+                                px: 1,
+                                py: 0.35,
+                                bgcolor: "transparent",
+                                border: `1px solid ${UI_COLORS.border}`,
+                                borderRadius: 1,
+                                color: UI_COLORS.textSecondary,
+                                cursor: "pointer",
+                                fontFamily: "'Fira Sans', sans-serif",
+                                transition: "border-color 0.15s, color 0.15s",
+                                "&:hover": { borderColor: UI_COLORS.accent, color: UI_COLORS.accent },
+                            }}
+                        >
+                            <ArrowBackIcon sx={{ fontSize: "0.85rem" }} />
+                            <CyberText sx={{ fontSize: "0.75rem", fontWeight: 600, color: "inherit" }}>
+                                {entity ? ACTION_LABELS.back : ACTION_LABELS.backToList}
+                            </CyberText>
+                        </Box>
+                    )}
+                </Box>
                 {isNew && <WikiCreationOrderHint currentEntityType={form.entityType} />}
             </Box>
 
             <Divider sx={{ bgcolor: UI_COLORS.border }} />
 
-            {/* Type + title */}
-            <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
-                <FormControl size="small" sx={{ minWidth: 160 }}>
-                    <InputLabel sx={{ color: UI_COLORS.textSecondary, fontSize: "0.8rem" }}>Tipo *</InputLabel>
-                    <Select
-                        required
-                        value={form.entityType}
-                        onChange={set("entityType")}
-                        label="Tipo *"
-                        sx={selectSx}
-                        MenuProps={{
-                            PaperProps: {
-                                sx: {
-                                    bgcolor: UI_COLORS.backgroundSecondary,
-                                    color: UI_COLORS.textPrimary,
-                                },
-                            },
-                        }}
-                    >
-                        {typeOptions.map(({ value, label }) => (
-                            <MenuItem key={value} value={value} sx={{ color: UI_COLORS.textPrimary }}>
-                                <CyberText sx={{ fontSize: "0.82rem" }}>{label}</CyberText>
-                            </MenuItem>
-                        ))}
-                    </Select>
-                </FormControl>
+            <Box sx={wikiEditorIdentityCardSx}>
+                <CyberTitle variant="caption" sx={{ color: UI_COLORS.textSecondary, fontSize: "0.6rem", letterSpacing: 2 }}>
+                    IDENTIFICACIÓN
+                </CyberTitle>
+                <Grid container spacing={1.5} alignItems="flex-start">
+                <Grid size={{ xs: 12, md: showVttLink ? 8 : 9 }}>
+                    <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
+                        <Box sx={{ display: "flex", gap: 1.25, flexWrap: "wrap" }}>
+                            <WikiSearchableSelect
+                                label="Tipo *"
+                                value={form.entityType}
+                                onChange={(v) => v && setDirect("entityType", v)}
+                                options={typeOptions.map(({ value, label }) => ({ value, label }))}
+                                minWidth={150}
+                                clearable={false}
+                            />
 
-                <TextField
-                    required
-                    label="Título *"
-                    value={form.title}
-                    onChange={set("title")}
-                    size="small"
-                    sx={{ ...inputSx, flex: 1, minWidth: 180 }}
-                />
+                            <TextField
+                                required
+                                label="Título *"
+                                value={form.title}
+                                onChange={set("title")}
+                                size="small"
+                                sx={{ ...inputSx, flex: 1, minWidth: 160 }}
+                            />
+                        </Box>
+
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+                            <CyberText sx={{ fontSize: "0.72rem", color: UI_COLORS.textSecondary, flexShrink: 0 }}>
+                                Visibilidad
+                            </CyberText>
+                            <ToggleButtonGroup
+                                value={form.visibility}
+                                exclusive
+                                onChange={(_, v) => v && setDirect("visibility", v)}
+                                size="small"
+                                sx={{ bgcolor: UI_COLORS.backgroundPrimary }}
+                            >
+                                <ToggleButton
+                                    value="dm_only"
+                                    sx={{
+                                        color: form.visibility === "dm_only" ? UI_COLORS.accentStrong : UI_COLORS.textSecondary,
+                                        border: `1px solid ${UI_COLORS.border}`,
+                                        bgcolor: form.visibility === "dm_only" ? `${UI_COLORS.accentStrong}18` : "transparent",
+                                        "&.Mui-selected": { bgcolor: `${UI_COLORS.accentStrong}22`, color: UI_COLORS.accentStrong },
+                                    }}
+                                >
+                                    <LockIcon sx={{ fontSize: "0.8rem", mr: 0.4 }} />
+                                    <CyberText sx={{ fontSize: "0.68rem", color: "inherit" }}>Solo DM</CyberText>
+                                </ToggleButton>
+                                <ToggleButton
+                                    value="players"
+                                    sx={{
+                                        color: form.visibility === "players" ? UI_COLORS.anomaly : UI_COLORS.textSecondary,
+                                        border: `1px solid ${UI_COLORS.border}`,
+                                        bgcolor: form.visibility === "players" ? `${UI_COLORS.anomaly}18` : "transparent",
+                                        "&.Mui-selected": { bgcolor: `${UI_COLORS.anomaly}22`, color: UI_COLORS.anomaly },
+                                    }}
+                                >
+                                    <PeopleIcon sx={{ fontSize: "0.8rem", mr: 0.4 }} />
+                                    <CyberText sx={{ fontSize: "0.68rem", color: "inherit" }}>Jugadores</CyberText>
+                                </ToggleButton>
+                            </ToggleButtonGroup>
+                        </Box>
+                    </Box>
+                </Grid>
+
+                <Grid size={{ xs: 12, md: showVttLink ? 4 : 3 }}>
+                    <WikiImageUpload
+                        value={form.imageUrl || null}
+                        fallbackPath={imageFallback?.path || null}
+                        fallbackSource={imageFallback?.source || null}
+                        onChange={handleCoverImageChange}
+                        uploadImage={handleUploadEntityImage}
+                        label={IMAGE_LABEL_BY_TYPE[form.entityType] || "Imagen de portada"}
+                        variant={imageVariant}
+                    />
+                </Grid>
+            </Grid>
             </Box>
+
+            {showVttLink && (
+                <EditorSection title="VÍNCULO VTT (OPCIONAL)" variant="optional">
+                    <WikiVttLinkPicker
+                        entityType={form.entityType}
+                        linkedVttLocationId={form.linkedVttLocationId}
+                        linkedVttCharacterId={form.linkedVttCharacterId}
+                        onChange={handleVttLink}
+                    />
+                </EditorSection>
+            )}
 
             {isTimelineEvent && (
                 <Box
@@ -444,78 +603,47 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
                             onChange={(v) => setTimelineField("date", v)}
                             required
                         />
-                        <FormControl size="small" sx={{ minWidth: 140 }}>
-                            <InputLabel sx={{ color: UI_COLORS.textSecondary, fontSize: "0.8rem" }}>Rama</InputLabel>
-                            <Select
-                                value={timelineMeta.branch}
-                                onChange={(e) => setTimelineField("branch", e.target.value)}
-                                label="Rama"
-                                sx={selectSx}
-                                MenuProps={{
-                                    PaperProps: {
-                                        sx: { bgcolor: UI_COLORS.backgroundSecondary, color: UI_COLORS.textPrimary },
-                                    },
-                                }}
-                            >
-                                <MenuItem value={TIMELINE_BRANCH.LEFT}>
-                                    <CyberText sx={{ fontSize: "0.82rem" }}>Izquierda (paralelo)</CyberText>
-                                </MenuItem>
-                                <MenuItem value={TIMELINE_BRANCH.CENTER}>
-                                    <CyberText sx={{ fontSize: "0.82rem" }}>Centro</CyberText>
-                                </MenuItem>
-                                <MenuItem value={TIMELINE_BRANCH.RIGHT}>
-                                    <CyberText sx={{ fontSize: "0.82rem" }}>Derecha (paralelo)</CyberText>
-                                </MenuItem>
-                            </Select>
-                        </FormControl>
-                        <TextField
-                            label="Arco narrativo"
-                            value={timelineMeta.narrativeArc || ""}
-                            onChange={(e) => setTimelineField("narrativeArc", e.target.value)}
-                            size="small"
-                            placeholder="Ej. Post-Diluvio, Guerras…"
-                            sx={{ ...inputSx, minWidth: 180, flex: 1 }}
+                        <WikiSearchableSelect
+                            label="Rama"
+                            value={timelineMeta.branch}
+                            onChange={(v) => setTimelineField("branch", v)}
+                            options={TIMELINE_BRANCH_OPTIONS}
+                            minWidth={140}
+                            clearable={false}
                         />
-                        <FormControl size="small" sx={{ minWidth: 150 }}>
-                            <InputLabel sx={{ color: UI_COLORS.textSecondary, fontSize: "0.8rem" }}>Tema</InputLabel>
-                            <Select
-                                value={timelineMeta.eventKind || "otro"}
-                                onChange={(e) => setTimelineField("eventKind", e.target.value)}
-                                label="Tema"
-                                sx={selectSx}
-                                MenuProps={{
-                                    PaperProps: {
-                                        sx: { bgcolor: UI_COLORS.backgroundSecondary, color: UI_COLORS.textPrimary },
-                                    },
-                                }}
-                            >
-                                {EVENT_KIND_OPTIONS.map(({ value, label }) => (
-                                    <MenuItem key={value} value={value}>
-                                        <CyberText sx={{ fontSize: "0.82rem" }}>{label}</CyberText>
-                                    </MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
-                        <FormControl size="small" sx={{ minWidth: 140 }}>
-                            <InputLabel sx={{ color: UI_COLORS.textSecondary, fontSize: "0.8rem" }}>Certeza</InputLabel>
-                            <Select
-                                value={timelineMeta.certainty || "canon"}
-                                onChange={(e) => setTimelineField("certainty", e.target.value)}
-                                label="Certeza"
-                                sx={selectSx}
-                                MenuProps={{
-                                    PaperProps: {
-                                        sx: { bgcolor: UI_COLORS.backgroundSecondary, color: UI_COLORS.textPrimary },
-                                    },
-                                }}
-                            >
-                                {EVENT_CERTAINTY_OPTIONS.map(({ value, label }) => (
-                                    <MenuItem key={value} value={value}>
-                                        <CyberText sx={{ fontSize: "0.82rem" }}>{label}</CyberText>
-                                    </MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
+                        <WikiSearchableSelect
+                            label="Arco narrativo"
+                            value={
+                                timelineMeta.narrativeArcId
+                                || narrativeArcs.find((a) => a.label === timelineMeta.narrativeArc)?.id
+                                || ""
+                            }
+                            onChange={setTimelineArc}
+                            options={arcSelectOptions}
+                            minWidth={180}
+                            clearable
+                            placeholder={
+                                narrativeArcs.length
+                                    ? "Elegir arco…"
+                                    : "Crea arcos en TIMELINE (DM)"
+                            }
+                        />
+                        <WikiSearchableSelect
+                            label="Tema"
+                            value={timelineMeta.eventKind || "otro"}
+                            onChange={(v) => setTimelineField("eventKind", v)}
+                            options={enumToSearchOptions(EVENT_KIND_OPTIONS)}
+                            minWidth={150}
+                            clearable={false}
+                        />
+                        <WikiSearchableSelect
+                            label="Certeza"
+                            value={timelineMeta.certainty || "canon"}
+                            onChange={(v) => setTimelineField("certainty", v)}
+                            options={enumToSearchOptions(EVENT_CERTAINTY_OPTIONS)}
+                            minWidth={140}
+                            clearable={false}
+                        />
                     </Box>
                     {timelineMeta.isCore && (
                         <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.anomaly }}>
@@ -540,195 +668,125 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
                 />
             )}
 
-            {/* Cover image upload */}
-            <WikiImageUpload
-                value={form.imageUrl}
-                onChange={handleCoverImageChange}
-                uploadImage={handleUploadEntityImage}
-                label={IMAGE_LABEL_BY_TYPE[form.entityType] || "Imagen de portada (opcional)"}
-                helperText="Arrastra un archivo o haz clic · Se usa como avatar en el grafo y en la ficha."
-            />
+            <EditorSection title="CONTENIDO NARRATIVO">
+                <WikiMentionInput
+                    label="Resumen (Markdown + @menciones)"
+                    value={form.summary}
+                    onChange={(v) => setDirect("summary", v)}
+                    entities={mentionCandidates}
+                    rows={2}
+                    placeholder="Una o dos líneas que resuman la ficha…"
+                />
+                <WikiMentionInput
+                    label="Cuerpo (Markdown + @menciones · arrastra imágenes)"
+                    value={form.body}
+                    onChange={(v) => setDirect("body", v)}
+                    entities={mentionCandidates}
+                    rows={8}
+                    uploadImage={handleUploadInlineImage}
+                />
+                {entity?.id && (
+                    <Box sx={{ mt: 1.5 }}>
+                        <WikiAiImpactBlocks entity={entity} canManage />
+                    </Box>
+                )}
+            </EditorSection>
 
-            {/* Summary with mention support */}
-            <WikiMentionInput
-                label="Resumen corto (Markdown + @menciones)"
-                value={form.summary}
-                onChange={(v) => setDirect("summary", v)}
-                entities={mentionCandidates}
-                rows={2}
-                placeholder="Una descripción de una o dos líneas..."
-            />
-
-            {/* Body with mention autocomplete + inline image drop */}
-            <WikiMentionInput
-                label="Contenido (Markdown + @menciones · arrastra imágenes aquí)"
-                value={form.body}
-                onChange={(v) => setDirect("body", v)}
-                entities={mentionCandidates}
-                rows={10}
-                uploadImage={handleUploadInlineImage}
-            />
-
-            {/* Visibility toggle */}
-            <Box>
-                <CyberText sx={{ fontSize: "0.75rem", color: UI_COLORS.textSecondary, mb: 0.5 }}>
-                    Visibilidad
-                </CyberText>
-                <ToggleButtonGroup
-                    value={form.visibility}
-                    exclusive
-                    onChange={(_, v) => v && setDirect("visibility", v)}
-                    size="small"
-                    sx={{ bgcolor: UI_COLORS.backgroundPrimary }}
-                >
-                    <ToggleButton
-                        value="dm_only"
-                        sx={{
-                            color: form.visibility === "dm_only" ? UI_COLORS.accentStrong : UI_COLORS.textSecondary,
-                            border: `1px solid ${UI_COLORS.border}`,
-                            bgcolor: form.visibility === "dm_only" ? `${UI_COLORS.accentStrong}18` : "transparent",
-                            "&.Mui-selected": {
-                                bgcolor: `${UI_COLORS.accentStrong}22`,
-                                color: UI_COLORS.accentStrong,
-                            },
-                        }}
-                    >
-                        <LockIcon sx={{ fontSize: "0.85rem", mr: 0.5 }} />
-                        <CyberText sx={{ fontSize: "0.72rem" }}>Solo DM</CyberText>
-                    </ToggleButton>
-                    <ToggleButton
-                        value="players"
-                        sx={{
-                            color: form.visibility === "players" ? UI_COLORS.anomaly : UI_COLORS.textSecondary,
-                            border: `1px solid ${UI_COLORS.border}`,
-                            bgcolor: form.visibility === "players" ? `${UI_COLORS.anomaly}18` : "transparent",
-                            "&.Mui-selected": {
-                                bgcolor: `${UI_COLORS.anomaly}22`,
-                                color: UI_COLORS.anomaly,
-                            },
-                        }}
-                    >
-                        <PeopleIcon sx={{ fontSize: "0.85rem", mr: 0.5 }} />
-                        <CyberText sx={{ fontSize: "0.72rem" }}>Jugadores</CyberText>
-                    </ToggleButton>
-                </ToggleButtonGroup>
-                <FormHelperText sx={{ color: UI_COLORS.textSecondary, fontFamily: "'Fira Sans', sans-serif", fontSize: "0.68rem", mt: 0.25 }}>
-                    «Solo DM» oculta la ficha a los jugadores en su archivo.
-                </FormHelperText>
-            </Box>
-
-            {/* Tags */}
-            <Box>
-                <Box sx={{ display: "flex", gap: 1, mb: 0.75 }}>
+            <EditorSection title="ETIQUETAS Y SLUG">
+                <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", alignItems: "flex-start" }}>
                     <TextField
                         label="Añadir etiqueta"
                         value={tagInput}
                         onChange={(e) => setTagInput(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleTagAdd())}
                         size="small"
-                        sx={{ ...inputSx, flex: 1 }}
+                        sx={{ ...inputSx, flex: 1, minWidth: 140 }}
                     />
                     <Box
                         component="button"
+                        type="button"
                         onClick={handleTagAdd}
                         sx={{
-                            px: 1.5, py: 0.5, bgcolor: `${UI_COLORS.accent}11`, border: `1px solid ${UI_COLORS.accent}55`,
+                            px: 1.25, py: 0.65, bgcolor: `${UI_COLORS.accent}11`, border: `1px solid ${UI_COLORS.accent}55`,
                             borderRadius: 1, color: UI_COLORS.accent, cursor: "pointer", fontFamily: "'Fira Sans', sans-serif",
-                            fontSize: "0.75rem", "&:hover": { bgcolor: `${UI_COLORS.accent}22` },
+                            fontSize: "0.72rem", "&:hover": { bgcolor: `${UI_COLORS.accent}22` },
                         }}
                     >
                         + Tag
                     </Box>
-                </Box>
-                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                    {form.tags.map((tag) => (
-                        <Chip
-                            key={tag}
-                            label={<CyberText sx={{ fontSize: "0.65rem" }}>{tag}</CyberText>}
-                            onDelete={() => handleTagDelete(tag)}
-                            size="small"
-                            sx={{
-                                bgcolor: UI_COLORS.backgroundPrimary,
-                                border: `1px solid ${UI_COLORS.border}`,
-                                color: UI_COLORS.textSecondary,
-                                height: 22,
-                                "& .MuiChip-label": { px: 0.75 },
-                                "& .MuiChip-deleteIcon": { color: UI_COLORS.textSecondary, fontSize: "0.8rem" },
-                            }}
-                        />
-                    ))}
-                </Box>
-            </Box>
-
-            {/* Slug */}
-            <TextField
-                label="Slug (para @menciones)"
-                value={form.slug}
-                onChange={set("slug")}
-                size="small"
-                placeholder="auto-generado"
-                sx={inputSx}
-            />
-
-            {/* VTT links (opcional: pin de mapa o token; no obligatorio para locaciones narrativas) */}
-            {(form.entityType === WIKI_ENTITY_TYPES.LOCACION ||
-                form.entityType === WIKI_ENTITY_TYPES.PERSONAJE) && (
-                <>
-                    <Divider sx={{ bgcolor: UI_COLORS.border }} />
-                    <CyberTitle variant="caption" sx={{ color: UI_COLORS.textSecondary, fontSize: "0.65rem", letterSpacing: 2 }}>
-                        VÍNCULO VTT (OPCIONAL)
-                    </CyberTitle>
-                    <WikiVttLinkPicker
-                        entityType={form.entityType}
-                        linkedVttLocationId={form.linkedVttLocationId}
-                        linkedVttCharacterId={form.linkedVttCharacterId}
-                        onChange={handleVttLink}
+                    <TextField
+                        label="Slug (@menciones)"
+                        value={form.slug}
+                        onChange={set("slug")}
+                        size="small"
+                        placeholder="auto-generado"
+                        sx={{ ...inputSx, flex: 1, minWidth: 160 }}
                     />
-                </>
-            )}
+                </Box>
+                {form.tags.length > 0 && (
+                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                        {form.tags.map((tag) => (
+                            <Chip
+                                key={tag}
+                                label={tag}
+                                onDelete={() => handleTagDelete(tag)}
+                                size="small"
+                                sx={{
+                                    bgcolor: UI_COLORS.backgroundPrimary,
+                                    border: `1px solid ${UI_COLORS.border}`,
+                                    color: UI_COLORS.textSecondary,
+                                    height: 22,
+                                    fontSize: "0.65rem",
+                                    "& .MuiChip-label": { px: 0.75, color: UI_COLORS.textPrimary },
+                                    "& .MuiChip-deleteIcon": { color: UI_COLORS.textSecondary, fontSize: "0.8rem" },
+                                }}
+                            />
+                        ))}
+                    </Box>
+                )}
+            </EditorSection>
 
-            {/* Error */}
             {error && (
                 <CyberText sx={{ color: UI_COLORS.accentStrong, fontSize: "0.8rem" }}>{error}</CyberText>
             )}
 
-            {/* Actions */}
-            <Box sx={{ display: "flex", gap: 1, pt: 1, flexShrink: 0 }}>
+            {/* Actions — sticky footer */}
+            <Box
+                sx={{
+                    position: "sticky",
+                    bottom: 0,
+                    zIndex: 2,
+                    display: "flex",
+                    gap: 1,
+                    pt: 1.5,
+                    pb: 0.5,
+                    mt: "auto",
+                    flexShrink: 0,
+                    background: `linear-gradient(to top, ${UI_COLORS.backgroundSecondary} 75%, transparent)`,
+                    borderTop: `1px solid ${UI_COLORS.border}`,
+                }}
+            >
                 <Box
                     component="button"
                     onClick={handleSave}
                     disabled={saving}
                     sx={{
-                        flex: 1, px: 2, py: 0.75, bgcolor: `${UI_COLORS.accent}18`, border: `1px solid ${UI_COLORS.accent}`,
-                        borderRadius: 1, color: UI_COLORS.accent, cursor: saving ? "wait" : "pointer",
-                        fontFamily: "'Fira Sans', sans-serif", fontSize: "0.8rem", letterSpacing: 1,
-                        transition: "background-color 0.15s",
-                        "&:hover:not(:disabled)": { bgcolor: `${UI_COLORS.accent}28` },
-                        "&:disabled": { opacity: 0.5 },
+                        ...primaryButtonSx,
+                        cursor: saving ? "wait" : "pointer",
                     }}
                 >
                     <CyberText sx={{ fontSize: "0.8rem", fontWeight: 600 }}>
-                        {saving ? "GUARDANDO..." : "GUARDAR"}
+                        {saving ? "GUARDANDO..." : ACTION_LABELS.primary}
                     </CyberText>
                 </Box>
                 <Box
                     component="button"
                     onClick={handleCancel}
-                    sx={{
-                        px: 2, py: 0.75, bgcolor: "transparent", border: `1px solid ${UI_COLORS.border}`,
-                        borderRadius: 1, color: UI_COLORS.textSecondary, cursor: "pointer",
-                        fontFamily: "'Fira Sans', sans-serif", fontSize: "0.8rem",
-                        "&:hover": { borderColor: UI_COLORS.textSecondary, color: UI_COLORS.textPrimary },
-                    }}
+                    sx={secondaryButtonSx}
                 >
-                    <CyberText sx={{ fontSize: "0.8rem" }}>CANCELAR</CyberText>
+                    <CyberText sx={{ fontSize: "0.8rem" }}>{ACTION_LABELS.secondary}</CyberText>
                 </Box>
             </Box>
         </Box>
     );
 }
-
-const scrollbarSx = {
-    "&::-webkit-scrollbar": { width: "5px" },
-    "&::-webkit-scrollbar-thumb": { backgroundColor: `${UI_COLORS.accent}66`, borderRadius: "3px" },
-};

@@ -1,26 +1,31 @@
 import { useDispatch, useSelector } from "react-redux";
-import { setIsMinimized, toggleIsMinimized } from "../store/uiSlice";
+import { setDialogMinimized, toggleDialogMinimized, restoreDialog } from "../store/uiSlice";
 
-export default function useDialogActions() {
+/**
+ * Per-dialog minimize helpers. Pass the dialog id from DIALOG_IDS.
+ */
+export default function useDialogActions(dialogId) {
     const dispatch = useDispatch();
-    const isMinimized = useSelector((state) => state.ui.isMinimized);
+    const isMinimized = useSelector(
+        (state) => (dialogId ? state.ui.minimizedDialogs[dialogId] : false) ?? false
+    );
 
     const toggleMinimize = () => {
-        dispatch(toggleIsMinimized());
+        if (dialogId) dispatch(toggleDialogMinimized(dialogId));
     };
 
     const forceMinimize = () => {
-        dispatch(setIsMinimized(true));
+        if (dialogId) dispatch(setDialogMinimized({ id: dialogId, value: true }));
     };
 
     const forceRestore = () => {
-        dispatch(setIsMinimized(false));
+        if (dialogId) dispatch(restoreDialog(dialogId));
     };
 
     return {
         isMinimized,
         toggleMinimize,
         forceMinimize,
-        forceRestore
+        forceRestore,
     };
 }

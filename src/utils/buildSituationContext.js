@@ -156,7 +156,7 @@ function entityToTextForAi(entity, wave = 0, compact = false, ctx = {}) {
     if (ctx.relationsForEntity?.length) {
         const entityMap = ctx.entityMap ?? new Map();
         const bondLines = ctx.relationsForEntity
-            .filter((r) => r.strength && Math.abs(r.strength) >= 5)
+            .filter((r) => r.strength && Math.abs(r.strength) >= 3)
             .map((r) => {
                 const other = entityMap.get(
                     r.fromEntityId === entity.id ? r.toEntityId : r.fromEntityId
@@ -551,6 +551,7 @@ export function buildCascadeContext(entities = [], relations = [], opts = {}, al
         maxRelations = CASCADE_CONTEXT_OPTS.maxRelations,
         maxChars    = CASCADE_CONTEXT_OPTS.maxChars,
         maxWaves    = CASCADE_CONTEXT_OPTS.maxWaves,
+        maxTotalImpacts = CASCADE_CONTEXT_OPTS.maxTotalImpacts ?? 12,
         aiRules     = null,
     } = opts;
 
@@ -607,29 +608,56 @@ export function buildCascadeContext(entities = [], relations = [], opts = {}, al
     );
 
     const subgraphIds  = new Set(orderedIds);
-    const includedRels = visibleRels
+    const includedRelsAll = visibleRels
         .filter((r) => subgraphIds.has(r.fromEntityId) && subgraphIds.has(r.toEntityId))
-        .sort((a, b) => getRelationPriority(a) - getRelationPriority(b))
-        .slice(0, maxRelations);
+        .sort((a, b) => getRelationPriority(a) - getRelationPriority(b));
 
     const includedEnts = orderedIds.map((id) => entityById.get(id)).filter(Boolean);
 
     // 3 — Pre-compute wave map (for context serialization + UI grouping)
-    const waveMap = computeWaveMap(anchorEntityId, includedEnts, includedRels, maxWaves, {
+    const waveMap = computeWaveMap(anchorEntityId, includedEnts, includedRelsAll, maxWaves, {
         aiRules: rules,
         explicitIds,
     });
 
-    const maxImpactTargets = (CASCADE_CONTEXT_OPTS.maxImpactsPerWave ?? 12) * maxWaves;
+    /** Strongest |strength| between entity and anchor (0 if none). */
+    const bondToAnchor = (entityId) => {
+        let best = 0;
+        for (const r of includedRelsAll) {
+            const touches =
+                (r.fromEntityId === anchorEntityId && r.toEntityId === entityId)
+                || (r.toEntityId === anchorEntityId && r.fromEntityId === entityId);
+            if (!touches) continue;
+            best = Math.max(best, Math.abs(r.strength ?? 0));
+        }
+        return best;
+    };
+
+    // Relation-first: cap total impacts; prioritize mentions + strong bonds + close waves
     const impactTargets = includedEnts
         .filter((e) => e.entityType === WIKI_ENTITY_TYPES.PERSONAJE)
+        .filter((e) => e.id !== anchorEntityId)
         .filter((e) => shouldIncludeInAiImpacts(e, rules, { explicitIds }))
-        .map((e) => ({ id: e.id, title: e.title, wave: waveMap.get(e.id) ?? maxDepth, entityType: e.entityType }))
+        .map((e) => ({
+            id: e.id,
+            title: e.title,
+            wave: waveMap.get(e.id) ?? maxDepth,
+            entityType: e.entityType,
+            mentioned: explicitIds.has(e.id) || mentionEntityIds.has(e.id),
+            bond: bondToAnchor(e.id),
+        }))
         .filter((t) => t.wave >= 1 && t.wave <= maxWaves)
-        .sort((a, b) => a.wave - b.wave || a.title.localeCompare(b.title, "es"))
-        .slice(0, maxImpactTargets);
+        .sort((a, b) => {
+            if (a.mentioned !== b.mentioned) return a.mentioned ? -1 : 1;
+            if (b.bond !== a.bond) return b.bond - a.bond;
+            if (a.wave !== b.wave) return a.wave - b.wave;
+            return a.title.localeCompare(b.title, "es");
+        })
+        .slice(0, maxTotalImpacts);
 
-    // Collective targets: locaciones & organizaciones in wave >= 2
+    const impactIdSet = new Set(impactTargets.map((t) => t.id));
+
+    // Collective targets: locaciones & organizaciones in wave >= 2 (small cap)
     const collectiveTargets = includedEnts
         .filter((e) =>
             e.entityType === WIKI_ENTITY_TYPES.LOCACION ||
@@ -639,16 +667,38 @@ export function buildCascadeContext(entities = [], relations = [], opts = {}, al
         .map((e) => ({ id: e.id, title: e.title, wave: waveMap.get(e.id) ?? maxDepth, entityType: e.entityType }))
         .filter((t) => t.wave >= 2 && t.wave <= maxWaves)
         .sort((a, b) => a.wave - b.wave || a.title.localeCompare(b.title, "es"))
-        .slice(0, 10);
+        .slice(0, 6);
 
-    // 4 — Serialize context with wave labels and archetypes
+    const collectiveIdSet = new Set(collectiveTargets.map((t) => t.id));
+    const coreEntityIds = new Set([
+        anchorEntityId,
+        ...impactIdSet,
+        ...collectiveIdSet,
+        ...mentionEntityIds,
+    ].filter(Boolean));
+
+    // Only serialize relations that touch the narrative core (not the whole BFS dump)
+    const includedRels = includedRelsAll
+        .filter((r) => coreEntityIds.has(r.fromEntityId) && coreEntityIds.has(r.toEntityId))
+        .slice(0, maxRelations);
+
+    const coreEnts = includedEnts.filter((e) => coreEntityIds.has(e.id));
+
+    // 4 — Serialize context with wave labels and archetypes (compact sheets — no body)
     const sections = ["# Contexto narrativo — Onda catalizadora (Valtia-01)\n"];
+    sections.push(
+        "Enfoque: propaga cambios de RELACIÓN y estado. Prioriza vínculos (tipo/fuerza/label) "
+        + "sobre lore largo de cada ficha.\n"
+    );
     if (anchorEntity) {
         sections.push(`Entidad ancla: **${anchorEntity.title}**`);
     }
-    sections.push(`Fichas: ${includedEnts.length} | Relaciones: ${includedRels.length} | Ondas: ${maxWaves}\n`);
+    sections.push(
+        `Fichas núcleo: ${coreEnts.length} | Relaciones núcleo: ${includedRels.length} | Ondas: ${maxWaves} `
+        + `| Impacts requeridos: ${impactTargets.length}\n`
+    );
 
-    // Summary of wave assignments
+    // Summary of wave assignments (full BFS for orientation, short)
     const waveGroups = new Map();
     for (const [id, wave] of waveMap) {
         if (!waveGroups.has(wave)) waveGroups.set(wave, []);
@@ -657,10 +707,17 @@ export function buildCascadeContext(entities = [], relations = [], opts = {}, al
     }
     for (const wave of [...waveGroups.keys()].sort()) {
         const label = wave === 0 ? "ANCLA" : `ONDA ${wave}`;
-        sections.push(`${label}: ${waveGroups.get(wave).join(", ")}`);
+        const titles = waveGroups.get(wave);
+        const shown = titles.slice(0, 14);
+        const extra = titles.length > 14 ? ` (+${titles.length - 14})` : "";
+        sections.push(`${label}: ${shown.join(", ")}${extra}`);
     }
 
     sections.push("\n---\n## Personajes que DEBEN tener un impacto en \"impacts\"\n");
+    sections.push(
+        "Ordenados por mención en el evento y fuerza de vínculo con el ancla. "
+        + "Cada impacto: reacción breve (1–2 frases) y como máximo 3 changes centrados en relaciones.\n"
+    );
     if (impactTargets.length === 0) {
         sections.push(
             "No hay personajes en ondas 1–" + maxWaves
@@ -668,7 +725,9 @@ export function buildCascadeContext(entities = [], relations = [], opts = {}, al
         );
     } else {
         for (const t of impactTargets) {
-            sections.push(`- ONDA ${t.wave}: ${t.title}`);
+            const bondNote = t.bond > 0 ? ` · vínculo ancla ${t.bond}` : "";
+            const ment = t.mentioned ? " · mencionado" : "";
+            sections.push(`- ONDA ${t.wave}: ${t.title}${bondNote}${ment}`);
         }
         sections.push(`\nTotal requerido en "impacts": ${impactTargets.length} (uno por personaje listado).`);
     }
@@ -682,7 +741,7 @@ export function buildCascadeContext(entities = [], relations = [], opts = {}, al
         }
     }
 
-    sections.push("\n---\n# Fichas narrativas (con onda, arquetipo y memoria de personalidad)\n");
+    sections.push("\n---\n# Fichas (compactas: memoria + vínculos fuertes — sin body)\n");
 
     // Build per-entity relation index for "vínculos directos"
     const relsByEntityId = new Map();
@@ -693,11 +752,11 @@ export function buildCascadeContext(entities = [], relations = [], opts = {}, al
         }
     }
 
-    for (const e of includedEnts) {
-        const wave    = waveMap.get(e.id) ?? maxDepth;
-        const compact = wave >= maxDepth;
-        sections.push(entityToTextForAi(e, wave, compact, {
-            relationsForEntity: wave >= 1 ? (relsByEntityId.get(e.id) ?? []) : [],
+    for (const e of coreEnts) {
+        const wave = waveMap.get(e.id) ?? maxDepth;
+        // Always compact: bodies burn tokens without improving relation fidelity
+        sections.push(entityToTextForAi(e, wave, true, {
+            relationsForEntity: (relsByEntityId.get(e.id) ?? []),
             entityMap: entityById,
         }));
     }
@@ -717,7 +776,7 @@ export function buildCascadeContext(entities = [], relations = [], opts = {}, al
         truncated = true;
     }
 
-    const deadInContext = includedEnts.filter(isCharacterDead);
+    const deadInContext = coreEnts.filter(isCharacterDead);
     const guardrailsText = buildAiGuardrailsPrompt(rules, {
         deadTitles: deadInContext.map((e) => e.title),
         explicitDeadTitles: deadInContext
@@ -729,17 +788,18 @@ export function buildCascadeContext(entities = [], relations = [], opts = {}, al
         text,
         guardrailsText,
         meta: {
-            entityCount:           includedEnts.length,
+            entityCount:           coreEnts.length,
             relationCount:         includedRels.length,
             anchorTitle:           anchorEntity?.title ?? null,
             truncated,
-            waveCount:             waveGroups.size,
+            waveCount:             maxWaves,
             impactTargetCount:     impactTargets.length,
             impactTargets:         impactTargets.map((t) => t.title),
             impactTargetsDetailed: impactTargets,
-            collectiveTargets,
-            relationTypesUsed:     [...new Set(includedRels.map((r) => r.relationType))],
-            entityIds:             includedEnts.map((e) => e.id),
+            collectiveTargetCount: collectiveTargets.length,
+            collectiveTargets:     collectiveTargets.map((t) => t.title),
+            entityIds:             coreEnts.map((e) => e.id),
+            packing:               "relation-first",
         },
         resolvedMentions,
         ambiguousMentions,
@@ -879,4 +939,181 @@ export function computePropagationWaves(anchorEntityId, entities, relations, opt
     return computeBfsPropagationWaves(
         anchorEntityId, graphEntities, graphRelations, maxDepth, { canTraverse }
     );
+}
+
+// ── SCOUT context (Two-pass Pasa 1) ──────────────────────────────────────────
+//
+// Builds a minimal context string for the Scout (Pasa 1) of the Two-pass cascade.
+// Uses ONTO columnar format for relations (ONTO 2025: 46-51% token reduction vs prose).
+// Target: ~1.5-2k tokens, well under the Scout's context budget.
+//
+// Receives the result of buildCascadeContext() to avoid re-running BFS.
+
+/**
+ * Build an ultra-compact Scout context for Pasa 1 of the Two-pass cascade.
+ *
+ * Format:
+ *   - Anchor entity title (1 line)
+ *   - Impact target list: one line per entity with wave + state + bond to anchor
+ *   - Relations in ONTO columnar: `from|to|tipo|fuerza` (header + rows)
+ *
+ * @param {object} cascadeCtxMeta  — `meta` from buildCascadeContext()
+ * @param {string} anchorEntityId  — anchor entity ID (for relation filtering)
+ * @param {object[]} entities       — full entity list (for looking up custom fields)
+ * @param {object[]} relations      — full relation list (for building ONTO block)
+ * @returns {string}               — compact context text (~1.5-2k tokens)
+ */
+export function buildScoutContext(cascadeCtxMeta, anchorEntityId, entities, relations) {
+    const entityById = new Map(entities.map((e) => [e.id, e]));
+    const targets    = cascadeCtxMeta.impactTargetsDetailed ?? [];
+
+    const lines = ["# Evaluación de impacto — Pasa 1 (Scout)"];
+    lines.push(`Ancla: ${cascadeCtxMeta.anchorTitle ?? "desconocida"}`);
+    lines.push(`Ondas: ${cascadeCtxMeta.waveCount ?? 3} | Impacts a evaluar: ${targets.length}\n`);
+
+    // ── Impact target list ──────────────────────────────────────────────────
+    lines.push("## Personajes a evaluar (onda · vínculo_ancla · arquetipo · estado)");
+    for (const t of targets) {
+        const entity   = entityById.get(t.id);
+        const cf       = entity?.customFields?.personaje ?? {};
+        const statePart = cf.narrativeState    ? ` · estado:${cf.narrativeState}` : "";
+        const archPart  = cf.reactionArchetype ? ` · arq:${cf.reactionArchetype}` : "";
+        const bondPart  = t.bond > 0           ? ` · vínculo:${t.bond}` : "";
+        const mentPart  = t.mentioned          ? " · mencionado" : "";
+        lines.push(`- ONDA ${t.wave}: ${t.title}${bondPart}${archPart}${statePart}${mentPart}`);
+    }
+
+    // ── ONTO columnar relations (ONTO 2025: 46-51% less tokens vs prose) ────
+    const coreIds = new Set([
+        anchorEntityId,
+        ...targets.map((t) => t.id),
+    ].filter(Boolean));
+
+    const coreRels = relations
+        .filter((r) => coreIds.has(r.fromEntityId) && coreIds.has(r.toEntityId))
+        .sort((a, b) => Math.abs(b.strength ?? 0) - Math.abs(a.strength ?? 0))
+        .slice(0, 40);
+
+    if (coreRels.length > 0) {
+        lines.push("\n## Vínculos principales (from|to|tipo|fuerza)");
+        for (const r of coreRels) {
+            const fromTitle = entityById.get(r.fromEntityId)?.title ?? r.fromEntityId;
+            const toTitle   = entityById.get(r.toEntityId)?.title   ?? r.toEntityId;
+            const strength  = r.strength ?? 0;
+            lines.push(`${fromTitle}|${toTitle}|${r.relationType}|${strength}`);
+        }
+    }
+
+    return lines.join("\n");
+}
+
+// ── Extended context (sessions, canon, thread history) ───────────────────────
+
+/**
+ * Prefix block for campaign canon, session recaps, and Lab IA thread history.
+ * @param {{ canonSummary?: string, sessionRecaps?: Array<{title:string,recap:string}>, threadMessages?: Array<{role:string,content:string}> }} extras
+ */
+export function buildExtendedContextPrefix(extras = {}) {
+    const { canonSummary, sessionRecaps = [], threadMessages = [] } = extras;
+    const parts = [];
+
+    if (canonSummary?.trim()) {
+        parts.push(`## Canon de campaña\n${canonSummary.trim()}`);
+    }
+
+    if (sessionRecaps.length > 0) {
+        const block = sessionRecaps
+            .slice(0, 5)
+            .map((s) => `### ${s.title}\n${s.recap}`)
+            .join("\n\n");
+        parts.push(`## Sesiones recientes\n${block}`);
+    }
+
+    if (threadMessages.length > 0) {
+        const block = threadMessages
+            .slice(-8)
+            .map((m) => `[${m.role}] ${m.content}`)
+            .join("\n");
+        parts.push(`## Historial Lab IA\n${block}`);
+    }
+
+    return parts.join("\n\n");
+}
+
+/**
+ * Merge extended prefix into a base context pack from buildSituationContext / buildCascadeContext.
+ */
+export function mergeContextWithExtras(baseContext, extras = {}) {
+    const prefix = buildExtendedContextPrefix(extras);
+    if (!prefix?.trim()) return baseContext;
+    return {
+        ...baseContext,
+        text: `${prefix}\n\n---\n\n${baseContext.text}`,
+        meta: {
+            ...baseContext.meta,
+            hasExtendedContext: true,
+        },
+    };
+}
+
+/**
+ * Build situation context from multiple anchor entities (union of subgraphs).
+ */
+export function buildMultiAnchorSituationContext(entities, relations, opts = {}) {
+    const { anchorEntityIds = [], ...rest } = opts;
+    const ids = anchorEntityIds.filter(Boolean);
+    if (ids.length <= 1) {
+        return buildSituationContext(entities, relations, {
+            ...rest,
+            anchorEntityId: ids[0] ?? rest.anchorEntityId,
+        });
+    }
+
+    const merged = buildSituationContext(entities, relations, {
+        ...rest,
+        anchorEntityId: ids[0],
+        maxEntities: Math.floor((rest.maxEntities ?? 25) * 0.6),
+    });
+
+    const entityIdSet = new Set(merged.meta.entityIds);
+    for (let i = 1; i < ids.length; i++) {
+        const sub = buildSituationContext(entities, relations, {
+            ...rest,
+            anchorEntityId: ids[i],
+            maxEntities: Math.floor((rest.maxEntities ?? 25) * 0.4),
+            maxDepth: Math.min(rest.maxDepth ?? 2, 1),
+        });
+        sub.meta.entityIds.forEach((id) => entityIdSet.add(id));
+    }
+
+    const allIds = [...entityIdSet];
+    const entityMap = new Map(entities.map((e) => [e.id, e]));
+    const includedEnts = allIds.map((id) => entityMap.get(id)).filter(Boolean);
+    const includedIds = new Set(allIds);
+    const includedRels = relations.filter(
+        (r) => includedIds.has(r.fromEntityId) && includedIds.has(r.toEntityId)
+    );
+
+    const anchorTitles = ids.map((id) => entityMap.get(id)?.title).filter(Boolean).join(", ");
+    const text = buildContextText(
+        includedEnts,
+        includedRels.slice(0, rest.maxRelations ?? 40),
+        entityMap,
+        entityMap.get(ids[0]),
+        rest.intent,
+        rest.maxChars ?? 10000,
+        new Set(),
+    );
+
+    return {
+        text,
+        meta: {
+            ...merged.meta,
+            entityCount: includedEnts.length,
+            relationCount: includedRels.length,
+            anchorTitle: anchorTitles,
+            entityIds: allIds,
+            multiAnchor: true,
+        },
+    };
 }

@@ -4,26 +4,37 @@ import styled from "@emotion/styled";
 import {
     closeContextMenu,
     openLocation,
-    setMeasurePointA,
-    setMeasurePointB,
-    clearMeasureTool,
+    showSnackbar,
 } from "../store/uiSlice";
+import { snapWorldToGridPoint } from "../utils/gridMath";
+import {
+    publishMapPing,
+    updateTokenConditions,
+    updateTokenVisibility,
+} from "../../firebase/services/gameService";
+import { UI_COLORS } from "../constants/uiColors";
+import { TOKEN_CONDITIONS, normalizeTokenConditions } from "../constants/tokenConditions";
+import { canControlToken, isDmRole } from "../utils/tokenControl";
 
-const CYAN = "#00f2ea";
-const PINK = "#ff66ff";
+const CYAN = UI_COLORS.anomaly || "#00f2ea";
 
 export default function MapContextMenu() {
     const dispatch = useDispatch();
-    const { contextMenu, measureTool } = useSelector((s) => s.ui);
+    const contextMenu = useSelector((s) => s.ui.contextMenu);
+    const map = useSelector((s) => s.world.map);
+    const mapId = useSelector((s) => s.world.activeMapId ?? s.world.map?.id);
+    const campaignId = useSelector((s) => s.world.selectedCampaignId);
+    const gridConfig = useSelector((s) => s.world.gridConfig);
+    const profile = useSelector((s) => s.player.profile);
+    const tokenPositions = useSelector((s) => s.game.tokenPositions ?? {});
+    const charactersById = useSelector((s) => s.world.charactersById ?? {});
     const menuRef = useRef(null);
-    const isMeasuring = !!measureTool.pointA;
 
-    // Close on outside click (ignore right-clicks to allow new menus to open)
     useEffect(() => {
         if (!contextMenu.open) return;
 
         const handler = (e) => {
-            if (e.button === 2) return; // new right-click handled by PIXI, let it through
+            if (e.button === 2) return;
             if (menuRef.current && !menuRef.current.contains(e.target)) {
                 dispatch(closeContextMenu());
             }
@@ -35,83 +46,127 @@ export default function MapContextMenu() {
 
     if (!contextMenu.open) return null;
 
-    const pointLabel = contextMenu.location?.name
-        ? contextMenu.location.name.toUpperCase()
-        : `(${Math.round(contextMenu.worldX)}, ${Math.round(contextMenu.worldY)})`;
+    const isToken = contextMenu.type === "token" && contextMenu.tokenId;
+    const tokenId = contextMenu.tokenId;
+    const pos = isToken && mapId ? tokenPositions[mapId]?.[tokenId] : null;
+    const char = isToken ? charactersById[tokenId] : null;
+    const canEdit = isToken && canControlToken(char || { id: tokenId }, profile);
+    const isDM = isDmRole(profile?.role);
+    const conditions = normalizeTokenConditions(pos?.conditions);
+    const isHidden = pos?.visible === false;
+
+    const pointLabel = isToken
+        ? (contextMenu.tokenName || tokenId || "TOKEN").toUpperCase()
+        : contextMenu.location?.name
+            ? contextMenu.location.name.toUpperCase()
+            : `(${Math.round(contextMenu.worldX)}, ${Math.round(contextMenu.worldY)})`;
 
     const handleViewLocation = () => {
         dispatch(openLocation(contextMenu.location));
         dispatch(closeContextMenu());
     };
 
-    const handleMeasureFrom = () => {
-        dispatch(setMeasurePointA({
-            x: contextMenu.worldX,
-            y: contextMenu.worldY,
-            label: pointLabel,
-        }));
+    const handlePing = () => {
+        if (!campaignId || !mapId) {
+            dispatch(showSnackbar({ message: "Sin campaña/mapa activo", severity: "warning" }));
+            dispatch(closeContextMenu());
+            return;
+        }
+        const point = snapWorldToGridPoint(
+            contextMenu.worldX,
+            contextMenu.worldY,
+            map,
+            gridConfig,
+        );
         dispatch(closeContextMenu());
+        publishMapPing(campaignId, {
+            mapId,
+            x: point.x,
+            y: point.y,
+            col: point.col,
+            row: point.row,
+            createdBy: profile?.uid ?? null,
+            createdByName: profile?.nickname ?? null,
+        }).catch((err) => {
+            console.error(err);
+            dispatch(showSnackbar({ message: "No se pudo publicar el ping", severity: "error" }));
+        });
     };
 
-    const handleMeasureTo = () => {
-        dispatch(setMeasurePointB({
-            x: contextMenu.worldX,
-            y: contextMenu.worldY,
-            label: pointLabel,
-        }));
-        dispatch(closeContextMenu());
+    const handleToggleCondition = (key) => {
+        if (!campaignId || !mapId || !tokenId || !pos) return;
+        const next = conditions.includes(key)
+            ? conditions.filter((k) => k !== key)
+            : [...conditions, key];
+        updateTokenConditions(campaignId, mapId, tokenId, next, pos).catch((err) => {
+            console.error(err);
+            dispatch(showSnackbar({ message: "No se pudo actualizar condición", severity: "error" }));
+        });
     };
 
-    const handleCancel = () => {
-        dispatch(clearMeasureTool());
-        dispatch(closeContextMenu());
+    const handleToggleVisibility = () => {
+        if (!campaignId || !mapId || !tokenId || !pos || !isDM) return;
+        updateTokenVisibility(campaignId, mapId, tokenId, isHidden, pos).catch((err) => {
+            console.error(err);
+            dispatch(showSnackbar({ message: "No se pudo cambiar visibilidad", severity: "error" }));
+        });
     };
 
-    // Clamp menu to stay inside the viewport
-    const menuW = 220;
-    const menuH = contextMenu.type === "location" ? 160 : 120;
+    const menuW = 240;
+    const menuH = isToken ? 280 : contextMenu.type === "location" ? 140 : 100;
     const x = Math.min(contextMenu.screenX, window.innerWidth - menuW - 8);
     const y = Math.min(contextMenu.screenY, window.innerHeight - menuH - 8);
 
     return (
         <>
-            {/* Invisible backdrop — closes menu on any non-right click outside */}
             <div
                 style={{ position: "fixed", inset: 0, zIndex: 1999, pointerEvents: "none" }}
             />
             <StyledMenu ref={menuRef} style={{ left: x, top: y }}>
                 <div className="menu-header">
-                    {contextMenu.type === "location" ? "◉ LOCATION" : "◉ MAP_POINT"}
+                    {isToken ? "◉ TOKEN" : contextMenu.type === "location" ? "◉ LOCATION" : "◉ MAP_POINT"}
                     <span className="menu-label">{pointLabel}</span>
                 </div>
 
                 {contextMenu.type === "location" && (
-                    <button className="menu-item" onClick={handleViewLocation}>
+                    <button type="button" className="menu-item" onClick={handleViewLocation}>
                         <span className="item-icon">⬡</span>
                         VIEW_LOCATION
                     </button>
                 )}
 
-                {!isMeasuring ? (
-                    <button className="menu-item measure" onClick={handleMeasureFrom}>
-                        <span className="item-icon">⊢</span>
-                        MEASURE_FROM_HERE
+                {!isToken && (
+                    <button type="button" className="menu-item ping" onClick={handlePing}>
+                        <span className="item-icon">◎</span>
+                        HACER_PING
                     </button>
-                ) : (
+                )}
+
+                {isToken && canEdit && (
                     <>
-                        <div className="measuring-hint">
-                            <span className="item-icon">◈</span>
-                            FROM: {measureTool.pointA?.label}
-                        </div>
-                        <button className="menu-item measure" onClick={handleMeasureTo}>
-                            <span className="item-icon">⊣</span>
-                            SET_ENDPOINT_HERE
-                        </button>
-                        <button className="menu-item cancel" onClick={handleCancel}>
-                            <span className="item-icon">✕</span>
-                            CANCEL_MEASUREMENT
-                        </button>
+                        <div className="menu-section">CONDICIONES</div>
+                        {TOKEN_CONDITIONS.map((c) => {
+                            const on = conditions.includes(c.key);
+                            return (
+                                <button
+                                    key={c.key}
+                                    type="button"
+                                    className={`menu-item cond ${on ? "active" : ""}`}
+                                    onClick={() => handleToggleCondition(c.key)}
+                                >
+                                    <span className="item-icon">{on ? "▣" : "□"}</span>
+                                    {c.label.toUpperCase()}
+                                </button>
+                            );
+                        })}
                     </>
+                )}
+
+                {isToken && isDM && (
+                    <button type="button" className="menu-item ping" onClick={handleToggleVisibility}>
+                        <span className="item-icon">{isHidden ? "◎" : "◌"}</span>
+                        {isHidden ? "MOSTRAR_A_JUGADORES" : "OCULTAR_A_JUGADORES"}
+                    </button>
                 )}
             </StyledMenu>
         </>
@@ -123,6 +178,8 @@ const StyledMenu = styled.div`
   z-index: 2000;
   pointer-events: auto;
   min-width: 220px;
+  max-height: min(420px, calc(100vh - 24px));
+  overflow-y: auto;
   background: rgba(4, 4, 8, 0.97);
   border: 1px solid ${CYAN};
   box-shadow: 0 0 24px ${CYAN}44, 0 0 6px ${CYAN}22, inset 0 0 20px ${CYAN}08;
@@ -152,23 +209,15 @@ const StyledMenu = styled.div`
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 190px;
+    max-width: 210px;
   }
 
-  .measuring-hint {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 7px 12px 6px;
+  .menu-section {
+    padding: 6px 12px 2px;
     font-family: "Fira Code", monospace;
-    font-size: 0.65rem;
-    color: ${CYAN}bb;
-    letter-spacing: 1px;
-    border-bottom: 1px solid ${CYAN}22;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-transform: uppercase;
+    font-size: 0.52rem;
+    letter-spacing: 0.14em;
+    color: ${UI_COLORS.textSecondary};
   }
 
   .menu-item {
@@ -180,7 +229,7 @@ const StyledMenu = styled.div`
     background: transparent;
     border: none;
     border-left: 2px solid transparent;
-    color: rgba(255, 255, 255, 0.85);
+    color: ${UI_COLORS.textPrimary};
     font-family: "Fira Code", monospace;
     font-size: 0.75rem;
     text-align: left;
@@ -202,13 +251,21 @@ const StyledMenu = styled.div`
       padding-left: 16px;
     }
 
-    &.cancel {
-      color: rgba(255, 80, 80, 0.8);
-      &:hover {
-        background: rgba(255, 50, 50, 0.1);
-        border-left-color: #ff4d4d;
-        color: #ff4d4d;
-      }
+    &.active {
+      color: ${UI_COLORS.accent};
+      border-left-color: ${UI_COLORS.accent};
+      background: ${UI_COLORS.accent}12;
+    }
+
+    &.ping:hover {
+      color: ${UI_COLORS.accent};
+      border-left-color: ${UI_COLORS.accent};
+      background: ${UI_COLORS.accent}14;
+    }
+
+    &.cond {
+      padding: 7px 12px;
+      font-size: 0.68rem;
     }
   }
 

@@ -1,8 +1,15 @@
 import { db } from "../firebaseConfig";
 import { collection, addDoc, getDocs, query, where, doc, updateDoc } from "firebase/firestore";
+import { DEFAULT_RULE_SYSTEM, normalizeRulesSystem } from "../../src/constants/ruleSystems.js";
 
 export async function createCampaignDoc(campaignData) {
-    return await addDoc(collection(db, "campaigns"), campaignData);
+    const rulesSystem = normalizeRulesSystem(
+        campaignData?.rulesSystem ?? DEFAULT_RULE_SYSTEM,
+    );
+    return await addDoc(collection(db, "campaigns"), {
+        ...campaignData,
+        rulesSystem,
+    });
 }
 
 export async function updateCampaignElement (collectionName, id, data) {

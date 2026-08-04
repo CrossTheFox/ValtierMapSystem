@@ -158,9 +158,13 @@ export default function LocationHistoryDescriptionTab({ location, campaignId }) 
                     {hasArchive ? (
                         <Box sx={{ fontSize: "14px", lineHeight: 1.7, color: "#ccc" }}>
                             {wikiEntity.summary && (
-                                <CyberText sx={{ display: "block", mb: 2, color: "rgba(255,255,255,0.75)", fontStyle: "italic" }}>
-                                    {wikiEntity.summary}
-                                </CyberText>
+                                <Box sx={{ mb: 2, fontStyle: "italic", color: "rgba(255,255,255,0.75)" }}>
+                                    <WikiMentionRenderer
+                                        body={wikiEntity.summary}
+                                        entities={wikiEntities}
+                                        onEntityClick={handleEntityClick}
+                                    />
+                                </Box>
                             )}
                             <WikiMentionRenderer
                                 body={wikiEntity.body || ""}

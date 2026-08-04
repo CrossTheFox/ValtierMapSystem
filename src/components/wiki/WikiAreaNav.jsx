@@ -3,6 +3,7 @@ import MenuBookIcon from "@mui/icons-material/MenuBook";
 import TimelineIcon from "@mui/icons-material/Timeline";
 import HubIcon from "@mui/icons-material/Hub";
 import SettingsIcon from "@mui/icons-material/Settings";
+import LibraryBooksIcon from "@mui/icons-material/LibraryBooks";
 import { CyberText } from "../customs/CustomTexts";
 import CyberTooltip from "../customs/CyberTooltip";
 import { UI_COLORS } from "../../constants/uiColors";
@@ -57,6 +58,8 @@ function tooltipTitle(label, hint) {
 export default function WikiAreaNav({
     areaFilter,
     onAreaFilterChange,
+    showGlossaryButton = true,
+    onOpenGlossary,
     showConfigButton = false,
     onOpenConfig,
     compact = false,
@@ -123,6 +126,31 @@ export default function WikiAreaNav({
                         </CyberTooltip>
                     );
                 })}
+                {showGlossaryButton && onOpenGlossary && (
+                    <CyberTooltip title="Glosario del sistema — conceptos, campos e IA" placement="bottom">
+                        <IconButton
+                            size="small"
+                            onClick={onOpenGlossary}
+                            aria-label="Glosario del sistema"
+                            sx={{
+                                width: btnSize,
+                                height: btnSize,
+                                ml: compact ? 0.35 : undefined,
+                                borderRadius: compact ? 0.75 : 0,
+                                color: UI_COLORS.textSecondary,
+                                border: `1px solid ${UI_COLORS.border}`,
+                                transition: "color 0.15s, background-color 0.15s, border-color 0.15s",
+                                "&:hover": {
+                                    color: UI_COLORS.accent,
+                                    bgcolor: `${UI_COLORS.accent}10`,
+                                    borderColor: `${UI_COLORS.accent}66`,
+                                },
+                            }}
+                        >
+                            <LibraryBooksIcon sx={{ fontSize: compact ? "0.9rem" : "1.05rem" }} />
+                        </IconButton>
+                    </CyberTooltip>
+                )}
                 {showConfigButton && (
                     <CyberTooltip title="Configuración de IA narrativa" placement="bottom">
                         <IconButton
@@ -132,7 +160,7 @@ export default function WikiAreaNav({
                             sx={{
                                 width: btnSize,
                                 height: btnSize,
-                                ml: compact ? 0 : undefined,
+                                ml: compact ? 0.35 : undefined,
                                 borderRadius: compact ? 0.75 : 0,
                                 color: UI_COLORS.textSecondary,
                                 border: `1px solid ${UI_COLORS.border}`,

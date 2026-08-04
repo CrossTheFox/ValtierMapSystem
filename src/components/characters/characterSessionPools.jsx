@@ -19,8 +19,8 @@ const PoolSlotEmpty = () => (
     />
 );
 
-function PoolSlotFilled({ danger, strain }) {
-    const color = strain ? "#f97316" : danger ? "#ff0055" : UI_COLORS.accent;
+function PoolSlotFilled({ danger }) {
+    const color = danger ? "#ff0055" : "#f97316";
     return (
         <Box
             sx={{
@@ -28,7 +28,7 @@ function PoolSlotFilled({ danger, strain }) {
                 height: 8,
                 bgcolor: color,
                 border: `1px solid ${color}`,
-                boxShadow: `0 0 5px ${strain ? "rgba(249,115,22,0.5)" : danger ? "rgba(255,0,85,0.55)" : (UI_COLORS.accentGlow || "rgba(255,102,255,0.45)")}`,
+                boxShadow: `0 0 5px ${danger ? "rgba(255,0,85,0.55)" : "rgba(249,115,22,0.5)"}`,
                 mx: 0.15,
                 borderRadius: "2px",
             }}
@@ -37,13 +37,14 @@ function PoolSlotFilled({ danger, strain }) {
 }
 
 export function SessionPoolBlock({ track, pools, setTrack, compact = false }) {
-    const max = Math.max(track.maxDefault ?? (track.key === "strain" ? 5 : 3), 1);
+    if (track?.key === "strain") return null;
+
+    const max = Math.max(track.maxDefault ?? 3, 1);
     const pool = pools[track.key] || { current: 0 };
     const current = Math.min(Math.max(pool.current ?? 0, 0), max);
     const stateKey = track.stateKey;
     const flagged = stateKey ? !!pool[stateKey] : false;
     const atCap = current >= max;
-    const isStrain = track.key === "strain";
 
     if (compact) {
         return (
@@ -56,7 +57,7 @@ export function SessionPoolBlock({ track, pools, setTrack, compact = false }) {
                         max={max}
                         value={current}
                         onChange={(_, v) => setTrack(track.key, { current: v ?? 0 })}
-                        icon={<PoolSlotFilled danger={atCap && !isStrain} strain={isStrain} />}
+                        icon={<PoolSlotFilled danger={atCap} />}
                         emptyIcon={<PoolSlotEmpty />}
                         sx={{ "& .MuiRating-iconFilled": { opacity: 1 }, gap: 0.25 }}
                     />
@@ -99,7 +100,7 @@ export function SessionPoolBlock({ track, pools, setTrack, compact = false }) {
                 max={max}
                 value={current}
                 onChange={(_, v) => setTrack(track.key, { current: v ?? 0 })}
-                icon={<PoolSlotFilled danger={atCap && !isStrain} strain={isStrain} />}
+                icon={<PoolSlotFilled danger={atCap} />}
                 emptyIcon={<PoolSlotEmpty />}
                 sx={{ "& .MuiRating-iconFilled": { opacity: 1 } }}
             />

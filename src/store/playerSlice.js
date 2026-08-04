@@ -48,6 +48,11 @@ const playerSlice = createSlice({
                 state.profile.activeCharacterId = action.payload;
             }
         },
+        /** Merge live Firestore player-doc fields into the session profile. */
+        patchPlayerProfile: (state, action) => {
+            if (!state.profile) return;
+            state.profile = { ...state.profile, ...action.payload };
+        },
     },
     extraReducers: (builder) => {
         builder
@@ -65,5 +70,5 @@ const playerSlice = createSlice({
     },
 });
 
-export const { clearPlayer, setActiveCharacterId } = playerSlice.actions;
+export const { clearPlayer, setActiveCharacterId, patchPlayerProfile } = playerSlice.actions;
 export default playerSlice.reducer;

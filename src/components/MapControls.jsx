@@ -93,6 +93,7 @@ export default function MapControls() {
 
     const panel = (
         <Box
+            data-no-token-drop
             sx={{
                 pointerEvents: "auto",
                 position: "fixed",

@@ -13,7 +13,7 @@ function polar(angle, radius) {
     return { x: CX + radius * Math.cos(a), y: CY + radius * Math.sin(a) };
 }
 
-export default function StatRadarChart({ statDefinitions = [], stats = {}, maxStat = 6 }) {
+export default function StatRadarChart({ statDefinitions = [], stats = {}, maxStat = 4 }) {
     const data = useMemo(
         () =>
             statDefinitions.map((s) => ({

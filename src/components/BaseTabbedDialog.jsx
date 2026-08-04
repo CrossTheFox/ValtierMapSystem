@@ -49,8 +49,9 @@ export default function BaseTabbedDialog({
     extraHeaderActions = null,
     sizePreset = "lg",
     subtitle = null,
+    dialogId,
 }) {
-    const { isMinimized, toggleMinimize, forceMinimize } = useDialogActions();
+    const { isMinimized, toggleMinimize, forceMinimize } = useDialogActions(dialogId);
     const [isFullscreen, setIsFullscreen] = useState(false);
 
     const handleToggleMinimize = (e) => { e.stopPropagation(); toggleMinimize(); };
@@ -122,15 +123,14 @@ export default function BaseTabbedDialog({
         );
     }
 
+    if (!open || isMinimized) return null;
+
     return (
         <Dialog
             open={open}
             onClose={handleDialogClose}
             fullWidth
             maxWidth={false}
-            hideBackdrop={isMinimized}
-            disableEnforceFocus={isMinimized}
-            style={isMinimized ? { pointerEvents: "none" } : {}}
             sx={{
                 zIndex: RENDER_LAYERS.DIALOG,
                 "& .MuiDialog-container": {
@@ -139,26 +139,10 @@ export default function BaseTabbedDialog({
             }}
             PaperComponent={DraggableResizablePaper}
             PaperProps={{
-                dragKey: isMinimized ? "min" : isFullscreen ? "fs" : "max",
+                dragKey: isFullscreen ? "fs" : "max",
                 disableDrag: isFullscreen,
                 disableResize: isFullscreen,
-                sx: isMinimized ? {
-                    pointerEvents: "auto",
-                    backgroundColor: "#12121a",
-                    color: "#fff",
-                    borderRadius: 2,
-                    boxShadow: `0 0 20px ${accent}44`,
-                    border: `1px solid ${accent}`,
-                    transition: "border 0.3s, box-shadow 0.3s",
-                    position: "fixed",
-                    bottom: { xs: 82, sm: 24 },
-                    right: { xs: 8, sm: 215 },
-                    m: 0,
-                    width: { xs: "calc(100vw - 16px)", sm: "300px" },
-                    height: "auto",
-                    maxHeight: "60px",
-                    overflow: "hidden",
-                } : {
+                sx: {
                     pointerEvents: "auto",
                     backgroundColor: "#12121a",
                     color: "#fff",
@@ -173,26 +157,17 @@ export default function BaseTabbedDialog({
             }}
         >
             <VttDialogHeaderBar
-                isMinimized={isMinimized}
                 isFullscreen={isFullscreen}
-                onMinimizedClick={handleToggleMinimize}
                 left={
-                    !isMinimized ? (
-                        <VttDialogHeaderTabs tabs={tabs} value={activeTab} onChange={(e, v) => setActiveTab(v)} />
-                    ) : null
+                    <VttDialogHeaderTabs tabs={tabs} value={activeTab} onChange={(e, v) => setActiveTab(v)} />
                 }
                 center={
-                    <VttDialogHeaderTitle
-                        title={title}
-                        subtitle={subtitle}
-                        isMinimized={isMinimized}
-                        minimizedSuffix={isMinimized ? " (MINIMIZADO)" : ""}
-                    />
+                    <VttDialogHeaderTitle title={title} subtitle={subtitle} />
                 }
                 right={headerControls}
             />
 
-            <Box sx={{ display: isMinimized ? "none" : "flex", flexDirection: "column", flexGrow: 1, overflow: "hidden", minHeight: 0 }}>
+            <Box sx={{ display: "flex", flexDirection: "column", flexGrow: 1, overflow: "hidden", minHeight: 0 }}>
                 <DialogContent className="dialog-no-drag" sx={{ flexGrow: 1, display: "flex", flexDirection: "column", p: 0, width: "100%", overflow: "hidden", alignItems: "stretch", minHeight: 0, ...scrollbarSx }}>
                     {children}
                 </DialogContent>

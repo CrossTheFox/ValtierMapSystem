@@ -54,6 +54,7 @@ const MODEL_ID     = args.model ?? (PROVIDER === "openrouter"
     : "gemini-2.5-flash");
 const DRY_RUN      = Boolean(args.dry) && !Boolean(args.generate);
 const USE_LOCAL    = Boolean(args.local);
+const SEED_NAME    = args.seed === "eval" ? "eval" : "valtia";
 const MAX_DEPTH    = parseInt(args.maxDepth ?? "2", 10);
 const MAX_ENTITIES = parseInt(args.maxEntities ?? "25", 10);
 // Propagation depth for cascade mode (Evento narrativo); overrides MAX_DEPTH/MAX_ENTITIES
@@ -113,8 +114,11 @@ async function loadFromFirestore() {
     return { entities, relations };
 }
 
-async function loadFromLocal() {
-    const { ENTITIES, RELATIONS } = await import("./data/valtiaWikiSeed.mjs");
+async function loadFromLocal(seedName = "valtia") {
+    const mod = seedName === "eval"
+        ? await import("./data/evalWikiSeed.mjs")
+        : await import("./data/valtiaWikiSeed.mjs");
+    const { ENTITIES, RELATIONS } = mod;
     // Seed uses slugs as IDs; simulate Firestore IDs
     const entities  = ENTITIES.map((e, i) => ({ ...e, id: e.slug ?? `local-${i}` }));
     const relations = RELATIONS.map((r, i) => ({
@@ -414,7 +418,7 @@ async function main() {
     console.log("═".repeat(60));
     console.log(`Modo:       ${MODE}`);
     console.log(`Proveedor:  ${PROVIDER} / ${MODEL_ID}`);
-    console.log(`Fuente:     ${USE_LOCAL ? "local (seed)" : `Firestore (${CAMPAIGN_ID})`}`);
+    console.log(`Fuente:     ${USE_LOCAL ? `local (seed=${SEED_NAME})` : `Firestore (${CAMPAIGN_ID})`}`);
     console.log(`Ancla:      ${ANCHOR_SLUG ?? "(ninguna)"}`);
     if (MODE === "impact" || MODE === "cascade") console.log(`Instrucción: ${INSTRUCTION ?? "(vacía)"}`);
     if (DEPTH) console.log(`Profundidad: ${DEPTH} ondas (--depth)`);
@@ -429,7 +433,7 @@ async function main() {
     // 1. Load data
     console.log("\nCargando datos…");
     const { entities, relations } = USE_LOCAL
-        ? await loadFromLocal()
+        ? await loadFromLocal(SEED_NAME)
         : await loadFromFirestore();
     console.log(`  ${entities.length} entidades, ${relations.length} relaciones cargadas.`);
 

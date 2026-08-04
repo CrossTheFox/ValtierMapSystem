@@ -1,27 +1,37 @@
 import { db } from "../firebaseConfig";
-import { doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
+import { doc, getDoc, setDoc, onSnapshot, deleteField, updateDoc } from "firebase/firestore";
+import { updateCharacterFields } from "./characterService";
 
 const gameRef = (campaignId) => doc(db, "game", campaignId);
 
 /**
  * Ensure the game document exists for the campaign.
- * Uses setDoc+merge so it is safe to call even if the doc already exists.
  */
 export async function getOrCreateGameSession(campaignId) {
     const docRef = gameRef(campaignId);
-    const snap   = await getDoc(docRef);
+    const snap = await getDoc(docRef);
     if (!snap.exists()) {
-        const initial = { partyPositions: {} };
+        const initial = {
+            partyPositions: {},
+            tokenPositions: {},
+            activeMapId: null,
+            rulers: {},
+            pings: {},
+            sessionPools: {},
+            initiative: {
+                open: false,
+                started: false,
+                entries: [],
+                activeIndex: 0,
+                round: 1,
+            },
+        };
         await setDoc(docRef, initial);
         return initial;
     }
     return snap.data();
 }
 
-/**
- * Write the party position for a specific map.
- * Uses setDoc+merge so the document is created if it does not exist yet.
- */
 export async function updatePartyPosition(campaignId, mapId, position) {
     const docRef = gameRef(campaignId);
     await setDoc(
@@ -31,9 +41,241 @@ export async function updatePartyPosition(campaignId, mapId, position) {
     );
 }
 
+/**
+ * @param {object|null} position — `{ x, y, sizeOverride?, conditions?, visible? }` or null to remove
+ */
+export async function updateTokenPosition(campaignId, mapId, tokenId, position) {
+    const docRef = gameRef(campaignId);
+    if (position == null) {
+        await updateDoc(docRef, {
+            [`tokenPositions.${mapId}.${tokenId}`]: deleteField(),
+        });
+        return;
+    }
+    await setDoc(
+        docRef,
+        { tokenPositions: { [mapId]: { [tokenId]: position } } },
+        { merge: true },
+    );
+}
+
+export async function setActiveMapForPlayers(campaignId, mapId) {
+    const docRef = gameRef(campaignId);
+    await setDoc(docRef, { activeMapId: mapId }, { merge: true });
+}
+
+export async function spawnTokenOnMap(campaignId, mapId, tokenId, position) {
+    return updateTokenPosition(campaignId, mapId, tokenId, position);
+}
+
+/**
+ * Place/move a token and optionally sync narrative `locationId`.
+ * Caller resolves nearest location (see `findNearestLocation`).
+ */
+export async function placeTokenOnBoard(campaignId, mapId, tokenId, position, locationId = null) {
+    await updateTokenPosition(campaignId, mapId, tokenId, position);
+    if (locationId) {
+        await updateCharacterFields(tokenId, { locationId });
+    }
+}
+
+/**
+ * Batch place/move tokens (multi-drag). One merge write for positions + parallel location syncs.
+ * @param {Array<{ tokenId: string, position: object, locationId?: string|null }>} updates
+ */
+export async function placeTokensOnBoard(campaignId, mapId, updates) {
+    if (!campaignId || !mapId || !Array.isArray(updates) || updates.length === 0) return;
+    if (updates.length === 1) {
+        const u = updates[0];
+        return placeTokenOnBoard(campaignId, mapId, u.tokenId, u.position, u.locationId ?? null);
+    }
+    const mapPatch = {};
+    for (const u of updates) {
+        if (!u?.tokenId || !u.position) continue;
+        mapPatch[u.tokenId] = u.position;
+    }
+    if (Object.keys(mapPatch).length === 0) return;
+    const docRef = gameRef(campaignId);
+    await setDoc(docRef, { tokenPositions: { [mapId]: mapPatch } }, { merge: true });
+    await Promise.all(
+        updates
+            .filter((u) => u?.tokenId && u.locationId)
+            .map((u) => updateCharacterFields(u.tokenId, { locationId: u.locationId })),
+    );
+}
+
+export async function removeTokenFromMap(campaignId, mapId, tokenId) {
+    return updateTokenPosition(campaignId, mapId, tokenId, null);
+}
+
+function mergeTokenPos(existingPos, patch) {
+    const base = existingPos && typeof existingPos === "object" ? { ...existingPos } : { x: 0, y: 0 };
+    return {
+        ...base,
+        x: base.x ?? 0,
+        y: base.y ?? 0,
+        ...patch,
+    };
+}
+
+export async function updateTokenSizeOverride(campaignId, mapId, tokenId, sizeOverride, existingPos) {
+    return updateTokenPosition(
+        campaignId,
+        mapId,
+        tokenId,
+        mergeTokenPos(existingPos, { sizeOverride: sizeOverride || null }),
+    );
+}
+
+/** @param {string[]} conditions */
+export async function updateTokenConditions(campaignId, mapId, tokenId, conditions, existingPos) {
+    return updateTokenPosition(
+        campaignId,
+        mapId,
+        tokenId,
+        mergeTokenPos(existingPos, { conditions: Array.isArray(conditions) ? conditions : [] }),
+    );
+}
+
+/** @param {boolean} visible */
+export async function updateTokenVisibility(campaignId, mapId, tokenId, visible, existingPos) {
+    return updateTokenPosition(
+        campaignId,
+        mapId,
+        tokenId,
+        mergeTokenPos(existingPos, { visible: visible !== false }),
+    );
+}
+
 export function subscribeToGameSession(campaignId, callback) {
     const docRef = gameRef(campaignId);
     return onSnapshot(docRef, (snap) => {
         if (snap.exists()) callback(snap.data());
     });
+}
+
+function newId(prefix) {
+    return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Persist a finished ruler so the whole table can see it.
+ * @param {object} ruler — omit `id`; server/client assigns one
+ */
+export async function addMapRuler(campaignId, ruler) {
+    const id = ruler?.id || newId("ruler");
+    const docRef = gameRef(campaignId);
+    const payload = {
+        id,
+        mapId: ruler.mapId,
+        a: ruler.a,
+        b: ruler.b,
+        straight: ruler.straight ?? 0,
+        diagonal: ruler.diagonal ?? 0,
+        totalCells: ruler.totalCells ?? 0,
+        meters: ruler.meters ?? 0,
+        distanceLabel: ruler.distanceLabel ?? "",
+        createdBy: ruler.createdBy ?? null,
+        createdByName: ruler.createdByName ?? null,
+        createdAt: ruler.createdAt ?? Date.now(),
+    };
+    await setDoc(docRef, { rulers: { [id]: payload } }, { merge: true });
+    return payload;
+}
+
+export async function removeMapRuler(campaignId, rulerId) {
+    if (!campaignId || !rulerId) return;
+    const docRef = gameRef(campaignId);
+    await updateDoc(docRef, {
+        [`rulers.${rulerId}`]: deleteField(),
+    });
+}
+
+/** Broadcast a map ping (auto-expires client-side; writer also prunes). */
+export async function publishMapPing(campaignId, ping, { ttlMs = 5000 } = {}) {
+    const id = ping?.id || newId("ping");
+    const createdAt = ping.createdAt ?? Date.now();
+    const expiresAt = ping.expiresAt ?? createdAt + ttlMs;
+    const docRef = gameRef(campaignId);
+    const payload = {
+        id,
+        mapId: ping.mapId,
+        x: ping.x,
+        y: ping.y,
+        col: ping.col,
+        row: ping.row,
+        createdBy: ping.createdBy ?? null,
+        createdByName: ping.createdByName ?? null,
+        createdAt,
+        expiresAt,
+    };
+    await setDoc(docRef, { pings: { [id]: payload } }, { merge: true });
+
+    // Best-effort cleanup after TTL so the doc doesn't grow forever.
+    setTimeout(() => {
+        updateDoc(docRef, { [`pings.${id}`]: deleteField() }).catch(() => {});
+    }, ttlMs + 250);
+
+    return payload;
+}
+
+export async function removeMapPing(campaignId, pingId) {
+    if (!campaignId || !pingId) return;
+    await updateDoc(gameRef(campaignId), {
+        [`pings.${pingId}`]: deleteField(),
+    });
+}
+
+/**
+ * Shared session combat pools (HP / Effort / tracks) for the table.
+ * Stored at game/{campaignId}.sessionPools.{characterId}
+ */
+export async function updateCharacterSessionPools(campaignId, characterId, pools) {
+    if (!campaignId || !characterId || !pools) return;
+    await setDoc(
+        gameRef(campaignId),
+        {
+            sessionPools: {
+                [characterId]: {
+                    ...pools,
+                    updatedAt: Date.now(),
+                },
+            },
+        },
+        { merge: true },
+    );
+}
+
+/** Shared initiative tracker (DM writes; all clients read). */
+export function normalizeInitiative(raw) {
+    const src = raw && typeof raw === "object" ? raw : {};
+    const entries = Array.isArray(src.entries)
+        ? src.entries
+            .filter((e) => e && e.id)
+            .map((e, i) => ({
+                uid: e.uid || `legacy-${e.id}-${i}`,
+                id: String(e.id),
+                name: e.name || String(e.id),
+                init: Number.isFinite(Number(e.init)) ? Math.floor(Number(e.init)) : 0,
+            }))
+        : [];
+    const n = entries.length;
+    let activeIndex = Math.floor(Number(src.activeIndex) || 0);
+    if (n <= 0) activeIndex = 0;
+    else activeIndex = ((activeIndex % n) + n) % n;
+    const round = Math.max(1, Math.floor(Number(src.round) || 1));
+    return {
+        open: src.open === true,
+        started: src.started === true,
+        entries,
+        activeIndex,
+        round,
+    };
+}
+
+export async function updateInitiative(campaignId, initiative) {
+    if (!campaignId) return;
+    const payload = normalizeInitiative(initiative);
+    await setDoc(gameRef(campaignId), { initiative: payload }, { merge: true });
+    return payload;
 }

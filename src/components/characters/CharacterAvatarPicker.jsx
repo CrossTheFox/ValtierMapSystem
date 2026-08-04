@@ -17,7 +17,8 @@ export default function CharacterAvatarPicker({
     const [anchorEl, setAnchorEl] = useState(null);
     const open = Boolean(anchorEl);
     const selected = characters.find((c) => c.id === selectedId) || characters[0];
-    const isHeader = variant === "header";
+    const isHeader = variant === "header" || variant === "float";
+    const isFloat = variant === "float";
 
     if (!characters.length) return null;
 
@@ -57,8 +58,8 @@ export default function CharacterAvatarPicker({
                 alignItems: "center",
                 gap: 0.25,
                 flexShrink: 0,
-                mr: isHeader ? 0.5 : 0,
-                ...(isHeader && {
+                mr: isHeader && !isFloat ? 0.5 : 0,
+                ...(isHeader && !isFloat && {
                     transform: "translateY(2px)",
                 }),
             }}
@@ -68,9 +69,11 @@ export default function CharacterAvatarPicker({
                     position: "relative",
                     borderRadius: "50%",
                     border: `2px solid ${UI_COLORS.accent}`,
-                    boxShadow: `0 0 14px ${UI_COLORS.accentGlow || "rgba(255,102,255,0.25)"}`,
+                    boxShadow: isFloat
+                        ? `0 0 10px ${UI_COLORS.accentGlow || "rgba(255,102,255,0.2)"}`
+                        : `0 0 14px ${UI_COLORS.accentGlow || "rgba(255,102,255,0.25)"}`,
                     bgcolor: "#0d0d14",
-                    p: 0.2,
+                    p: isFloat ? 0.15 : 0.2,
                     transition: "transform 0.2s, box-shadow 0.2s",
                     "&:hover": characters.length > 1
                         ? { transform: "scale(1.04)", boxShadow: `0 0 18px ${UI_COLORS.accent}55` }

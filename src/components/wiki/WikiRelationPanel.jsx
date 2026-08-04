@@ -1,8 +1,24 @@
 import { useState, useMemo, useEffect } from "react";
-import { Box, IconButton, Divider, FormControl, InputLabel, Select, MenuItem, TextField, Tooltip, Autocomplete, createFilterOptions } from "@mui/material";
+import {
+    Box,
+    IconButton,
+    Divider,
+    FormControl,
+    InputLabel,
+    Select,
+    MenuItem,
+    TextField,
+    Tooltip,
+    Autocomplete,
+    Collapse,
+    InputBase,
+    createFilterOptions,
+} from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
-import LinkIcon from "@mui/icons-material/Link";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import SearchIcon from "@mui/icons-material/Search";
+import ClearIcon from "@mui/icons-material/Clear";
 import { useDispatch, useSelector } from "react-redux";
 import { CyberTitle, CyberText } from "../customs/CustomTexts";
 import { UI_COLORS } from "../../constants/uiColors";
@@ -56,6 +72,8 @@ export default function WikiRelationPanel({ entity, campaignId, onNavigate, read
     const [newStrength, setNewStrength] = useState(0);
     const [newLabel, setNewLabel] = useState("");
     const [adding, setAdding] = useState(false);
+    const [filterQuery, setFilterQuery] = useState("");
+    const [collapsedGroups, setCollapsedGroups] = useState({});
 
     useEffect(() => {
         setAdding(false);
@@ -63,6 +81,8 @@ export default function WikiRelationPanel({ entity, campaignId, onNavigate, read
         setNewType("");
         setNewStrength(0);
         setNewLabel("");
+        setFilterQuery("");
+        setCollapsedGroups({});
     }, [entity?.id]);
 
     const backlinkIds = entity ? getBacklinkIds(entity.id, entities) : [];
@@ -97,6 +117,41 @@ export default function WikiRelationPanel({ entity, campaignId, onNavigate, read
         return entities.find((e) => e.id === id)?.title || id;
     }
 
+    const enrichedRelations = useMemo(() => {
+        if (!entity) return [];
+        const q = filterQuery.trim().toLowerCase();
+        return entityRelations
+            .map((rel) => {
+                const isFrom = rel.fromEntityId === entity.id;
+                const otherId = isFrom ? rel.toEntityId : rel.fromEntityId;
+                const otherTitle = getEntityTitle(otherId);
+                const typeLabel = isKnownRelationType(rel.relationType)
+                    ? getRelationDisplayLabel(rel.relationType, isFrom)
+                    : `(${rel.relationType || "tipo obsoleto"})`;
+                return { rel, isFrom, otherId, otherTitle, typeLabel };
+            })
+            .filter(({ otherTitle, typeLabel, rel }) => {
+                if (!q) return true;
+                const haystack = `${otherTitle} ${typeLabel} ${rel.label || ""}`.toLowerCase();
+                return haystack.includes(q);
+            })
+            .sort((a, b) => a.otherTitle.localeCompare(b.otherTitle, "es", { sensitivity: "base" }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [entity, entityRelations, entities, filterQuery]);
+
+    const groupedRelations = useMemo(() => {
+        const outgoing = [];
+        const incoming = [];
+        for (const item of enrichedRelations) {
+            if (item.isFrom) outgoing.push(item);
+            else incoming.push(item);
+        }
+        return [
+            { key: "outgoing", label: "Salientes", items: outgoing },
+            { key: "incoming", label: "Entrantes", items: incoming },
+        ].filter((g) => g.items.length > 0);
+    }, [enrichedRelations]);
+
     const handleAddRelation = async () => {
         if (!newTo || !newType || !entity || !selectedToEntity) return;
         if (!validateRelationCreate(entity, selectedToEntity, newType)) return;
@@ -121,86 +176,126 @@ export default function WikiRelationPanel({ entity, campaignId, onNavigate, read
         dispatch(removeWikiRelation({ campaignId, relationId }));
     };
 
+    const toggleGroup = (key) => {
+        setCollapsedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
+    };
+
     if (!entity) return null;
 
     return (
-        <Box sx={{ height: "100%", minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 1.5, p: 1.5, pb: 2.5, boxSizing: "border-box", ...scrollbarSx }}>
-            <CyberTitle variant="caption" sx={{ color: UI_COLORS.textSecondary, letterSpacing: 2, fontSize: "0.6rem" }}>
-                RELACIONES
-            </CyberTitle>
+        <Box sx={{ height: "100%", minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 1, p: 1.25, pb: 2.5, boxSizing: "border-box", ...scrollbarSx }}>
+            <Box sx={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 1 }}>
+                <CyberTitle variant="caption" sx={{ color: UI_COLORS.textSecondary, letterSpacing: 2, fontSize: "0.6rem" }}>
+                    RELACIONES
+                </CyberTitle>
+                <CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.anomaly }}>
+                    {entityRelations.length}
+                </CyberText>
+            </Box>
+
+            {entityRelations.length > 4 && (
+                <Box
+                    sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 0.5,
+                        px: 1,
+                        py: 0.35,
+                        bgcolor: UI_COLORS.backgroundPrimary,
+                        border: `1px solid ${UI_COLORS.border}`,
+                        borderRadius: 0.75,
+                        "&:focus-within": { borderColor: `${UI_COLORS.accent}88` },
+                    }}
+                >
+                    <SearchIcon sx={{ color: UI_COLORS.textSecondary, fontSize: "0.8rem" }} />
+                    <InputBase
+                        value={filterQuery}
+                        onChange={(e) => setFilterQuery(e.target.value)}
+                        placeholder="Filtrar..."
+                        fullWidth
+                        sx={{
+                            color: UI_COLORS.textPrimary,
+                            fontFamily: "'Fira Sans', sans-serif",
+                            fontSize: "0.72rem",
+                            "& input::placeholder": { color: UI_COLORS.textSecondary, opacity: 0.75 },
+                        }}
+                    />
+                    {filterQuery && (
+                        <IconButton size="small" onClick={() => setFilterQuery("")} sx={{ color: UI_COLORS.textSecondary, p: 0.25 }}>
+                            <ClearIcon sx={{ fontSize: "0.75rem" }} />
+                        </IconButton>
+                    )}
+                </Box>
+            )}
 
             {entityRelations.length === 0 && !adding && (
-                <CyberText sx={{ color: UI_COLORS.textSecondary, fontSize: "0.78rem" }}>
+                <CyberText sx={{ color: UI_COLORS.textSecondary, fontSize: "0.75rem" }}>
                     Sin relaciones registradas.
                 </CyberText>
             )}
 
-            {entityRelations.map((rel) => {
-                const isFrom = rel.fromEntityId === entity.id;
-                const otherId = isFrom ? rel.toEntityId : rel.fromEntityId;
-                const otherTitle = getEntityTitle(otherId);
-                const typeLabel = isKnownRelationType(rel.relationType)
-                    ? getRelationDisplayLabel(rel.relationType, isFrom)
-                    : `(${rel.relationType || "tipo obsoleto"})`;
+            {groupedRelations.map(({ key, label, items }) => {
+                const collapsed = collapsedGroups[key] ?? false;
                 return (
-                    <Box
-                        key={rel.id}
-                        sx={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 1,
-                            bgcolor: UI_COLORS.backgroundPrimary,
-                            border: `1px solid ${UI_COLORS.border}`,
-                            borderRadius: 1,
-                            px: 1.5,
-                            py: 0.75,
-                        }}
-                    >
-                        <LinkIcon sx={{ color: UI_COLORS.accent, fontSize: "0.85rem", flexShrink: 0 }} />
-                        <Box sx={{ flex: 1, overflow: "hidden" }}>
-                            <CyberText
-                                sx={{ fontSize: "0.75rem", color: UI_COLORS.textSecondary, lineHeight: 1.2 }}
-                            >
-                                {isFrom ? "→" : "←"} {typeLabel}
-                            </CyberText>
-                            <CyberText
-                                component="span"
-                                onClick={() => onNavigate && onNavigate(otherId)}
+                    <Box key={key}>
+                        <Box
+                            component="button"
+                            type="button"
+                            onClick={() => toggleGroup(key)}
+                            sx={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 0.5,
+                                width: "100%",
+                                px: 0.5,
+                                py: 0.35,
+                                bgcolor: "transparent",
+                                border: "none",
+                                cursor: "pointer",
+                                color: UI_COLORS.textSecondary,
+                                fontFamily: "'Fira Sans', sans-serif",
+                            }}
+                        >
+                            <ExpandMoreIcon
                                 sx={{
-                                    fontSize: "0.82rem",
-                                    color: UI_COLORS.accent,
-                                    cursor: "pointer",
-                                    lineHeight: 1.3,
-                                    "&:hover": { color: UI_COLORS.accentStrong, textDecoration: "underline" },
+                                    fontSize: "1rem",
+                                    transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)",
+                                    transition: "transform 0.2s",
                                 }}
-                            >
-                                {otherTitle}
+                            />
+                            <CyberTitle variant="caption" sx={{ fontSize: "0.55rem", letterSpacing: 1.2, color: UI_COLORS.textSecondary }}>
+                                {label.toUpperCase()}
+                            </CyberTitle>
+                            <CyberText sx={{ fontSize: "0.58rem", color: UI_COLORS.anomaly, ml: "auto" }}>
+                                {items.length}
                             </CyberText>
-                            {(rel.strength !== undefined && rel.strength !== 0) && (
-                                <CyberText sx={{ fontSize: "0.68rem", color: rel.strength > 0 ? UI_COLORS.anomaly : UI_COLORS.accentStrong, lineHeight: 1.2 }}>
-                                    afinidad {rel.strength > 0 ? "+" : ""}{rel.strength}
-                                </CyberText>
-                            )}
-                            {rel.label && (
-                                <CyberText sx={{ fontSize: "0.7rem", color: UI_COLORS.textSecondary, lineHeight: 1.2 }}>
-                                    «{rel.label}»
-                                </CyberText>
-                            )}
                         </Box>
-                        {!readOnly && (
-                            <Tooltip title="Eliminar relación">
-                                <IconButton
-                                    size="small"
-                                    onClick={() => handleRemove(rel.id)}
-                                    sx={{ color: UI_COLORS.textSecondary, "&:hover": { color: UI_COLORS.accentStrong } }}
-                                >
-                                    <DeleteIcon sx={{ fontSize: "0.85rem" }} />
-                                </IconButton>
-                            </Tooltip>
-                        )}
+                        <Collapse in={!collapsed}>
+                            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.35, mt: 0.25 }}>
+                                {items.map(({ rel, isFrom, otherId, otherTitle, typeLabel }) => (
+                                    <RelationRow
+                                        key={rel.id}
+                                        isFrom={isFrom}
+                                        otherTitle={otherTitle}
+                                        typeLabel={typeLabel}
+                                        strength={rel.strength}
+                                        label={rel.label}
+                                        readOnly={readOnly}
+                                        onNavigate={onNavigate ? () => onNavigate(otherId) : undefined}
+                                        onRemove={() => handleRemove(rel.id)}
+                                    />
+                                ))}
+                            </Box>
+                        </Collapse>
                     </Box>
                 );
             })}
+
+            {filterQuery && enrichedRelations.length === 0 && entityRelations.length > 0 && (
+                <CyberText sx={{ color: UI_COLORS.textSecondary, fontSize: "0.72rem", px: 0.5 }}>
+                    Ninguna relación coincide con «{filterQuery}».
+                </CyberText>
+            )}
 
             {!readOnly && (
                 adding ? (
@@ -315,9 +410,9 @@ export default function WikiRelationPanel({ entity, campaignId, onNavigate, read
                                         },
                                     }}
                                 >
-                                    {relationTypeOptions.map(({ value, label }) => (
+                                    {relationTypeOptions.map(({ value, label: optLabel }) => (
                                         <MenuItem key={value} value={value} sx={{ color: UI_COLORS.textPrimary }}>
-                                            <CyberText sx={{ fontSize: "0.8rem", color: UI_COLORS.textPrimary }}>{label}</CyberText>
+                                            <CyberText sx={{ fontSize: "0.8rem", color: UI_COLORS.textPrimary }}>{optLabel}</CyberText>
                                         </MenuItem>
                                     ))}
                                 </Select>
@@ -337,10 +432,7 @@ export default function WikiRelationPanel({ entity, campaignId, onNavigate, read
                             }}
                             inputProps={{ min: WIKI_RELATION_STRENGTH_MIN, max: WIKI_RELATION_STRENGTH_MAX, step: 1 }}
                             variant="outlined"
-                            sx={{
-                                "& .MuiOutlinedInput-root": { bgcolor: UI_COLORS.backgroundPrimary, color: UI_COLORS.textPrimary, fontSize: "0.8rem", "& fieldset": { borderColor: UI_COLORS.border }, "&.Mui-focused fieldset": { borderColor: UI_COLORS.accent } },
-                                "& .MuiInputLabel-root": { color: UI_COLORS.textSecondary, fontSize: "0.75rem" },
-                            }}
+                            sx={textFieldSx}
                         />
 
                         {newType === WIKI_RELATION_TYPES.OTRO && (
@@ -351,10 +443,7 @@ export default function WikiRelationPanel({ entity, campaignId, onNavigate, read
                                 value={newLabel}
                                 onChange={(e) => setNewLabel(e.target.value)}
                                 variant="outlined"
-                                sx={{
-                                    "& .MuiOutlinedInput-root": { bgcolor: UI_COLORS.backgroundPrimary, color: UI_COLORS.textPrimary, fontSize: "0.8rem", "& fieldset": { borderColor: UI_COLORS.border }, "&.Mui-focused fieldset": { borderColor: UI_COLORS.accent } },
-                                    "& .MuiInputLabel-root": { color: UI_COLORS.textSecondary, fontSize: "0.75rem" },
-                                }}
+                                sx={textFieldSx}
                             />
                         )}
 
@@ -394,24 +483,148 @@ export default function WikiRelationPanel({ entity, campaignId, onNavigate, read
                 <>
                     <Divider sx={{ bgcolor: UI_COLORS.border, mt: 0.5 }} />
                     <CyberTitle variant="caption" sx={{ color: UI_COLORS.textSecondary, letterSpacing: 2, fontSize: "0.6rem" }}>
-                        MENCIONADO_EN
+                        MENCIONADO_EN ({backlinkEntities.length})
                     </CyberTitle>
-                    {backlinkEntities.map((e) => (
+                    <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
+                        {backlinkEntities.map((e) => (
+                            <CyberText
+                                key={e.id}
+                                onClick={() => onNavigate && onNavigate(e.id)}
+                                sx={{
+                                    fontSize: "0.76rem",
+                                    color: UI_COLORS.anomaly,
+                                    cursor: "pointer",
+                                    lineHeight: 1.4,
+                                    px: 0.5,
+                                    py: 0.2,
+                                    borderRadius: 0.5,
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                    "&:hover": { color: UI_COLORS.accent, bgcolor: `${UI_COLORS.accent}0d` },
+                                }}
+                            >
+                                {e.title}
+                            </CyberText>
+                        ))}
+                    </Box>
+                </>
+            )}
+        </Box>
+    );
+}
+
+function RelationRow({ isFrom, otherTitle, typeLabel, strength, label, readOnly, onNavigate, onRemove }) {
+    const hasStrength = strength !== undefined && strength !== 0;
+    const direction = isFrom ? "→" : "←";
+    const subtype = label ? ` · «${label}»` : "";
+    const fullHint = `${otherTitle} — ${direction} ${typeLabel}${subtype}`;
+    const canNavigate = typeof onNavigate === "function";
+
+    return (
+        <Box
+            className="relation-row"
+            sx={{
+                display: "grid",
+                gridTemplateColumns: "1fr auto",
+                alignItems: "center",
+                gap: 0.5,
+                px: 0.75,
+                py: 0.45,
+                borderRadius: 0.75,
+                bgcolor: UI_COLORS.backgroundPrimary,
+                border: `1px solid ${UI_COLORS.border}`,
+                transition: "border-color 0.15s, background-color 0.15s",
+                "&:hover": {
+                    borderColor: `${UI_COLORS.accent}55`,
+                    bgcolor: `${UI_COLORS.accent}06`,
+                    "& .relation-delete": { opacity: 1 },
+                },
+            }}
+        >
+            <Tooltip title={fullHint} enterDelay={400}>
+                <Box
+                    onClick={canNavigate ? onNavigate : undefined}
+                    role={canNavigate ? "button" : undefined}
+                    tabIndex={canNavigate ? 0 : undefined}
+                    onKeyDown={canNavigate ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            onNavigate();
+                        }
+                    } : undefined}
+                    sx={{
+                        minWidth: 0,
+                        cursor: canNavigate ? "pointer" : "default",
+                    }}
+                >
+                    <Box sx={{ display: "flex", alignItems: "baseline", gap: 0.5, minWidth: 0 }}>
                         <CyberText
-                            key={e.id}
-                            onClick={() => onNavigate && onNavigate(e.id)}
+                            component="span"
                             sx={{
-                                fontSize: "0.8rem",
-                                color: UI_COLORS.anomaly,
-                                cursor: "pointer",
-                                lineHeight: 1.5,
-                                "&:hover": { color: UI_COLORS.accent },
+                                fontSize: "0.78rem",
+                                color: UI_COLORS.accent,
+                                lineHeight: 1.25,
+                                fontWeight: 500,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                                flex: 1,
+                                minWidth: 0,
+                                ".relation-row:hover &": canNavigate
+                                    ? { color: UI_COLORS.accentStrong, textDecoration: "underline" }
+                                    : undefined,
                             }}
                         >
-                            → {e.title}
+                            {otherTitle}
                         </CyberText>
-                    ))}
-                </>
+                        {hasStrength && (
+                            <CyberText
+                                sx={{
+                                    fontSize: "0.58rem",
+                                    color: strength > 0 ? UI_COLORS.anomaly : UI_COLORS.accentStrong,
+                                    flexShrink: 0,
+                                    lineHeight: 1,
+                                }}
+                            >
+                                {strength > 0 ? "+" : ""}{strength}
+                            </CyberText>
+                        )}
+                    </Box>
+                    <CyberText
+                        sx={{
+                            fontSize: "0.62rem",
+                            color: UI_COLORS.textSecondary,
+                            lineHeight: 1.2,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                        }}
+                    >
+                        {direction} {typeLabel}{subtype}
+                    </CyberText>
+                </Box>
+            </Tooltip>
+            {!readOnly && (
+                <Tooltip title="Eliminar relación">
+                    <IconButton
+                        className="relation-delete"
+                        size="small"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onRemove();
+                        }}
+                        sx={{
+                            opacity: 0.35,
+                            color: UI_COLORS.textSecondary,
+                            p: 0.25,
+                            transition: "opacity 0.15s, color 0.15s",
+                            "&:hover": { color: UI_COLORS.accentStrong, opacity: 1 },
+                        }}
+                    >
+                        <DeleteIcon sx={{ fontSize: "0.78rem" }} />
+                    </IconButton>
+                </Tooltip>
             )}
         </Box>
     );
@@ -437,6 +650,17 @@ function btnSx(color) {
 }
 
 const scrollbarSx = CYBER_SCROLL_STYLE;
+
+const textFieldSx = {
+    "& .MuiOutlinedInput-root": {
+        bgcolor: UI_COLORS.backgroundPrimary,
+        color: UI_COLORS.textPrimary,
+        fontSize: "0.8rem",
+        "& fieldset": { borderColor: UI_COLORS.border },
+        "&.Mui-focused fieldset": { borderColor: UI_COLORS.accent },
+    },
+    "& .MuiInputLabel-root": { color: UI_COLORS.textSecondary, fontSize: "0.75rem" },
+};
 
 const autocompleteFieldSx = {
     "& .MuiOutlinedInput-root": {

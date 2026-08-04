@@ -1,11 +1,7 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
     Box,
     TextField,
-    FormControl,
-    InputLabel,
-    Select,
-    MenuItem,
     Chip,
     Switch,
     FormControlLabel,
@@ -16,8 +12,21 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
 import { CyberTitle, CyberText } from "../customs/CustomTexts";
 import { UI_COLORS } from "../../constants/uiColors";
+import {
+    wikiEditorInputSx,
+    wikiEditorPanelShellSx,
+    wikiEditorSubsectionSx,
+    wikiEditorSubsectionTitleSx,
+    wikiEditorListRowSx,
+} from "../../constants/wikiEditorStyles";
 import { WIKI_ENTITY_TYPES } from "../../constants/wikiEntityTypes";
 import WikiDateInput from "./WikiDateInput";
+import WikiFieldInfoTip from "./WikiFieldInfoTip";
+import WikiSearchableSelect, {
+    WikiSearchableMultiSelect,
+    enumToSearchOptions,
+    entitiesToSearchOptions,
+} from "./WikiSearchableSelect";
 import {
     DIET_OPTIONS,
     SIZE_CATEGORY_OPTIONS,
@@ -28,8 +37,6 @@ import {
     POPULATION_MACRO_LOCATION_KINDS,
     ORGANIZATION_KIND_OPTIONS,
     ORGANIZATION_SIZE_OPTIONS,
-    EVENT_KIND_OPTIONS,
-    EVENT_CERTAINTY_OPTIONS,
     RELIC_KIND_OPTIONS,
     RELIC_POWER_TIER_OPTIONS,
     IDEOLOGY_KIND_OPTIONS,
@@ -40,56 +47,61 @@ import {
     REACTION_ARCHETYPE_OPTIONS,
     REACTION_ARCHETYPE_TOOLTIPS,
     NARRATIVE_STATE_OPTIONS,
+    NARRATIVE_STATE_TOOLTIPS,
     STRESS_RESPONSE_OPTIONS,
+    STRESS_RESPONSE_TOOLTIPS,
     COLLECTIVE_ARCHETYPE_OPTIONS,
+    NARRATIVE_PERSONALITY_SECTION_HELP,
+    REACTION_ARCHETYPE_FIELD_HELP,
+    NARRATIVE_STATE_FIELD_HELP,
+    STRESS_RESPONSE_FIELD_HELP,
+    NARRATIVE_TRAITS_FIELD_HELP,
+    BOND_NOTES_FIELD_HELP,
+    NARRATIVE_TRAITS_EXAMPLES,
 } from "../../constants/wiki/entityFieldSchemas";
 import { filterParentLocationCandidates } from "../../constants/wiki/wikiEntityDependencies";
 
-const inputSx = {
-    "& .MuiOutlinedInput-root": {
-        bgcolor: UI_COLORS.backgroundPrimary,
-        color: UI_COLORS.textPrimary,
-        fontFamily: "'Fira Sans', sans-serif",
-        fontSize: "0.85rem",
-        "& fieldset": { borderColor: UI_COLORS.border },
-        "&:hover fieldset": { borderColor: `${UI_COLORS.accent}88` },
-        "&.Mui-focused fieldset": { borderColor: UI_COLORS.accent },
-    },
-    "& .MuiInputLabel-root": { color: UI_COLORS.textSecondary, fontFamily: "'Fira Sans', sans-serif", fontSize: "0.78rem" },
-    "& .MuiInputLabel-root.Mui-focused": { color: UI_COLORS.accent },
-};
-
-const selectSx = {
-    color: UI_COLORS.textPrimary,
-    fontFamily: "'Fira Sans', sans-serif",
-    fontSize: "0.82rem",
-    bgcolor: UI_COLORS.backgroundPrimary,
-    "& .MuiOutlinedInput-notchedOutline": { borderColor: UI_COLORS.border },
-    "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: `${UI_COLORS.accent}88` },
-    "&.Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: UI_COLORS.accent },
-    "& .MuiSvgIcon-root": { color: UI_COLORS.textSecondary },
-};
-
-const menuProps = {
-    PaperProps: { sx: { bgcolor: UI_COLORS.backgroundSecondary, color: UI_COLORS.textPrimary, maxHeight: 280 } },
-};
+const inputSx = wikiEditorInputSx;
 
 function PanelShell({ title, children }) {
     return (
-        <Box
-            sx={{
-                p: 1.5,
-                bgcolor: `${UI_COLORS.accent}08`,
-                border: `1px solid ${UI_COLORS.accent}33`,
-                borderRadius: 1,
-                display: "flex",
-                flexDirection: "column",
-                gap: 1.5,
-            }}
-        >
-            <CyberTitle variant="caption" sx={{ color: UI_COLORS.accent, letterSpacing: 2, fontSize: "0.65rem" }}>
+        <Box sx={wikiEditorPanelShellSx}>
+            <CyberTitle variant="caption" sx={{ color: UI_COLORS.accent, letterSpacing: 2, fontSize: "0.68rem" }}>
                 {title}
             </CyberTitle>
+            {children}
+        </Box>
+    );
+}
+
+function Subsection({ title, hint, info, children }) {
+    return (
+        <Box sx={wikiEditorSubsectionSx}>
+            <Box>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                    <CyberText sx={wikiEditorSubsectionTitleSx}>{title}</CyberText>
+                    {info && <WikiFieldInfoTip title={info} />}
+                </Box>
+                {hint && (
+                    <CyberText sx={{ fontSize: "0.65rem", color: UI_COLORS.textSecondary, mt: 0.25, lineHeight: 1.4 }}>
+                        {hint}
+                    </CyberText>
+                )}
+            </Box>
+            {children}
+        </Box>
+    );
+}
+
+function LabeledField({ label, info, children }) {
+    return (
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.35, flex: 1, minWidth: 160 }}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary, fontWeight: 600 }}>
+                    {label}
+                </CyberText>
+                {info && <WikiFieldInfoTip title={info} />}
+            </Box>
             {children}
         </Box>
     );
@@ -99,21 +111,16 @@ function Row({ children }) {
     return <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>{children}</Box>;
 }
 
-function EnumSelect({ label, value, options, onChange, minWidth = 160 }) {
+function EnumSelect({ label, value, options, onChange, minWidth = 160, tooltips = {} }) {
+    const searchOptions = useMemo(() => enumToSearchOptions(options, tooltips), [options, tooltips]);
     return (
-        <FormControl size="small" sx={{ minWidth, flex: 1 }}>
-            <InputLabel sx={{ color: UI_COLORS.textSecondary, fontSize: "0.78rem" }}>{label}</InputLabel>
-            <Select value={value || ""} onChange={(e) => onChange(e.target.value)} label={label} sx={selectSx} MenuProps={menuProps}>
-                <MenuItem value="">
-                    <CyberText sx={{ fontSize: "0.8rem", color: UI_COLORS.textSecondary }}>—</CyberText>
-                </MenuItem>
-                {options.map(({ value: v, label: l }) => (
-                    <MenuItem key={v} value={v}>
-                        <CyberText sx={{ fontSize: "0.8rem" }}>{l}</CyberText>
-                    </MenuItem>
-                ))}
-            </Select>
-        </FormControl>
+        <WikiSearchableSelect
+            label={label}
+            value={value || ""}
+            onChange={onChange}
+            options={searchOptions}
+            minWidth={minWidth}
+        />
     );
 }
 
@@ -163,52 +170,35 @@ function BoolToggle({ label, checked, onChange }) {
 }
 
 function EntityRefSelect({ label, value, onChange, entities, entityType, minWidth = 180 }) {
-    const candidates = entities.filter((e) => e.entityType === entityType);
+    const searchOptions = useMemo(
+        () => entitiesToSearchOptions(entities, entityType),
+        [entities, entityType]
+    );
     return (
-        <FormControl size="small" sx={{ minWidth, flex: 1 }}>
-            <InputLabel sx={{ color: UI_COLORS.textSecondary, fontSize: "0.78rem" }}>{label}</InputLabel>
-            <Select value={value || ""} onChange={(e) => onChange(e.target.value || null)} label={label} sx={selectSx} MenuProps={menuProps}>
-                <MenuItem value="">
-                    <CyberText sx={{ fontSize: "0.8rem", color: UI_COLORS.textSecondary }}>— Ninguna —</CyberText>
-                </MenuItem>
-                {candidates.map((e) => (
-                    <MenuItem key={e.id} value={e.id}>
-                        <CyberText sx={{ fontSize: "0.8rem" }}>{e.title}</CyberText>
-                    </MenuItem>
-                ))}
-            </Select>
-        </FormControl>
+        <WikiSearchableSelect
+            label={label}
+            value={value || ""}
+            onChange={(v) => onChange(v || null)}
+            options={searchOptions}
+            minWidth={minWidth}
+            clearLabel="— Ninguna —"
+        />
     );
 }
 
 function EntityRefMultiSelect({ label, value = [], onChange, entities, entityType, minWidth = 200 }) {
-    const candidates = entities.filter((e) => e.entityType === entityType);
-    const titleOf = (id) => entities.find((e) => e.id === id)?.title || id;
+    const searchOptions = useMemo(
+        () => entitiesToSearchOptions(entities, entityType),
+        [entities, entityType]
+    );
     return (
-        <FormControl size="small" sx={{ minWidth, flex: 1 }}>
-            <InputLabel sx={{ color: UI_COLORS.textSecondary, fontSize: "0.78rem" }}>{label}</InputLabel>
-            <Select
-                multiple
-                value={Array.isArray(value) ? value : []}
-                onChange={(e) => onChange(typeof e.target.value === "string" ? e.target.value.split(",") : e.target.value)}
-                label={label}
-                sx={selectSx}
-                MenuProps={menuProps}
-                renderValue={(selected) => (
-                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                        {selected.map((id) => (
-                            <Chip key={id} size="small" label={<CyberText sx={{ fontSize: "0.6rem" }}>{titleOf(id)}</CyberText>} sx={{ height: 18, bgcolor: `${UI_COLORS.accent}18` }} />
-                        ))}
-                    </Box>
-                )}
-            >
-                {candidates.map((e) => (
-                    <MenuItem key={e.id} value={e.id}>
-                        <CyberText sx={{ fontSize: "0.8rem" }}>{e.title}</CyberText>
-                    </MenuItem>
-                ))}
-            </Select>
-        </FormControl>
+        <WikiSearchableMultiSelect
+            label={label}
+            value={Array.isArray(value) ? value : []}
+            onChange={onChange}
+            options={searchOptions}
+            minWidth={minWidth}
+        />
     );
 }
 
@@ -251,7 +241,7 @@ function TagArray({ label, value = [], onChange, placeholder }) {
                         label={<CyberText sx={{ fontSize: "0.62rem" }}>{tag}</CyberText>}
                         onDelete={() => onChange(tags.filter((t) => t !== tag))}
                         size="small"
-                        sx={{ height: 20, bgcolor: UI_COLORS.backgroundPrimary, border: `1px solid ${UI_COLORS.border}`, "& .MuiChip-deleteIcon": { color: UI_COLORS.textSecondary, fontSize: "0.8rem" } }}
+                        sx={{ height: 20, bgcolor: UI_COLORS.backgroundPrimary, border: `1px solid ${UI_COLORS.border}`, color: UI_COLORS.textPrimary, "& .MuiChip-label": { color: UI_COLORS.textPrimary }, "& .MuiChip-deleteIcon": { color: UI_COLORS.textSecondary, fontSize: "0.8rem" } }}
                     />
                 ))}
             </Box>
@@ -284,6 +274,22 @@ function MembersEditor({ members = [], onChange, entities, vttCharacters }) {
     };
 
     const candidates = refType === MEMBER_REF_KIND.VTT ? vttCharacters : personajes;
+    const memberOptions = useMemo(
+        () => candidates.map((c) => ({
+            value: c.id,
+            label: c.title || c.name,
+            sublabel: refType === MEMBER_REF_KIND.VTT ? "Personaje VTT" : "Ficha wiki",
+        })),
+        [candidates, refType]
+    );
+    const refTypeOptions = useMemo(
+        () => [
+            { value: MEMBER_REF_KIND.WIKI, label: "Ficha wiki" },
+            { value: MEMBER_REF_KIND.VTT, label: "Personaje VTT" },
+        ],
+        []
+    );
+    const statusOptions = useMemo(() => enumToSearchOptions(MEMBERSHIP_STATUS_OPTIONS), []);
 
     return (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -294,20 +300,14 @@ function MembersEditor({ members = [], onChange, entities, vttCharacters }) {
             {list.length > 0 && (
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
                     {list.map((m) => (
-                        <Box
-                            key={`${m.kind}:${m.id}`}
-                            sx={{
-                                display: "flex", alignItems: "center", gap: 1, px: 1, py: 0.5,
-                                bgcolor: UI_COLORS.backgroundPrimary, border: `1px solid ${UI_COLORS.border}`, borderRadius: 1,
-                            }}
-                        >
+                        <Box key={`${m.kind}:${m.id}`} sx={wikiEditorListRowSx}>
                             <Chip
                                 size="small"
-                                label={<CyberText sx={{ fontSize: "0.55rem" }}>{m.kind === MEMBER_REF_KIND.VTT ? "VTT" : "WIKI"}</CyberText>}
-                                sx={{ height: 16, bgcolor: `${UI_COLORS.anomaly}18`, color: UI_COLORS.anomaly }}
+                                label={m.kind === MEMBER_REF_KIND.VTT ? "VTT" : "WIKI"}
+                                sx={{ height: 18, bgcolor: `${UI_COLORS.anomaly}18`, color: UI_COLORS.anomaly, fontSize: "0.55rem", fontWeight: 700, "& .MuiChip-label": { px: 0.75 } }}
                             />
-                            <CyberText sx={{ fontSize: "0.78rem", flex: 1 }}>{nameOf(m)}</CyberText>
-                            <CyberText sx={{ fontSize: "0.62rem", color: m.status === MEMBERSHIP_STATUS.SOSPECHADO ? UI_COLORS.accentStrong : UI_COLORS.textSecondary }}>
+                            <CyberText sx={{ fontSize: "0.82rem", flex: 1, fontWeight: 500 }}>{nameOf(m)}</CyberText>
+                            <CyberText sx={{ fontSize: "0.65rem", color: m.status === MEMBERSHIP_STATUS.SOSPECHADO ? UI_COLORS.accentStrong : UI_COLORS.textSecondary, flexShrink: 0 }}>
                                 {m.status === MEMBERSHIP_STATUS.SOSPECHADO ? "sospechado" : "confirmado"}
                                 {m.role ? ` · ${m.role}` : ""}
                             </CyberText>
@@ -322,33 +322,32 @@ function MembersEditor({ members = [], onChange, entities, vttCharacters }) {
             )}
 
             <Row>
-                <FormControl size="small" sx={{ minWidth: 110 }}>
-                    <InputLabel sx={{ color: UI_COLORS.textSecondary, fontSize: "0.78rem" }}>Tipo</InputLabel>
-                    <Select value={refType} onChange={(e) => { setRefType(e.target.value); setRefId(""); }} label="Tipo" sx={selectSx} MenuProps={menuProps}>
-                        <MenuItem value={MEMBER_REF_KIND.WIKI}><CyberText sx={{ fontSize: "0.8rem" }}>Ficha wiki</CyberText></MenuItem>
-                        <MenuItem value={MEMBER_REF_KIND.VTT}><CyberText sx={{ fontSize: "0.8rem" }}>Personaje VTT</CyberText></MenuItem>
-                    </Select>
-                </FormControl>
-                <FormControl size="small" sx={{ minWidth: 160, flex: 1 }}>
-                    <InputLabel sx={{ color: UI_COLORS.textSecondary, fontSize: "0.78rem" }}>Integrante</InputLabel>
-                    <Select value={refId} onChange={(e) => setRefId(e.target.value)} label="Integrante" sx={selectSx} MenuProps={menuProps}>
-                        {candidates.map((c) => (
-                            <MenuItem key={c.id} value={c.id}>
-                                <CyberText sx={{ fontSize: "0.8rem" }}>{c.title || c.name}</CyberText>
-                            </MenuItem>
-                        ))}
-                    </Select>
-                </FormControl>
+                <WikiSearchableSelect
+                    label="Tipo"
+                    value={refType}
+                    onChange={(v) => { setRefType(v); setRefId(""); }}
+                    options={refTypeOptions}
+                    minWidth={110}
+                    clearable={false}
+                />
+                <WikiSearchableSelect
+                    label="Integrante"
+                    value={refId}
+                    onChange={setRefId}
+                    options={memberOptions}
+                    minWidth={160}
+                    clearable={false}
+                />
             </Row>
             <Row>
-                <FormControl size="small" sx={{ minWidth: 200 }}>
-                    <InputLabel sx={{ color: UI_COLORS.textSecondary, fontSize: "0.78rem" }}>Estado</InputLabel>
-                    <Select value={status} onChange={(e) => setStatus(e.target.value)} label="Estado" sx={selectSx} MenuProps={menuProps}>
-                        {MEMBERSHIP_STATUS_OPTIONS.map(({ value: v, label: l }) => (
-                            <MenuItem key={v} value={v}><CyberText sx={{ fontSize: "0.8rem" }}>{l}</CyberText></MenuItem>
-                        ))}
-                    </Select>
-                </FormControl>
+                <WikiSearchableSelect
+                    label="Estado"
+                    value={status}
+                    onChange={setStatus}
+                    options={statusOptions}
+                    minWidth={200}
+                    clearable={false}
+                />
                 <TextField label="Rol (opcional)" value={role} onChange={(e) => setRole(e.target.value)} size="small" sx={{ ...inputSx, flex: 1, minWidth: 120 }} />
                 <Box
                     component="button"
@@ -374,6 +373,8 @@ function OrganizationsEditor({ organizations = [], onChange, entities }) {
     const [status, setStatus] = useState(MEMBERSHIP_STATUS.CONFIRMADO);
     const [role, setRole] = useState("");
     const orgs = entities.filter((e) => e.entityType === WIKI_ENTITY_TYPES.ORGANIZACION);
+    const orgOptions = useMemo(() => entitiesToSearchOptions(orgs), [orgs]);
+    const statusOptions = useMemo(() => enumToSearchOptions(MEMBERSHIP_STATUS_OPTIONS), []);
     const list = Array.isArray(organizations) ? organizations : [];
     const titleOf = (id) => entities.find((e) => e.id === id)?.title || id;
 
@@ -387,18 +388,12 @@ function OrganizationsEditor({ organizations = [], onChange, entities }) {
 
     return (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-            <CyberText sx={{ fontSize: "0.72rem", color: UI_COLORS.textSecondary }}>
-                Organizaciones a las que pertenece
-            </CyberText>
             {list.length > 0 && (
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
                     {list.map((m) => (
-                        <Box
-                            key={m.organizationEntityId}
-                            sx={{ display: "flex", alignItems: "center", gap: 1, px: 1, py: 0.5, bgcolor: UI_COLORS.backgroundPrimary, border: `1px solid ${UI_COLORS.border}`, borderRadius: 1 }}
-                        >
-                            <CyberText sx={{ fontSize: "0.78rem", flex: 1 }}>{titleOf(m.organizationEntityId)}</CyberText>
-                            <CyberText sx={{ fontSize: "0.62rem", color: m.status === MEMBERSHIP_STATUS.SOSPECHADO ? UI_COLORS.accentStrong : UI_COLORS.textSecondary }}>
+                        <Box key={m.organizationEntityId} sx={wikiEditorListRowSx}>
+                            <CyberText sx={{ fontSize: "0.82rem", flex: 1, fontWeight: 500 }}>{titleOf(m.organizationEntityId)}</CyberText>
+                            <CyberText sx={{ fontSize: "0.65rem", color: m.status === MEMBERSHIP_STATUS.SOSPECHADO ? UI_COLORS.accentStrong : UI_COLORS.textSecondary, flexShrink: 0 }}>
                                 {m.status === MEMBERSHIP_STATUS.SOSPECHADO ? "sospechado" : "confirmado"}
                                 {m.role ? ` · ${m.role}` : ""}
                             </CyberText>
@@ -412,22 +407,22 @@ function OrganizationsEditor({ organizations = [], onChange, entities }) {
                 </Box>
             )}
             <Row>
-                <FormControl size="small" sx={{ minWidth: 160, flex: 1 }}>
-                    <InputLabel sx={{ color: UI_COLORS.textSecondary, fontSize: "0.78rem" }}>Organización</InputLabel>
-                    <Select value={orgId} onChange={(e) => setOrgId(e.target.value)} label="Organización" sx={selectSx} MenuProps={menuProps}>
-                        {orgs.map((o) => (
-                            <MenuItem key={o.id} value={o.id}><CyberText sx={{ fontSize: "0.8rem" }}>{o.title}</CyberText></MenuItem>
-                        ))}
-                    </Select>
-                </FormControl>
-                <FormControl size="small" sx={{ minWidth: 180 }}>
-                    <InputLabel sx={{ color: UI_COLORS.textSecondary, fontSize: "0.78rem" }}>Estado</InputLabel>
-                    <Select value={status} onChange={(e) => setStatus(e.target.value)} label="Estado" sx={selectSx} MenuProps={menuProps}>
-                        {MEMBERSHIP_STATUS_OPTIONS.map(({ value: v, label: l }) => (
-                            <MenuItem key={v} value={v}><CyberText sx={{ fontSize: "0.8rem" }}>{l}</CyberText></MenuItem>
-                        ))}
-                    </Select>
-                </FormControl>
+                <WikiSearchableSelect
+                    label="Organización"
+                    value={orgId}
+                    onChange={setOrgId}
+                    options={orgOptions}
+                    minWidth={160}
+                    clearable={false}
+                />
+                <WikiSearchableSelect
+                    label="Estado"
+                    value={status}
+                    onChange={setStatus}
+                    options={statusOptions}
+                    minWidth={180}
+                    clearable={false}
+                />
                 <TextField label="Rol (opcional)" value={role} onChange={(e) => setRole(e.target.value)} size="small" sx={{ ...inputSx, flex: 1, minWidth: 120 }} />
                 <Box
                     component="button"
@@ -484,97 +479,121 @@ export default function WikiCustomFieldsPanel({
     if (entityType === T.PERSONAJE) {
         return (
             <PanelShell title="PERSONAJE — DATOS NARRATIVOS">
-                <Row>
-                    <EnumSelect label="Tipo de personaje" value={meta.characterKind} options={CHARACTER_KIND_OPTIONS} onChange={(v) => onField("characterKind", v)} />
-                    <EntityRefSelect label="Especie" value={meta.speciesEntityId} onChange={(v) => onField("speciesEntityId", v)} entities={entities} entityType={T.ESPECIE} />
-                </Row>
-                <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-                    <Box>
-                        <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary, mb: 0.25 }}>Nacimiento</CyberText>
-                        <WikiDateInput value={meta.birthDate} onChange={(v) => onField("birthDate", v)} />
-                    </Box>
-                    <Box>
-                        <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary, mb: 0.25 }}>Muerte (vacío = vivo/desconocido)</CyberText>
-                        <WikiDateInput value={meta.deathDate} onChange={(v) => onField("deathDate", v)} />
-                    </Box>
-                </Box>
-                <Row>
-                    <EntityRefSelect label="Lugar de nacimiento" value={meta.birthPlaceEntityId} onChange={(v) => onField("birthPlaceEntityId", v)} entities={entities} entityType={T.LOCACION} />
-                    <EntityRefSelect label="Lugar de muerte" value={meta.deathPlaceEntityId} onChange={(v) => onField("deathPlaceEntityId", v)} entities={entities} entityType={T.LOCACION} />
-                </Row>
-                <Row>
-                    <TextRow label="Era activa" value={meta.activeEraLabel} onChange={(v) => onField("activeEraLabel", v)} placeholder="Era de Cenizas" />
-                    <TextRow label="Ocupación" value={meta.occupation} onChange={(v) => onField("occupation", v)} />
-                    <TextRow label="Presentación de género" value={meta.genderPresentation} onChange={(v) => onField("genderPresentation", v)} minWidth={140} />
-                </Row>
-                <TagArray label="Títulos / epítetos" value={meta.titles} onChange={(v) => onField("titles", v)} placeholder="Reina de..., El Sin Nombre" />
-                <BoolToggle label="Es una deidad" checked={meta.isDeity} onChange={(v) => onField("isDeity", v)} />
-                <OrganizationsEditor organizations={meta.organizations} onChange={(v) => onField("organizations", v)} entities={entities} />
-                {/* Reaction archetype for AI cascade mode (PANGeA) */}
-                <Box sx={{ mt: 0.5 }}>
-                    <CyberText sx={{ fontSize: "0.66rem", color: UI_COLORS.textSecondary, mb: 0.5, letterSpacing: 0.5 }}>
-                        Arquetipo de reacción
-                        <Tooltip
-                            title="Guía cómo la IA genera reacciones de este personaje en el modo Evento narrativo (PANGeA). Opcional."
-                            placement="right"
-                            slotProps={{ tooltip: { sx: { maxWidth: 260, fontSize: "0.7rem", fontFamily: "'Fira Sans', sans-serif", bgcolor: UI_COLORS.backgroundPrimary, color: UI_COLORS.textPrimary, border: `1px solid ${UI_COLORS.border}` } } }}
-                        >
-                            <span style={{ marginLeft: 6, cursor: "help", color: UI_COLORS.textSecondary, fontSize: "0.72rem" }}>ⓘ</span>
-                        </Tooltip>
-                    </CyberText>
-                    <FormControl size="small" sx={{ minWidth: 200 }}>
-                        <InputLabel sx={{ color: UI_COLORS.textSecondary, fontSize: "0.75rem" }}>Arquetipo</InputLabel>
-                        <Select
-                            value={meta.reactionArchetype ?? ""}
-                            onChange={(e) => onField("reactionArchetype", e.target.value || undefined)}
-                            label="Arquetipo"
-                            sx={selectSx}
-                        >
-                            <MenuItem value="" sx={{ fontSize: "0.8rem" }}>Sin arquetipo definido</MenuItem>
-                            {REACTION_ARCHETYPE_OPTIONS.map((opt) => (
-                                <MenuItem key={opt.value} value={opt.value} sx={{ fontSize: "0.8rem" }}>
-                                    <Tooltip
-                                        title={REACTION_ARCHETYPE_TOOLTIPS[opt.value] ?? ""}
-                                        placement="right"
-                                        slotProps={{ tooltip: { sx: { maxWidth: 240, fontSize: "0.7rem", fontFamily: "'Fira Sans', sans-serif", bgcolor: UI_COLORS.backgroundPrimary, color: UI_COLORS.textPrimary, border: `1px solid ${UI_COLORS.border}` } } }}
-                                    >
-                                        <Box component="span" sx={{ display: "block", width: "100%" }}>{opt.label}</Box>
-                                    </Tooltip>
-                                </MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
-                </Box>
-                {/* Narrative personality fields for AI event mode */}
-                <Box sx={{ mt: 1 }}>
-                    <CyberText sx={{ fontSize: "0.66rem", color: UI_COLORS.textSecondary, mb: 0.5, letterSpacing: 0.5, textTransform: "uppercase" }}>
-                        Memoria de personalidad
-                        <Tooltip
-                            title="Campos usados por el modo Evento narrativo para generar reacciones coherentes con la personalidad del personaje."
-                            placement="right"
-                            slotProps={{ tooltip: { sx: { maxWidth: 280, fontSize: "0.7rem", fontFamily: "'Fira Sans', sans-serif", bgcolor: UI_COLORS.backgroundPrimary, color: UI_COLORS.textPrimary, border: `1px solid ${UI_COLORS.border}` } } }}
-                        >
-                            <span style={{ marginLeft: 6, cursor: "help", color: UI_COLORS.textSecondary, fontSize: "0.72rem" }}>ⓘ</span>
-                        </Tooltip>
-                    </CyberText>
+                <Subsection title="Identidad">
                     <Row>
-                        <EnumSelect label="Estado actual" value={meta.narrativeState} options={NARRATIVE_STATE_OPTIONS} onChange={(v) => onField("narrativeState", v)} />
-                        <EnumSelect label="Patrón de estrés" value={meta.stressResponse} options={STRESS_RESPONSE_OPTIONS} onChange={(v) => onField("stressResponse", v)} />
+                        <EnumSelect label="Tipo de personaje" value={meta.characterKind} options={CHARACTER_KIND_OPTIONS} onChange={(v) => onField("characterKind", v)} />
+                        <EntityRefSelect label="Especie" value={meta.speciesEntityId} onChange={(v) => onField("speciesEntityId", v)} entities={entities} entityType={T.ESPECIE} />
                     </Row>
-                    <TagArray
-                        label="Rasgos narrativos (máx. 5)"
-                        value={meta.narrativeTraits}
-                        onChange={(v) => onField("narrativeTraits", Array.isArray(v) ? v.slice(0, 5) : [])}
-                        placeholder="lealtad filial extrema, impulsividad..."
-                    />
-                    <TextRow
-                        label="Anclas emocionales (bondNotes)"
-                        value={meta.bondNotes}
-                        onChange={(v) => onField("bondNotes", v)}
-                        placeholder="Zorgun es su único pilar; sin él no hay propósito..."
-                        multiline
-                    />
-                </Box>
+                    <Row>
+                        <TextRow label="Era activa" value={meta.activeEraLabel} onChange={(v) => onField("activeEraLabel", v)} placeholder="Era de Cenizas" />
+                        <TextRow label="Ocupación" value={meta.occupation} onChange={(v) => onField("occupation", v)} />
+                        <TextRow label="Presentación de género" value={meta.genderPresentation} onChange={(v) => onField("genderPresentation", v)} minWidth={140} />
+                    </Row>
+                    <TagArray label="Títulos / epítetos" value={meta.titles} onChange={(v) => onField("titles", v)} placeholder="Reina de..., El Sin Nombre" />
+                    <BoolToggle label="Es una deidad" checked={meta.isDeity} onChange={(v) => onField("isDeity", v)} />
+                </Subsection>
+
+                <Subsection title="Cronología" hint="Fechas en calendario D.Z. — deja vacío si es desconocido o el personaje sigue vivo.">
+                    <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+                        <Box>
+                            <CyberText sx={{ fontSize: "0.7rem", color: UI_COLORS.textSecondary, mb: 0.5, fontWeight: 600 }}>Nacimiento</CyberText>
+                            <WikiDateInput value={meta.birthDate} onChange={(v) => onField("birthDate", v)} />
+                        </Box>
+                        <Box>
+                            <CyberText sx={{ fontSize: "0.7rem", color: UI_COLORS.textSecondary, mb: 0.5, fontWeight: 600 }}>Muerte</CyberText>
+                            <WikiDateInput value={meta.deathDate} onChange={(v) => onField("deathDate", v)} />
+                        </Box>
+                    </Box>
+                    <Row>
+                        <EntityRefSelect label="Lugar de nacimiento" value={meta.birthPlaceEntityId} onChange={(v) => onField("birthPlaceEntityId", v)} entities={entities} entityType={T.LOCACION} />
+                        <EntityRefSelect label="Lugar de muerte" value={meta.deathPlaceEntityId} onChange={(v) => onField("deathPlaceEntityId", v)} entities={entities} entityType={T.LOCACION} />
+                    </Row>
+                </Subsection>
+
+                <Subsection title="Afiliaciones" hint="Organizaciones a las que pertenece este personaje.">
+                    <OrganizationsEditor organizations={meta.organizations} onChange={(v) => onField("organizations", v)} entities={entities} />
+                </Subsection>
+
+                <Subsection
+                    title="Personalidad narrativa (IA)"
+                    hint="Opcional. Guía reacciones en el modo Evento narrativo (PANGeA)."
+                    info={NARRATIVE_PERSONALITY_SECTION_HELP}
+                >
+                    <LabeledField label="Arquetipo de reacción" info={REACTION_ARCHETYPE_FIELD_HELP}>
+                        <WikiSearchableSelect
+                            label="Arquetipo de reacción"
+                            value={meta.reactionArchetype ?? ""}
+                            onChange={(v) => onField("reactionArchetype", v || undefined)}
+                            options={enumToSearchOptions(REACTION_ARCHETYPE_OPTIONS, REACTION_ARCHETYPE_TOOLTIPS)}
+                            minWidth={200}
+                            clearLabel="Sin arquetipo definido"
+                        />
+                    </LabeledField>
+                    <Row>
+                        <LabeledField label="Estado actual" info={NARRATIVE_STATE_FIELD_HELP}>
+                            <EnumSelect
+                                label="Estado actual"
+                                value={meta.narrativeState}
+                                options={NARRATIVE_STATE_OPTIONS}
+                                tooltips={NARRATIVE_STATE_TOOLTIPS}
+                                onChange={(v) => onField("narrativeState", v)}
+                            />
+                        </LabeledField>
+                        <LabeledField label="Patrón de estrés" info={STRESS_RESPONSE_FIELD_HELP}>
+                            <EnumSelect
+                                label="Patrón de estrés"
+                                value={meta.stressResponse}
+                                options={STRESS_RESPONSE_OPTIONS}
+                                tooltips={STRESS_RESPONSE_TOOLTIPS}
+                                onChange={(v) => onField("stressResponse", v)}
+                            />
+                        </LabeledField>
+                    </Row>
+                    <Box>
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mb: 0.35 }}>
+                            <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary, fontWeight: 600 }}>
+                                Rasgos narrativos (máx. 5)
+                            </CyberText>
+                            <WikiFieldInfoTip title={NARRATIVE_TRAITS_FIELD_HELP} />
+                        </Box>
+                        <TagArray
+                            label="Añadir rasgo"
+                            value={meta.narrativeTraits}
+                            onChange={(v) => onField("narrativeTraits", Array.isArray(v) ? v.slice(0, 5) : [])}
+                            placeholder={NARRATIVE_TRAITS_EXAMPLES.join(", ")}
+                        />
+                        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 0.5 }}>
+                            {NARRATIVE_TRAITS_EXAMPLES.map((ex) => (
+                                <Chip
+                                    key={ex}
+                                    size="small"
+                                    label={<CyberText sx={{ fontSize: "0.58rem" }}>{ex}</CyberText>}
+                                    onClick={() => {
+                                        const cur = Array.isArray(meta.narrativeTraits) ? meta.narrativeTraits : [];
+                                        if (!cur.includes(ex) && cur.length < 5) onField("narrativeTraits", [...cur, ex]);
+                                    }}
+                                    sx={{
+                                        height: 20,
+                                        cursor: "pointer",
+                                        bgcolor: UI_COLORS.backgroundPrimary,
+                                        border: `1px dashed ${UI_COLORS.border}`,
+                                        color: UI_COLORS.textSecondary,
+                                        "&:hover": { borderColor: UI_COLORS.accent, color: UI_COLORS.accent },
+                                    }}
+                                />
+                            ))}
+                        </Box>
+                    </Box>
+                    <LabeledField label="Anclas emocionales" info={BOND_NOTES_FIELD_HELP}>
+                        <TextRow
+                            label="Anclas emocionales (bondNotes)"
+                            value={meta.bondNotes}
+                            onChange={(v) => onField("bondNotes", v)}
+                            placeholder="Zorgun es su único pilar; sin él no hay propósito…"
+                            multiline
+                        />
+                    </LabeledField>
+                </Subsection>
             </PanelShell>
         );
     }

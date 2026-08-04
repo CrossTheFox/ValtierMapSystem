@@ -1,6 +1,10 @@
 import { useState, useEffect } from "react";
 import { getStatSystemForCampaign } from "../../firebase/services/statSystemService";
-import { DEFAULT_STAT_SYSTEM, DEFAULT_RESOURCE_TRACKS } from "../constants/statSystem";
+import {
+    DEFAULT_STAT_SYSTEM,
+    DEFAULT_RESOURCE_TRACKS,
+    filterResourceTracks,
+} from "../constants/statSystem";
 
 /**
  * @param {string|null|undefined} campaignId
@@ -34,7 +38,7 @@ export function useStatSystem(campaignId) {
                 }
                 setSystemName(doc?.systemName ?? null);
                 if (doc?.resourceTracks?.length) {
-                    setResourceTracks(doc.resourceTracks);
+                    setResourceTracks(filterResourceTracks(doc.resourceTracks));
                 } else {
                     setResourceTracks(DEFAULT_RESOURCE_TRACKS);
                 }

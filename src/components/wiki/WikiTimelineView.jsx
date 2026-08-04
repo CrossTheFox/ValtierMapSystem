@@ -16,6 +16,8 @@ import {
     formatTimelineDateLabel,
     getTimelineMeta,
     hasTimelineCoreEvent,
+    insertArcBands,
+    resolveEventArc,
     TIMELINE_BRANCH,
     TIMELINE_CALENDAR,
 } from "../../utils/wikiTimeline";
@@ -27,11 +29,14 @@ import {
 } from "../../utils/wikiTimelineLinks";
 import { resolveCampaignNarrativeDate } from "../../constants/wiki/campaignNarrativeDefaults";
 import WikiCampaignNarrativeDateControl from "./WikiCampaignNarrativeDateControl";
+import WikiNarrativeArcsControl from "./WikiNarrativeArcsControl";
 import {
     EVENT_CERTAINTY,
     EVENT_KIND_LABELS,
 } from "../../constants/wiki/entityFieldSchemas";
 import WikiTimelineLinkChips from "./WikiTimelineLinkChips";
+import { cyberMenuPaperSx, cyberMenuItemSx } from "../../constants/designSystem";
+import { normalizeNarrativeArcs } from "../../../firebase/services/campaignNarrativeService";
 
 const BRANCH_COLUMNS = {
     [TIMELINE_BRANCH.LEFT]: 0,
@@ -79,27 +84,39 @@ export default function WikiTimelineView({
         () => resolveCampaignNarrativeDate(campaignId, narrativeSettings),
         [campaignId, narrativeSettings]
     );
+    const arcCatalog = useMemo(
+        () => normalizeNarrativeArcs(narrativeSettings?.narrativeArcs),
+        [narrativeSettings?.narrativeArcs]
+    );
+    const activeArcId = narrativeSettings?.activeNarrativeArcId || null;
     const entityPool = allEntities.length ? allEntities : entities;
 
     const rows = useMemo(() => buildTimelineRows(entities), [entities]);
-    const displayItems = useMemo(
-        () => buildTimelineDisplayItems(rows, { compress: compressGaps }),
-        [rows, compressGaps]
-    );
+    const displayItems = useMemo(() => {
+        const base = buildTimelineDisplayItems(rows, { compress: compressGaps });
+        return insertArcBands(base, arcCatalog, entities);
+    }, [rows, compressGaps, arcCatalog, entities]);
     const causalMap = useMemo(() => buildCausalEdgeMap(relations), [relations]);
     const filterOptions = useMemo(
-        () => buildTimelineFilterOptions(entities, relations, entityPool),
-        [entities, relations, entityPool]
+        () => buildTimelineFilterOptions(entities, relations, entityPool, arcCatalog),
+        [entities, relations, entityPool, arcCatalog]
     );
     const matchIds = useMemo(
         () =>
             getTimelineFilterMatchIds(entities, relations, {
                 lens: filterLens,
                 targetId: filterTargetId || null,
+                arcs: arcCatalog,
             }),
-        [entities, relations, filterLens, filterTargetId]
+        [entities, relations, filterLens, filterTargetId, arcCatalog]
     );
     const hasCore = useMemo(() => hasTimelineCoreEvent(entities), [entities]);
+
+    const filterActiveArc = () => {
+        if (!activeArcId) return;
+        setFilterLens("arco");
+        setFilterTargetId(activeArcId);
+    };
 
     const presentLabel = narrativeConfig
         ? formatTimelineDateLabel(
@@ -157,9 +174,12 @@ export default function WikiTimelineView({
                 uid={uid}
                 narrativeDate={narrativeConfig?.narrativeDate}
                 narrativeCalendar={narrativeConfig?.calendar}
+                arcCatalog={arcCatalog}
+                activeArcId={activeArcId}
                 onLensChange={handleLensChange}
                 onTargetChange={setFilterTargetId}
                 onCompressChange={setCompressGaps}
+                onFilterActiveArc={filterActiveArc}
             />
 
             <Box
@@ -196,6 +216,17 @@ export default function WikiTimelineView({
                         if (item.type === "gap") {
                             return <TimelineGapBand key={`gap-${itemIndex}`} label={item.label} />;
                         }
+                        if (item.type === "arc-band") {
+                            return (
+                                <TimelineArcBand
+                                    key={`arc-${item.arcId || item.label}-${itemIndex}`}
+                                    label={item.label}
+                                    color={item.color}
+                                    total={item.total}
+                                    isActive={item.arcId && item.arcId === activeArcId}
+                                />
+                            );
+                        }
                         return (
                             <TimelineRow
                                 key={`${item.row.dateKey}-${itemIndex}`}
@@ -209,6 +240,7 @@ export default function WikiTimelineView({
                                 relations={relations}
                                 entityPool={entityPool}
                                 causalMap={causalMap}
+                                arcCatalog={arcCatalog}
                                 onSelect={onSelect}
                                 onEntityClick={onEntityClick}
                                 onBranch={onBranch}
@@ -253,9 +285,12 @@ function TimelineToolbar({
     uid,
     narrativeDate,
     narrativeCalendar,
+    arcCatalog = [],
+    activeArcId = null,
     onLensChange,
     onTargetChange,
     onCompressChange,
+    onFilterActiveArc,
 }) {
     const targetOptions =
         filterLens === "locacion"
@@ -287,7 +322,7 @@ function TimelineToolbar({
                 <Chip
                     key={l.id}
                     size="small"
-                    label={<CyberText sx={{ fontSize: "0.62rem" }}>{l.label}</CyberText>}
+                    label={<CyberText sx={{ fontSize: "0.62rem", color: "inherit" }}>{l.label}</CyberText>}
                     onClick={() => onLensChange(l.id)}
                     sx={{
                         height: 22,
@@ -305,6 +340,7 @@ function TimelineToolbar({
                     displayEmpty
                     value={filterTargetId}
                     onChange={(e) => onTargetChange(e.target.value)}
+                    MenuProps={{ PaperProps: { sx: cyberMenuPaperSx } }}
                     sx={{
                         minWidth: 140,
                         maxWidth: 200,
@@ -312,22 +348,47 @@ function TimelineToolbar({
                         fontSize: "0.72rem",
                         color: UI_COLORS.textPrimary,
                         "& .MuiOutlinedInput-notchedOutline": { borderColor: UI_COLORS.border },
+                        "& .MuiSelect-icon": { color: UI_COLORS.textSecondary },
                     }}
                 >
-                    <MenuItem value="">
+                    <MenuItem value="" sx={cyberMenuItemSx}>
                         <CyberText sx={{ fontSize: "0.72rem", color: UI_COLORS.textSecondary }}>
                             Elegir…
                         </CyberText>
                     </MenuItem>
                     {targetOptions.map((opt) => (
-                        <MenuItem key={opt.id} value={opt.id}>
-                            <CyberText sx={{ fontSize: "0.72rem" }}>{opt.title}</CyberText>
+                        <MenuItem key={opt.id} value={opt.id} sx={cyberMenuItemSx}>
+                            <CyberText sx={{ fontSize: "0.72rem", color: UI_COLORS.textPrimary }}>{opt.title}</CyberText>
                         </MenuItem>
                     ))}
                 </Select>
             )}
 
+            {activeArcId && (
+                <Chip
+                    size="small"
+                    label={<CyberText sx={{ fontSize: "0.58rem", color: "inherit" }}>ARCO ACTIVO</CyberText>}
+                    onClick={onFilterActiveArc}
+                    sx={{
+                        height: 22,
+                        bgcolor: `${UI_COLORS.anomaly}18`,
+                        border: `1px solid ${UI_COLORS.anomaly}66`,
+                        color: UI_COLORS.anomaly,
+                        cursor: "pointer",
+                    }}
+                />
+            )}
+
             <Box sx={{ flex: 1 }} />
+
+            {!readOnly && (
+                <WikiNarrativeArcsControl
+                    campaignId={campaignId}
+                    uid={uid}
+                    arcs={arcCatalog}
+                    activeArcId={activeArcId}
+                />
+            )}
 
             {presentLabel && (
                 readOnly ? (
@@ -365,6 +426,50 @@ function TimelineToolbar({
                 label={<CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.textSecondary }}>Escala narrativa</CyberText>}
                 sx={{ m: 0, ml: 0.5 }}
             />
+        </Box>
+    );
+}
+
+function TimelineArcBand({ label, color, total = 0, isActive = false }) {
+    const accent = color || UI_COLORS.accent;
+    return (
+        <Box sx={{ position: "relative", my: 2.5, zIndex: 2 }}>
+            <Box
+                sx={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "stretch",
+                    gap: 0.75,
+                    px: 2,
+                    py: 1,
+                    mx: "auto",
+                    maxWidth: 420,
+                    bgcolor: `${UI_COLORS.backgroundPrimary}ee`,
+                    border: `1px solid ${isActive ? UI_COLORS.anomaly : `${accent}66`}`,
+                    borderRadius: 1,
+                    boxShadow: isActive ? `0 0 16px ${UI_COLORS.anomaly}33` : `0 0 10px ${accent}22`,
+                }}
+            >
+                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1 }}>
+                    <CyberTitle sx={{ fontSize: "0.68rem", color: isActive ? UI_COLORS.anomaly : accent, letterSpacing: 2 }}>
+                        {isActive ? "★ " : ""}{label}
+                    </CyberTitle>
+                    <CyberText sx={{ fontSize: "0.58rem", color: UI_COLORS.textSecondary, letterSpacing: 1 }}>
+                        {total} EVENTO{total === 1 ? "" : "S"}
+                    </CyberText>
+                </Box>
+                <Box sx={{ height: 4, bgcolor: "rgba(255,255,255,0.06)", borderRadius: 1, overflow: "hidden" }}>
+                    <Box
+                        sx={{
+                            height: "100%",
+                            width: "100%",
+                            bgcolor: accent,
+                            opacity: 0.75,
+                            boxShadow: `0 0 8px ${accent}66`,
+                        }}
+                    />
+                </Box>
+            </Box>
         </Box>
     );
 }
@@ -439,6 +544,7 @@ function TimelineRow({
     relations,
     entityPool,
     causalMap,
+    arcCatalog = [],
     onSelect,
     onEntityClick,
     onBranch,
@@ -501,6 +607,7 @@ function TimelineRow({
                                 selected={selectedId === node.entity.id}
                                 dimmed={filterActive && !matchIds.has(node.entity.id)}
                                 readOnly={readOnly}
+                                arcCatalog={arcCatalog}
                                 linkChips={buildEventLinkChips(node.entity.id, relations, entityPool)}
                                 causalTargets={buildEventCausalTargets(node.entity.id, relations, entityPool)}
                                 hasOutgoingCausal={(causalMap.get(node.entity.id) || []).length > 0}
@@ -536,6 +643,7 @@ function TimelineNodeCard({
     selected,
     dimmed,
     readOnly,
+    arcCatalog = [],
     linkChips,
     causalTargets,
     hasOutgoingCausal,
@@ -550,6 +658,8 @@ function TimelineNodeCard({
     const certStyle = CERTAINTY_STYLES[certainty] || CERTAINTY_STYLES[EVENT_CERTAINTY.CANON];
     const dateLabel = formatTimelineDateLabel(meta.date, meta.calendar);
     const kindLabel = EVENT_KIND_LABELS[meta.eventKind];
+    const arcResolved = resolveEventArc(entity, arcCatalog);
+    const arcLabel = arcResolved.label;
 
     const accent = isCore ? UI_COLORS.anomaly : UI_COLORS.accent;
 
@@ -584,9 +694,9 @@ function TimelineNodeCard({
             )}
 
             <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.35, mb: 0.25 }}>
-                {meta.narrativeArc && (
+                {arcLabel && (
                     <CyberText sx={{ fontSize: "0.52rem", color: UI_COLORS.anomaly, letterSpacing: 0.5 }}>
-                        ◆ {meta.narrativeArc.toUpperCase()}
+                        ◆ {arcLabel.toUpperCase()}
                     </CyberText>
                 )}
                 {kindLabel && meta.eventKind !== "otro" && (

@@ -1,8 +1,15 @@
 import { db } from "../firebaseConfig";
-import { collection, addDoc, getDocs, query, where, documentId, doc, updateDoc } from "firebase/firestore";
+import { collection, addDoc, getDocs, getDoc, query, where, documentId, doc, updateDoc } from "firebase/firestore";
 
 export async function createCharacterDoc(characterData) {
     return await addDoc(collection(db, "characters"), characterData);
+}
+
+/** @param {string} characterId */
+export async function getCharacterById(characterId) {
+    if (!characterId) return null;
+    const snap = await getDoc(doc(db, "characters", characterId));
+    return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
 export async function getCharactersByLocation(locationId) {
@@ -41,6 +48,15 @@ export async function setPlayerActiveCharacter(playerId, characterId) {
 export async function updateCharacterFields(characterId, partial) {
     if (!characterId || !partial || typeof partial !== "object") return;
     await updateDoc(doc(db, "characters", characterId), partial);
+}
+
+/**
+ * Persiste la URL del banner del personaje (imagen cuadrilateral del dossier).
+ * Campo Firestore: `bannerUrl` — independiente de `imageUrl` (token/retrato).
+ */
+export async function updateCharacterBanner(characterId, bannerUrl) {
+    if (!characterId) return;
+    await updateDoc(doc(db, "characters", characterId), { bannerUrl: bannerUrl ?? null });
 }
 
 export async function getAbilitiesByIds(abilityIds) {

@@ -365,16 +365,18 @@ export default function WikiAiConfigDialog({
                         <ParamLabel
                             label="Tokens de salida máx."
                             valueLabel={draftGen.maxOutputTokens ? String(draftGen.maxOutputTokens) : "Auto"}
-                            tooltip="Límite de tokens en la respuesta JSON. Auto: 4096 (ideas) / 8192 (evento). Sube solo si ves respuestas truncadas."
+                            tooltip="Límite de tokens en la respuesta JSON. Auto: 8192 (ideas/ondas) / 6144 (evento). El modo evento es lean-first: cambios concretos, no prosa. Subir solo si hay truncación persistente."
                         />
                         <Slider
-                            value={draftGen.maxOutputTokens ?? 8192}
+                            value={draftGen.maxOutputTokens ?? 6144}
                             min={2048}
-                            max={8192}
+                            max={16384}
                             step={512}
                             marks={[
                                 { value: 4096, label: "4k" },
+                                { value: 6144, label: "6k" },
                                 { value: 8192, label: "8k" },
+                                { value: 16384, label: "16k" },
                             ]}
                             onChange={(_, v) => {
                                 setDraftGen((prev) => ({ ...prev, maxOutputTokens: v }));

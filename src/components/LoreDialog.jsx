@@ -18,7 +18,9 @@ import VttDialogHeaderBar from "./VttDialogHeaderBar";
 import CyberTooltip from "./customs/CyberTooltip";
 
 import { useDispatch, useSelector }                        from "react-redux";
-import { setSelectedLore, toggleIsMinimized, closeDialog } from "../store/uiSlice";
+import { setSelectedLore, closeDialog } from "../store/uiSlice";
+import { DIALOG_IDS } from "../constants/dialogIds";
+import useDialogActions from "../hooks/useDialogActions";
 
 const MarkdownComponents = {
     p:  ({ children }) => <Box sx={{ mb: 2 }}><AnimatedTypewriterText text={children} duration={1000} /></Box>,
@@ -155,7 +157,9 @@ function LoreEntry({ entry, isActive, onClick }) {
 // ── Main component ────────────────────────────────────────────────────────
 export default function LoreDialog({ popupMode = false }) {
     const dispatch = useDispatch();
-    const { selectedLore, isMinimized, openDialogs } = useSelector((state) => state.ui);
+    const { selectedLore, openDialogs } = useSelector((state) => state.ui);
+    const dialogId = selectedLore ? DIALOG_IDS.LORE : DIALOG_IDS.LORE_BROWSER;
+    const { isMinimized, toggleMinimize, forceMinimize } = useDialogActions(dialogId);
     const wikiEntities = useSelector((s) => s.wiki?.entities ?? []);
 
     const [categoryFilter, setCategoryFilter] = useState("ALL");
@@ -207,12 +211,12 @@ export default function LoreDialog({ popupMode = false }) {
 
     const handleToggleMinimize = (e) => {
         e.stopPropagation();
-        dispatch(toggleIsMinimized());
+        toggleMinimize();
     };
 
     const handleDialogClose = (event, reason) => {
         if (reason === "backdropClick") {
-            if (!isMinimized) dispatch(toggleIsMinimized());
+            forceMinimize();
             return;
         }
         handleClose();
@@ -234,7 +238,7 @@ export default function LoreDialog({ popupMode = false }) {
         })()
         : "";
 
-    const loreSubtitle = !isMinimized && activeEntry
+    const loreSubtitle = activeEntry
         ? `${activeEntry.title || ""}${formattedDate ? ` · ${formattedDate}` : ""}`
         : null;
 
@@ -253,8 +257,8 @@ export default function LoreDialog({ popupMode = false }) {
 
     const loreTitleBlock = (
         <Box sx={{ textAlign: "center", maxWidth: "100%" }}>
-            <CyberTitle sx={getVttDialogTitleSx({ isMinimized })}>
-                CHRONICLE{isMinimized ? " (MIN)" : ""}
+            <CyberTitle sx={getVttDialogTitleSx()}>
+                CHRONICLE
             </CyberTitle>
             {loreSubtitle && (
                 <Box
@@ -276,7 +280,7 @@ export default function LoreDialog({ popupMode = false }) {
         </Box>
     );
 
-    const categoryNav = !isMinimized && categories.length > 1 ? (
+    const categoryNav = categories.length > 1 ? (
         <LoreCategoryNav
             categories={categories}
             value={categoryFilter}
@@ -324,16 +328,14 @@ export default function LoreDialog({ popupMode = false }) {
         );
     }
 
-    /* ── NORMAL / MINIMIZED MODE ── */
+    if (isMinimized) return null;
+
     return (
         <Dialog
             open={isOpen}
             onClose={handleDialogClose}
             fullWidth
             maxWidth={false}
-            hideBackdrop={isMinimized}
-            disableEnforceFocus={isMinimized}
-            style={isMinimized ? { pointerEvents: "none" } : {}}
             sx={{
                 zIndex: RENDER_LAYERS.DIALOG,
                 "& .MuiDialog-container": {
@@ -342,22 +344,8 @@ export default function LoreDialog({ popupMode = false }) {
             }}
             PaperComponent={DraggableResizablePaper}
             PaperProps={{
-                dragKey: isMinimized ? "min" : "max",
-                sx: isMinimized ? {
-                    pointerEvents: "auto",
-                    backgroundColor: "#12121a",
-                    color: "#fff",
-                    borderRadius: 2,
-                    boxShadow: `0 0 20px ${accent}44`,
-                    border: `1px solid ${accent}`,
-                    position: "fixed",
-                    bottom: { xs: 82, sm: 24 },
-                    right: { xs: 8, sm: 215 },
-                    m: 0,
-                    width: { xs: "calc(100vw - 16px)", sm: "300px" },
-                    maxHeight: "60px",
-                    overflow: "hidden",
-                } : {
+                dragKey: "max",
+                sx: {
                     pointerEvents: "auto",
                     backgroundColor: "#12121a",
                     color: "#fff",
@@ -365,8 +353,9 @@ export default function LoreDialog({ popupMode = false }) {
                     boxShadow: "0 0 40px rgba(0,0,0,0.8)",
                     border: "1px solid #2a2a3d",
                     m: 0,
-                    height: { xs: "90vh", sm: "80vh" },
-                    width: { xs: "100%", sm: "min(90%, 1100px)" },
+                    height: { xs: "90vh", sm: "min(92vh, 100%)" },
+                    width: { xs: "100%", sm: "min(97vw, 100%)" },
+                    maxWidth: "none",
                     minWidth: { xs: "unset", sm: "400px" },
                     display: "flex",
                     flexDirection: "column",
@@ -374,19 +363,15 @@ export default function LoreDialog({ popupMode = false }) {
             }}
         >
             <VttDialogHeaderBar
-                isMinimized={isMinimized}
-                onMinimizedClick={handleToggleMinimize}
                 left={categoryNav}
                 center={loreTitleBlock}
                 right={headerButtons}
             />
 
-            {/* Split body: sidebar + content */}
-            {!isMinimized && (
-                <Box
-                    className="dialog-no-drag"
-                    sx={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden" }}
-                >
+            <Box
+                className="dialog-no-drag"
+                sx={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden" }}
+            >
                     {/* Left sidebar */}
                     <Box
                         sx={{
@@ -464,8 +449,7 @@ export default function LoreDialog({ popupMode = false }) {
                                 </CyberText>
                             )}
                         </DialogContent>
-                </Box>
-            )}
+            </Box>
         </Dialog>
     );
 }

@@ -121,11 +121,11 @@ function Section({ children }) {
             sx={{
                 display: "flex",
                 flexDirection: "column",
-                gap: 0.6,
-                mb: 1.5,
-                p: 1.25,
-                bgcolor: `${UI_COLORS.accent}08`,
-                border: `1px solid ${UI_COLORS.accent}22`,
+                gap: 0.55,
+                mb: 1,
+                p: 1,
+                bgcolor: UI_COLORS.backgroundPrimary,
+                border: `1px solid ${UI_COLORS.border}`,
                 borderRadius: 1,
             }}
         >
@@ -178,33 +178,49 @@ export default function WikiCustomFieldsView({ entity, entities = [], vttCharact
         const traits = Array.isArray(meta.narrativeTraits) ? meta.narrativeTraits : [];
         const hasAny =
             meta.characterKind || meta.speciesEntityId || meta.birthDate || meta.deathDate ||
-            meta.activeEraLabel || meta.occupation || (meta.titles?.length) || meta.isDeity ||
+            meta.activeEraLabel || meta.occupation || meta.genderPresentation || (meta.titles?.length) || meta.isDeity ||
             orgs.length || vtt || meta.reactionArchetype ||
             meta.narrativeState || meta.stressResponse || traits.length || meta.bondNotes;
         if (!hasAny) return null;
         return (
             <Section>
-                <Field label="Tipo" value={CHARACTER_KIND_LABELS[meta.characterKind]} />
-                <RefField label="Especie" id={meta.speciesEntityId} entities={entities} onEntityClick={onEntityClick} />
-                <Field label="Nacimiento" value={meta.birthDate ? formatTimelineDateLabel(meta.birthDate) : null} />
-                <Field label="Muerte" value={meta.deathDate ? formatTimelineDateLabel(meta.deathDate) : null} />
-                {vtt?.age != null && vtt.age !== "" && (
-                    <Field label="Edad (token)" value={`${vtt.age}`} />
+                <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 1 }}>
+                    <Box sx={{ display: "flex", flexDirection: "column", gap: 0.55 }}>
+                        <CyberText sx={{ fontSize: "0.58rem", color: UI_COLORS.accent, letterSpacing: 1.2, textTransform: "uppercase", mb: 0.25 }}>
+                            Identidad
+                        </CyberText>
+                        <Field label="Tipo" value={CHARACTER_KIND_LABELS[meta.characterKind]} />
+                        <RefField label="Especie" id={meta.speciesEntityId} entities={entities} onEntityClick={onEntityClick} />
+                        <Field label="Era" value={meta.activeEraLabel} />
+                        <Field label="Ocupación" value={meta.occupation} />
+                        <Field label="Género" value={meta.genderPresentation} />
+                        {meta.isDeity && <Field label="Naturaleza" value="Deidad" />}
+                    </Box>
+                    <Box sx={{ display: "flex", flexDirection: "column", gap: 0.55 }}>
+                        <CyberText sx={{ fontSize: "0.58rem", color: UI_COLORS.accent, letterSpacing: 1.2, textTransform: "uppercase", mb: 0.25 }}>
+                            Cronología
+                        </CyberText>
+                        <Field label="Nacimiento" value={meta.birthDate ? formatTimelineDateLabel(meta.birthDate) : null} />
+                        <Field label="Muerte" value={meta.deathDate ? formatTimelineDateLabel(meta.deathDate) : null} />
+                        {vtt?.age != null && vtt.age !== "" && (
+                            <Field label="Edad (token)" value={`${vtt.age}`} />
+                        )}
+                        <RefField label="Nació en" id={meta.birthPlaceEntityId} entities={entities} onEntityClick={onEntityClick} />
+                        <RefField label="Murió en" id={meta.deathPlaceEntityId} entities={entities} onEntityClick={onEntityClick} />
+                    </Box>
+                </Box>
+                {(meta.titles?.length > 0) && (
+                    <Box sx={{ mt: 0.5 }}>
+                        <TagRow label="Títulos" tags={meta.titles} color={UI_COLORS.accent} />
+                    </Box>
                 )}
-                <RefField label="Nació en" id={meta.birthPlaceEntityId} entities={entities} onEntityClick={onEntityClick} />
-                <RefField label="Murió en" id={meta.deathPlaceEntityId} entities={entities} onEntityClick={onEntityClick} />
-                <Field label="Era" value={meta.activeEraLabel} />
-                <Field label="Ocupación" value={meta.occupation} />
-                <Field label="Género" value={meta.genderPresentation} />
-                {meta.isDeity && <Field label="" value="Deidad" />}
-                <TagRow label="Títulos" tags={meta.titles} color={UI_COLORS.accent} />
                 {orgs.length > 0 && (
-                    <>
-                        <CyberText sx={{ fontSize: "0.66rem", color: UI_COLORS.textSecondary, textTransform: "uppercase", letterSpacing: 1, mt: 0.5 }}>
+                    <Box sx={{ mt: 0.5 }}>
+                        <CyberText sx={{ fontSize: "0.66rem", color: UI_COLORS.textSecondary, textTransform: "uppercase", letterSpacing: 1, mb: 0.35 }}>
                             Organizaciones
                         </CyberText>
                         {orgs.map((m) => (
-                            <Box key={m.organizationEntityId} sx={{ display: "flex", gap: 0.75, alignItems: "baseline" }}>
+                            <Box key={m.organizationEntityId} sx={{ display: "flex", gap: 0.75, alignItems: "baseline", mb: 0.25 }}>
                                 <CyberText
                                     onClick={() => onEntityClick?.(m.organizationEntityId)}
                                     sx={{ fontSize: "0.8rem", color: UI_COLORS.accent, cursor: "pointer", "&:hover": { textDecoration: "underline" } }}
@@ -216,7 +232,7 @@ export default function WikiCustomFieldsView({ entity, entities = [], vttCharact
                                 </CyberText>
                             </Box>
                         ))}
-                    </>
+                    </Box>
                 )}
                 {meta.reactionArchetype && REACTION_ARCHETYPE_LABELS[meta.reactionArchetype] && (
                     <Box sx={{ mt: 0.5, display: "flex", alignItems: "center", gap: 0.75 }}>
@@ -239,16 +255,15 @@ export default function WikiCustomFieldsView({ entity, entities = [], vttCharact
                     </Box>
                 )}
                 {(meta.narrativeState || meta.stressResponse || traits.length > 0 || meta.bondNotes) && (
-                    <>
-                        <Divider sx={{ bgcolor: UI_COLORS.border, my: 0.5 }} />
-                        <CyberText sx={{ fontSize: "0.64rem", color: UI_COLORS.textSecondary, textTransform: "uppercase", letterSpacing: 1, mb: 0.25 }}>
+                    <Box sx={{ mt: 0.75, pt: 0.75, borderTop: `1px solid ${UI_COLORS.border}` }}>
+                        <CyberText sx={{ fontSize: "0.64rem", color: UI_COLORS.anomaly, textTransform: "uppercase", letterSpacing: 1, mb: 0.35 }}>
                             Memoria de personalidad
                         </CyberText>
                         <Field label="Estado" value={NARRATIVE_STATE_LABELS[meta.narrativeState]} />
                         <Field label="Estrés" value={STRESS_RESPONSE_LABELS[meta.stressResponse]} />
                         {traits.length > 0 && <TagRow label="Rasgos" tags={traits} color={UI_COLORS.accent} />}
                         <Field label="Anclas" value={meta.bondNotes} />
-                    </>
+                    </Box>
                 )}
             </Section>
         );

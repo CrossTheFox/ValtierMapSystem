@@ -2,12 +2,13 @@ import { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { db } from "../../firebase/firebaseConfig";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
-import { 
-    upsertLocationRealtime, 
-    removeLocationRealtime, 
+import {
+    upsertLocationRealtime,
+    removeLocationRealtime,
     upsertCharacterRealtime,
-    removeCharacterRealtime
-} from "../store/worldSlice"; // Ajusta la ruta a tu slice
+    removeCharacterRealtime,
+} from "../store/worldSlice";
+import { warmCharacterAssets } from "../../firebase/services/assetLoader";
 
 // Helper para serializar (es el mismo que tienes en tu slice)
 function serializeFirestore(doc) {
@@ -61,6 +62,8 @@ export function useWorldSync() {
 
                 if (change.type === "added" || change.type === "modified") {
                     dispatch(upsertCharacterRealtime(charData));
+                    // Keep portrait/token cache warm when roster changes mid-session.
+                    warmCharacterAssets([charData], { pixi: true });
                 }
                 if (change.type === "removed") {
                     // Pasamos id y locationId para saber de qué location borrarlo

@@ -8,7 +8,10 @@ import {
     onSnapshot,
     doc,
 } from "firebase/firestore";
-import { updateCampaignNarrativeSettings } from "../../firebase/services/campaignNarrativeService";
+import {
+    updateCampaignNarrativeSettings,
+    normalizeNarrativeArcs,
+} from "../../firebase/services/campaignNarrativeService";
 import {
     listWikiEntities,
     createWikiEntity,
@@ -19,6 +22,7 @@ import {
     listAllRelations,
     listRelationsForEntity,
     createWikiRelation,
+    updateWikiRelation as updateWikiRelationDoc,
     deleteWikiRelation,
 } from "../../firebase/services/wikiRelationService";
 
@@ -79,7 +83,14 @@ export const startWikiSync = createAsyncThunk(
         const campaignDocRef = doc(db, "campaigns", campaignId);
         const unsubCampaign = onSnapshot(campaignDocRef, (snap) => {
             if (!snap.exists()) {
-                dispatch(setNarrativeSettings({ narrativeDate: null, narrativeCalendar: null, aiRules: null, aiGeneration: null }));
+                dispatch(setNarrativeSettings({
+                    narrativeDate: null,
+                    narrativeCalendar: null,
+                    aiRules: null,
+                    aiGeneration: null,
+                    narrativeArcs: [],
+                    activeNarrativeArcId: null,
+                }));
                 return;
             }
             const data = snap.data();
@@ -88,6 +99,8 @@ export const startWikiSync = createAsyncThunk(
                 narrativeCalendar: data.narrativeCalendar ?? null,
                 aiRules: data.aiRules ?? null,
                 aiGeneration: data.aiGeneration ?? null,
+                narrativeArcs: normalizeNarrativeArcs(data.narrativeArcs),
+                activeNarrativeArcId: data.activeNarrativeArcId ?? null,
             }));
         });
 
@@ -154,6 +167,14 @@ export const addWikiRelation = createAsyncThunk(
     }
 );
 
+export const updateWikiRelation = createAsyncThunk(
+    "wiki/updateRelation",
+    async ({ campaignId, relationId, data }) => {
+        const payload = await updateWikiRelationDoc(campaignId, relationId, data);
+        return { id: relationId, ...payload };
+    }
+);
+
 export const removeWikiRelation = createAsyncThunk(
     "wiki/removeRelation",
     async ({ campaignId, relationId }) => {
@@ -171,6 +192,23 @@ export const saveCampaignNarrativeDate = createAsyncThunk(
             uid
         );
         return { narrativeDate, narrativeCalendar };
+    }
+);
+
+export const saveCampaignNarrativeArcs = createAsyncThunk(
+    "wiki/saveCampaignNarrativeArcs",
+    async ({ campaignId, narrativeArcs, activeNarrativeArcId, uid }) => {
+        const normalized = normalizeNarrativeArcs(narrativeArcs);
+        const patch = { narrativeArcs: normalized };
+        if (activeNarrativeArcId !== undefined) {
+            patch.activeNarrativeArcId = activeNarrativeArcId || null;
+        }
+        await updateCampaignNarrativeSettings(campaignId, patch, uid);
+        return {
+            narrativeArcs: normalized,
+            activeNarrativeArcId:
+                activeNarrativeArcId !== undefined ? (activeNarrativeArcId || null) : undefined,
+        };
     }
 );
 
@@ -212,6 +250,8 @@ const wikiSlice = createSlice({
             narrativeCalendar: null,
             aiRules: null,
             aiGeneration: null,
+            narrativeArcs: [],
+            activeNarrativeArcId: null,
         },
     },
     reducers: {
@@ -223,7 +263,14 @@ const wikiSlice = createSlice({
             state.relationsStatus = "idle";
             state.loadedCampaignId = null;
             state.syncActive = false;
-            state.narrativeSettings = { narrativeDate: null, narrativeCalendar: null, aiRules: null, aiGeneration: null };
+            state.narrativeSettings = {
+                narrativeDate: null,
+                narrativeCalendar: null,
+                aiRules: null,
+                aiGeneration: null,
+                narrativeArcs: [],
+                activeNarrativeArcId: null,
+            };
         },
         setNarrativeSettings(state, action) {
             state.narrativeSettings = {
@@ -231,6 +278,8 @@ const wikiSlice = createSlice({
                 narrativeCalendar: action.payload.narrativeCalendar ?? null,
                 aiRules: action.payload.aiRules ?? null,
                 aiGeneration: action.payload.aiGeneration ?? null,
+                narrativeArcs: normalizeNarrativeArcs(action.payload.narrativeArcs),
+                activeNarrativeArcId: action.payload.activeNarrativeArcId ?? null,
             };
         },
         setEntities(state, action) {
@@ -314,6 +363,17 @@ const wikiSlice = createSlice({
                 state.relations.push(action.payload);
                 state.entityRelations.push(action.payload);
             })
+            // updateWikiRelation
+            .addCase(updateWikiRelation.fulfilled, (state, action) => {
+                const patch = action.payload;
+                const merge = (list) => {
+                    const idx = list.findIndex((r) => r.id === patch.id);
+                    if (idx === -1) return;
+                    list[idx] = { ...list[idx], ...patch };
+                };
+                merge(state.relations);
+                merge(state.entityRelations);
+            })
             // removeWikiRelation
             .addCase(removeWikiRelation.fulfilled, (state, action) => {
                 state.relations = state.relations.filter((r) => r.id !== action.payload);
@@ -324,6 +384,15 @@ const wikiSlice = createSlice({
                     ...state.narrativeSettings,
                     narrativeDate: action.payload.narrativeDate,
                     narrativeCalendar: action.payload.narrativeCalendar,
+                };
+            })
+            .addCase(saveCampaignNarrativeArcs.fulfilled, (state, action) => {
+                state.narrativeSettings = {
+                    ...state.narrativeSettings,
+                    narrativeArcs: action.payload.narrativeArcs,
+                    ...(action.payload.activeNarrativeArcId !== undefined
+                        ? { activeNarrativeArcId: action.payload.activeNarrativeArcId }
+                        : {}),
                 };
             })
             .addCase(saveCampaignAiRules.fulfilled, (state, action) => {

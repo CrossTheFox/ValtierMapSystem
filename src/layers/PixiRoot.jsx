@@ -1,18 +1,23 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Application } from "@pixi/react";
 import { useDispatch, useSelector } from "react-redux";
 import { loadWorld, preloadWorldAssets } from "../store/worldSlice";
-import { ViewportContext } from "../context/ViewportContext";
 import MapViewportProvider from "../pixi/MapViewport";
 import LocationsLayer from "../pixi/LocationsLayer";
-import DistanceMeasureLayer from "../pixi/DistanceMeasureLayer";
-import PartyLayer from "../pixi/PartyLayer";
+import RulersLayer from "../pixi/RulersLayer";
+import PingLayer from "../pixi/PingLayer";
+import TurnFocusLayer from "../pixi/TurnFocusLayer";
+import GridLayer from "../pixi/GridLayer";
+import TokenLayer from "../pixi/TokenLayer";
+import TokenSpeechLayer from "../pixi/TokenSpeechLayer";
 import MapControls from "../components/MapControls";
 
-export default function PixiRoot() {
+/**
+ * @param {{ onViewportReady?: (vp: import("pixi-viewport").Viewport | null) => void }} props
+ */
+export default function PixiRoot({ onViewportReady }) {
     const dispatch = useDispatch();
     const { worldStatus, selectedCampaignId } = useSelector((state) => state.world);
-    const [viewport, setViewport] = useState(null);
 
     useEffect(() => {
         const init = async () => {
@@ -22,7 +27,6 @@ export default function PixiRoot() {
             }
 
             try {
-                // Cargamos datos y luego assets
                 const world = await dispatch(loadWorld(selectedCampaignId)).unwrap();
                 await dispatch(preloadWorldAssets(world)).unwrap();
             } catch (error) {
@@ -36,24 +40,26 @@ export default function PixiRoot() {
     }, [dispatch, worldStatus, selectedCampaignId]);
 
     return (
-        <ViewportContext.Provider value={viewport}>
-            <>
-                <Application
-                    resizeTo={window}
-                    options={{
-                        backgroundColor: 0x0e0e14,
-                        antialias: true,
-                        resolution: window.devicePixelRatio || 1,
-                    }}
-                >
-                    <MapViewportProvider onViewportReady={setViewport}>
-                        <LocationsLayer />
-                        <DistanceMeasureLayer />
-                        <PartyLayer />
-                    </MapViewportProvider>
-                </Application>
-                <MapControls />
-            </>
-        </ViewportContext.Provider>
+        <>
+            <Application
+                resizeTo={window}
+                options={{
+                    backgroundColor: 0x0e0e14,
+                    antialias: true,
+                    resolution: window.devicePixelRatio || 1,
+                }}
+            >
+                <MapViewportProvider onViewportReady={onViewportReady}>
+                    <GridLayer />
+                    <LocationsLayer />
+                    <RulersLayer />
+                    <PingLayer />
+                    <TurnFocusLayer />
+                    <TokenLayer />
+                    <TokenSpeechLayer />
+                </MapViewportProvider>
+            </Application>
+            <MapControls />
+        </>
     );
 }

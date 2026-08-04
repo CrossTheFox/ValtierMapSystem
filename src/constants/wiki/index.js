@@ -10,6 +10,7 @@ export const WIKI_AREA_IDS = {
     TIMELINE: "timeline",
     CODEX: "codex",
     NEURAL_LAB: "neural_lab",
+    SESSIONS: "sessions",
 };
 
 /** @typedef {'lore'|'timeline'|'codex'|'neural_lab'} WikiAreaId */
@@ -44,9 +45,9 @@ export const WIKI_AREAS = [
     {
         id: WIKI_AREA_IDS.TIMELINE,
         label: "TIMELINE",
-        hint: "Hitos y eras de la historia",
+        hint: "Hitos y arcos de la historia",
         description:
-            "Línea temporal: eventos históricos, eras y hitos ordenados en el tiempo. Útil para ver qué pasó antes de la campaña o en qué momento encaja un suceso.",
+            "Línea temporal: eventos históricos y arcos narrativos definidos por el DM, ordenados en el tiempo. Útil para ver qué pasó antes de la campaña o en qué momento encaja un suceso.",
         phase: "live",
     },
     {
@@ -55,6 +56,14 @@ export const WIKI_AREAS = [
         hint: "Grafo de relaciones + laboratorio IA",
         description:
             "Red neuronal de entidades conectadas por relaciones, junto al laboratorio de IA. Selecciona un nodo para ver su ficha y generar narrativa anclada.",
+        phase: "live",
+    },
+    {
+        id: WIKI_AREA_IDS.SESSIONS,
+        label: "SESSIONS",
+        hint: "Diario de sesiones de campaña",
+        description:
+            "Registra qué pasó en cada sesión. Los recaps alimentan el contexto del Lab IA para ideas más coherentes con la campaña.",
         phase: "live",
     },
 ];
@@ -81,15 +90,17 @@ export const WIKI_AREA_ENTITY_TYPES = {
     [WIKI_AREA_IDS.LORE]: ["cronica"],
     [WIKI_AREA_IDS.TIMELINE]: ["evento_historico"],
     [WIKI_AREA_IDS.CODEX]: [
-        "idioma",
-        "ideologia",
         "personaje",
         "locacion",
         "organizacion",
         "especie",
         "reliquia",
+        "ideologia",
+        "idioma",
+        "glosario",
     ],
     [WIKI_AREA_IDS.NEURAL_LAB]: null,
+    [WIKI_AREA_IDS.SESSIONS]: null,
 };
 
 /**

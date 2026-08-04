@@ -17,9 +17,12 @@ const StyledTooltip = styled(({ className, ...props }) => (
         boxShadow: `0 0 14px ${UI_COLORS.accentGlow}`,
         padding: "5px 9px",
         maxWidth: 220,
+        userSelect: "none",
+        pointerEvents: "none",
     },
     [`& .${tooltipClasses.arrow}`]: {
         color: UI_COLORS.backgroundSecondary,
+        pointerEvents: "none",
         "&::before": {
             border: `1px solid ${UI_COLORS.accent}44`,
         },
@@ -28,9 +31,16 @@ const StyledTooltip = styled(({ className, ...props }) => (
 
 /**
  * Cyberpunk-styled tooltip — uppercase mono label, neon border/glow.
+ * Non-interactive by default so hover does not trap the cursor over small HUD buttons.
  * Pass `title` as string or React node (e.g. label + hint stack).
  */
-export default function CyberTooltip({ children, title, placement = "bottom", ...rest }) {
+export default function CyberTooltip({
+    children,
+    title,
+    placement = "bottom",
+    disableInteractive = true,
+    ...rest
+}) {
     if (!title) return children;
 
     return (
@@ -39,6 +49,8 @@ export default function CyberTooltip({ children, title, placement = "bottom", ..
             placement={placement}
             arrow
             enterDelay={280}
+            leaveDelay={0}
+            disableInteractive={disableInteractive}
             {...rest}
         >
             {children}
