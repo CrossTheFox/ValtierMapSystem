@@ -40,7 +40,7 @@ function resolveMasteryState(key, unlockedSet, abilityState) {
     return "available";
 }
 
-function shortLabel(label, max = 8) {
+function shortLabel(label, max = 12) {
     const s = String(label || "").trim();
     if (s.length <= max) return s.toUpperCase();
     return `${s.slice(0, max - 1)}…`.toUpperCase();
@@ -50,7 +50,7 @@ function shortLabel(label, max = 8) {
 function jobHubLabel(raw, fallback) {
     let s = String(raw || fallback || "JOB").trim();
     s = s.replace(/^(clase|class)\s*:?\s*/i, "").trim();
-    return shortLabel(s || fallback || "JOB", 14);
+    return shortLabel(s || fallback || "JOB", 16);
 }
 
 /** Polar → elliptical (orbital) coordinates. */
@@ -217,7 +217,7 @@ export function buildNeuralMeshGraph(opts) {
             id: k,
             key: k,
             kind: "trait",
-            label: shortLabel(t.label, 14),
+            label: shortLabel(t.label, 18),
             fullLabel: t.label,
             x: p.x,
             y: p.y,
@@ -242,7 +242,7 @@ export function buildNeuralMeshGraph(opts) {
             id: abKey,
             key: abKey,
             kind,
-            label: ab.isLB ? shortLabel(ab.label || "LIMIT BREAK", 14) : shortLabel(ab.label, 14),
+            label: ab.isLB ? shortLabel(ab.label || "LIMIT BREAK", 18) : shortLabel(ab.label, 18),
             fullLabel: ab.label,
             x: p.x,
             y: p.y,
@@ -270,7 +270,7 @@ export function buildNeuralMeshGraph(opts) {
                     id: mk,
                     key: mk,
                     kind: "ultimate",
-                    label: shortLabel(mastery.label || "ULTIMATE", 12),
+                    label: shortLabel(mastery.label || "ULTIMATE", 16),
                     fullLabel: mastery.label || "Ultimate",
                     x: up.x,
                     y: up.y,
@@ -294,7 +294,7 @@ export function buildNeuralMeshGraph(opts) {
                     id: tk,
                     key: tk,
                     kind: "talent",
-                    label: shortLabel(tal.label, 10),
+                    label: shortLabel(tal.label, 14),
                     fullLabel: tal.label,
                     x: tp.x,
                     y: tp.y,
@@ -315,7 +315,7 @@ export function buildNeuralMeshGraph(opts) {
                     id: mk,
                     key: mk,
                     kind: "mastery",
-                    label: shortLabel(mastery.label, 10),
+                    label: shortLabel(mastery.label, 14),
                     fullLabel: mastery.label,
                     x: mp.x,
                     y: mp.y,

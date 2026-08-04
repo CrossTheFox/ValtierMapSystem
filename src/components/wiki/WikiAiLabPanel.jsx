@@ -10,7 +10,7 @@
  * visible only when role === "dm".
  */
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import {
     Box, Button, Chip, CircularProgress, Collapse, Dialog, DialogTitle,
     DialogContent, DialogContentText, DialogActions, Divider,
@@ -335,7 +335,7 @@ function SituationCard({ situation, index, onSaveDraft, saving }) {
             <Collapse in={expanded}>
                 <Divider sx={{ my: 1, bgcolor: UI_COLORS.border }} />
                 <CyberText sx={{ fontSize: "0.75rem", color: UI_COLORS.textSecondary, mb: 1 }}>
-                    <strong style={{ color: UI_COLORS.anomaly }}>STAKES:</strong> {situation.stakes}
+                    <strong style={{ color: UI_COLORS.anomaly }}>EN JUEGO:</strong> {situation.stakes}
                 </CyberText>
 
                 {situation.involvedEntities?.length > 0 && (
@@ -463,7 +463,7 @@ export default function WikiAiLabPanel({
     // Controls — Firebase AI Logic primary; REST fallback if API key in env
     const hasGeminiKey = hasGeminiApiKeyConfigured();
 
-    const [mode, setMode]           = useState(AI_MODES.SITUATION);
+    const [mode, setMode]           = useState(AI_MODES.CASCADE);
     const [modelId, setModelId]     = useState(GEMINI_MODELS[0].value);
     const [intent, setIntent]       = useState("");
     const [instruction, setInstruction] = useState("");
@@ -484,9 +484,12 @@ export default function WikiAiLabPanel({
     const [loading, setLoading]       = useState(false);
     const [loadingLabel, setLoadingLabel] = useState("Generando…");
     const [error, setError]         = useState(null);
+    const [softFailWarning, setSoftFailWarning] = useState(null);
     const [result, setResult]       = useState(null);
     const [contextMeta, setContextMeta] = useState(null);
     const [lastContextText, setLastContextText] = useState("");
+    const [advancedOpen, setAdvancedOpen] = useState(false);
+    const abortRef = useRef(null);
     const [showContextText, setShowContextText] = useState(false);
     const [tokenUsage, setTokenUsage]   = useState(null);
     const [savingDraftIdx, setSavingDraftIdx] = useState(null);
@@ -636,9 +639,21 @@ export default function WikiAiLabPanel({
 
     const handleGenerate = useCallback(async (opts = {}) => {
         const variation = Boolean(opts?.variation);
+        abortRef.current?.abort();
+        const ac = new AbortController();
+        abortRef.current = ac;
+        const throwIfAborted = () => {
+            if (ac.signal.aborted) {
+                const err = new Error("Generación cancelada.");
+                err.name = "AbortError";
+                throw err;
+            }
+        };
+
         setLoading(true);
         setLoadingLabel(variation ? "Generando variación…" : "Generando…");
         setError(null);
+        setSoftFailWarning(null);
         // Keep previous titles for variation hint before clearing result
         const previousTitles = mode === AI_MODES.SITUATION
             ? (result?.situations ?? []).map((s) => s.title).filter(Boolean)
@@ -714,6 +729,7 @@ export default function WikiAiLabPanel({
         try {
             const anchorId = selectedEntity?.id;
             const anchorIds = extraAnchorIds.length ? extraAnchorIds : [anchorId];
+            throwIfAborted();
 
             if (mode === AI_MODES.CASCADE) {
                 const depthOpts = cascadeOptsForDepth(propagationDepth);
@@ -768,7 +784,11 @@ export default function WikiAiLabPanel({
                     } catch (scoutErr) {
                         // Scout failure is non-fatal: continue with single-pass
                         console.warn("[Lab IA] Scout (Pasa 1) falló, continuando sin seed:", scoutErr);
+                        setSoftFailWarning(
+                            "El análisis previo de la red falló; se generó sin ese borrador. Puedes regenerar si el resultado queda incompleto."
+                        );
                     }
+                    throwIfAborted();
                     setLoadingLabel("Generando impacto completo…");
                 }
 
@@ -825,8 +845,8 @@ export default function WikiAiLabPanel({
                         }
                         setLoadingLabel(
                             invalidTitles.length
-                                ? `Corrigiendo changes incompletos (${titlesToRetry.length})…`
-                                : `Completando impacts faltantes (${titlesToRetry.length})…`
+                                ? `Corrigiendo cambios incompletos (${titlesToRetry.length})…`
+                                : `Completando reacciones faltantes (${titlesToRetry.length})…`
                         );
                         try {
                             const reflexionCtx = buildReflexionPrompt(
@@ -888,17 +908,22 @@ export default function WikiAiLabPanel({
                                     .filter(Boolean),
                             ];
                             validated.errors = (validated.errors ?? []).filter(
-                                (e) => !e.startsWith("Faltan impacts")
+                                (e) => !e.startsWith("Faltan reacciones") && !e.startsWith("Faltan impacts")
                             );
                             if (validated.missingImpacts.length === 0) {
                                 validated.ok = validated.impacts.every((im) => im.valid);
                             }
                         } catch (retryErr) {
                             console.warn("[Lab IA] Reflexion retry falló:", retryErr);
+                            setSoftFailWarning((prev) =>
+                                prev
+                                    ?? "No se pudo completar el reintento automático; revisa las reacciones faltantes o regenera."
+                            );
                         }
                     }
                 }
 
+                throwIfAborted();
                 setResult(validated);
                 try {
                     await persistThread(instruction, validated.summary ?? "Evento cascada generado", usage);
@@ -955,8 +980,14 @@ export default function WikiAiLabPanel({
                 }
             }
         } catch (err) {
-            setError(err.message ?? "Error desconocido.");
+            if (err?.name === "AbortError" || ac.signal.aborted) {
+                setError(null);
+                setSoftFailWarning("Generación cancelada.");
+            } else {
+                setError(err.message ?? "Error desconocido.");
+            }
         } finally {
+            if (abortRef.current === ac) abortRef.current = null;
             setLoading(false);
             if (mode === AI_MODES.CASCADE) {
                 restoreCascadePreview();
@@ -1111,80 +1142,96 @@ export default function WikiAiLabPanel({
             >
                 {/* Mode — narrative_impact is hidden from UI (kept for CLI regression only) */}
                 <Box>
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 0.5 }}>
-                        <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary, letterSpacing: 0.5, flexShrink: 0 }}>
-                            MODO
-                        </CyberText>
-                        <Box sx={{ display: "flex", gap: 0.35, flexShrink: 0 }}>
-                            {[AI_MODES.SITUATION, AI_MODES.CASCADE].map((m) => (
-                                <Tooltip
-                                    key={m}
-                                    title={AI_MODE_TOOLTIPS[m]}
-                                    slotProps={tooltipSlotProps}
-                                >
-                                    <Chip
-                                        label={AI_MODE_LABELS[m]}
-                                        size="small"
-                                        sx={{
-                                            height: 16,
-                                            fontSize: "0.55rem",
-                                            cursor: "help",
-                                            bgcolor: mode === m ? `${UI_COLORS.anomaly}18` : "transparent",
-                                            color: mode === m ? UI_COLORS.anomaly : UI_COLORS.textSecondary,
-                                            border: `1px solid ${mode === m ? `${UI_COLORS.anomaly}55` : `${UI_COLORS.border}88`}`,
-                                            "& .MuiChip-label": { px: 0.5 },
-                                        }}
-                                    />
-                                </Tooltip>
-                            ))}
-                        </Box>
+                    <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary, letterSpacing: 0.5, mb: 0.5 }}>
+                        MODO
+                    </CyberText>
+                    <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
+                        {[AI_MODES.CASCADE, AI_MODES.SITUATION].map((m) => (
+                            <Tooltip
+                                key={m}
+                                title={AI_MODE_TOOLTIPS[m]}
+                                slotProps={tooltipSlotProps}
+                            >
+                                <Chip
+                                    label={AI_MODE_LABELS[m]}
+                                    size="small"
+                                    onClick={() => setMode(m)}
+                                    sx={{
+                                        height: 22,
+                                        fontSize: "0.62rem",
+                                        cursor: "pointer",
+                                        bgcolor: mode === m ? `${UI_COLORS.anomaly}18` : "transparent",
+                                        color: mode === m ? UI_COLORS.anomaly : UI_COLORS.textPrimary,
+                                        border: `1px solid ${mode === m ? `${UI_COLORS.anomaly}55` : `${UI_COLORS.border}88`}`,
+                                        "& .MuiChip-label": { px: 0.75 },
+                                        "&:hover": {
+                                            borderColor: UI_COLORS.anomaly,
+                                            color: UI_COLORS.anomaly,
+                                        },
+                                    }}
+                                />
+                            </Tooltip>
+                        ))}
                     </Box>
-                    <LabDropdown
-                        label=""
-                        value={mode}
-                        onChange={setMode}
-                        options={[AI_MODES.SITUATION, AI_MODES.CASCADE].map((m) => ({
-                            value: m,
-                            label: AI_MODE_LABELS[m],
-                        }))}
-                    />
                 </Box>
 
-                {/* Motor IA + modelo */}
+                {/* Motor IA + modelo (avanzado, colapsado por defecto) */}
                 <Box>
-                    <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary, letterSpacing: 0.5, mb: 0.5 }}>
-                        MOTOR IA
-                    </CyberText>
                     <Box
+                        component="button"
+                        type="button"
+                        onClick={() => setAdvancedOpen((v) => !v)}
                         sx={{
-                            px: 1,
-                            py: 0.75,
-                            mb: 1,
-                            borderRadius: 1,
-                            border: `1px solid ${hasGeminiKey ? `${UI_COLORS.anomaly}44` : `${UI_COLORS.accentStrong}55`}`,
-                            bgcolor: hasGeminiKey ? `${UI_COLORS.anomaly}08` : `${UI_COLORS.accentStrong}10`,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 0.5,
+                            width: "100%",
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            p: 0,
+                            mb: advancedOpen ? 0.5 : 0,
                         }}
                     >
-                        <CyberText sx={{ fontSize: "0.72rem", color: UI_COLORS.anomaly }}>
-                            Firebase AI Logic (primario)
-                            {hasGeminiKey && " · REST fallback disponible"}
+                        <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary, letterSpacing: 0.5 }}>
+                            AVANZADO · MOTOR IA
                         </CyberText>
-                        {!hasGeminiKey && (
-                            <CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.textSecondary, mt: 0.35, lineHeight: 1.4 }}>
-                                Si Firebase AI Logic falla, añade <code>VITE_GEMINI_API_KEY</code> al <code>.env</code> como respaldo.
-                            </CyberText>
-                        )}
+                        {advancedOpen
+                            ? <ExpandLessIcon sx={{ fontSize: "1rem", color: UI_COLORS.textSecondary }} />
+                            : <ExpandMoreIcon sx={{ fontSize: "1rem", color: UI_COLORS.textSecondary }} />}
                     </Box>
-                    <LabDropdown
-                        label="Modelo"
-                        value={modelId}
-                        onChange={setModelId}
-                        options={modelOptions.map((m) => ({
-                            value: m.value,
-                            label: m.label,
-                            hint: m.tooltip,
-                        }))}
-                    />
+                    <Collapse in={advancedOpen}>
+                        <Box
+                            sx={{
+                                px: 1,
+                                py: 0.75,
+                                mb: 1,
+                                borderRadius: 1,
+                                border: `1px solid ${hasGeminiKey ? `${UI_COLORS.anomaly}44` : `${UI_COLORS.accentStrong}55`}`,
+                                bgcolor: hasGeminiKey ? `${UI_COLORS.anomaly}08` : `${UI_COLORS.accentStrong}10`,
+                            }}
+                        >
+                            <CyberText sx={{ fontSize: "0.72rem", color: UI_COLORS.anomaly }}>
+                                Firebase AI Logic (primario)
+                                {hasGeminiKey && " · REST fallback disponible"}
+                            </CyberText>
+                            {!hasGeminiKey && (
+                                <CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.textSecondary, mt: 0.35, lineHeight: 1.4 }}>
+                                    Si Firebase AI Logic falla, añade <code>VITE_GEMINI_API_KEY</code> al <code>.env</code> como respaldo.
+                                </CyberText>
+                            )}
+                        </Box>
+                        <LabDropdown
+                            label="Modelo"
+                            value={modelId}
+                            onChange={setModelId}
+                            options={modelOptions.map((m) => ({
+                                value: m.value,
+                                label: m.label,
+                                hint: m.tooltip,
+                            }))}
+                        />
+                    </Collapse>
                 </Box>
 
                 {/* Anchor display */}
@@ -1215,7 +1262,8 @@ export default function WikiAiLabPanel({
                     )}
                 </Box>
 
-                {/* Multi-ancla + hilo — neighbors of current selection */}
+                {/* Multi-ancla — solo Ideas de escena */}
+                {mode === AI_MODES.SITUATION && (
                 <Box>
                     <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary, mb: 0.5, letterSpacing: 0.5 }}>
                         CONTEXTO (MULTI-ANCLA)
@@ -1282,7 +1330,10 @@ export default function WikiAiLabPanel({
                             )}
                         </>
                     )}
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mt: 0.75 }}>
+                </Box>
+                )}
+
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
                         <HistoryIcon sx={{ fontSize: "0.85rem", color: UI_COLORS.textSecondary }} />
                         <CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.textSecondary, flex: 1 }}>
                             {activeThreadId ? `Hilo activo · ${threadMessages.length} msgs` : "Nuevo hilo al generar"}
@@ -1293,7 +1344,6 @@ export default function WikiAiLabPanel({
                                 NUEVO
                             </Button>
                         )}
-                    </Box>
                 </Box>
 
                 {/* Intent (situation only) */}
@@ -1472,7 +1522,7 @@ export default function WikiAiLabPanel({
                     </Box>
                 )}
 
-                {/* Generate + variation */}
+                {/* Generate + cancel + variation */}
                 <Box sx={{ display: "flex", gap: 0.75 }}>
                     <Button
                         variant="outlined"
@@ -1497,32 +1547,68 @@ export default function WikiAiLabPanel({
                     >
                         {loading ? loadingLabel : "Generar"}
                     </Button>
-                    <Button
-                        variant="outlined"
-                        size="small"
-                        disabled={
-                            loading
-                            || !selectedEntity
-                            || !result
-                            || ((mode === AI_MODES.NARRATIVE_IMPACT || mode === AI_MODES.CASCADE) && !instruction.trim())
-                        }
-                        onClick={() => handleGenerate({ variation: true })}
+                    {loading ? (
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={() => abortRef.current?.abort()}
+                            startIcon={<CancelIcon sx={{ fontSize: "1rem !important" }} />}
+                            sx={{
+                                minWidth: 0,
+                                px: 1.25,
+                                borderColor: `${UI_COLORS.accentStrong}88`,
+                                color: UI_COLORS.accentStrong,
+                                fontSize: "0.62rem",
+                                fontFamily: "'Orbitron', sans-serif",
+                                letterSpacing: 0.5,
+                                whiteSpace: "nowrap",
+                                "&:hover": { borderColor: UI_COLORS.accentStrong, bgcolor: `${UI_COLORS.accentStrong}12` },
+                            }}
+                        >
+                            Cancelar
+                        </Button>
+                    ) : (
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            disabled={
+                                !selectedEntity
+                                || !result
+                                || ((mode === AI_MODES.NARRATIVE_IMPACT || mode === AI_MODES.CASCADE) && !instruction.trim())
+                            }
+                            onClick={() => handleGenerate({ variation: true })}
+                            sx={{
+                                minWidth: 0,
+                                px: 1.25,
+                                borderColor: `${UI_COLORS.accent}88`,
+                                color: UI_COLORS.accent,
+                                fontSize: "0.62rem",
+                                fontFamily: "'Orbitron', sans-serif",
+                                letterSpacing: 0.5,
+                                whiteSpace: "nowrap",
+                                "&:hover": { borderColor: UI_COLORS.accent, bgcolor: `${UI_COLORS.accent}12` },
+                                "&:disabled": { borderColor: UI_COLORS.border, color: UI_COLORS.textSecondary },
+                            }}
+                        >
+                            Otra idea
+                        </Button>
+                    )}
+                </Box>
+
+                {softFailWarning && (
+                    <Box
                         sx={{
-                            minWidth: 0,
-                            px: 1.25,
-                            borderColor: `${UI_COLORS.accent}88`,
-                            color: UI_COLORS.accent,
-                            fontSize: "0.62rem",
-                            fontFamily: "'Orbitron', sans-serif",
-                            letterSpacing: 0.5,
-                            whiteSpace: "nowrap",
-                            "&:hover": { borderColor: UI_COLORS.accent, bgcolor: `${UI_COLORS.accent}12` },
-                            "&:disabled": { borderColor: UI_COLORS.border, color: UI_COLORS.textSecondary },
+                            p: 1,
+                            borderRadius: 1,
+                            border: "1px solid #fbbf2455",
+                            bgcolor: "rgba(251,191,36,0.08)",
                         }}
                     >
-                        Otra idea
-                    </Button>
-                </Box>
+                        <CyberText sx={{ fontSize: "0.7rem", color: UI_COLORS.textPrimary, lineHeight: 1.4 }}>
+                            {softFailWarning}
+                        </CyberText>
+                    </Box>
+                )}
 
                 {/* Context meta */}
                 {(contextMeta || estimatedTokens != null) && (

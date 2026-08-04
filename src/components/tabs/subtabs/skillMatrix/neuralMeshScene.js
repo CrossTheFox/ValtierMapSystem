@@ -24,7 +24,8 @@ const COL = {
     ultimate: 0xff2244,
 };
 const FILL_DARK = 0x0a0a12;
-const MAX_DPR = 1.5;
+/** Higher DPR = sharper node labels on retina / scaled canvases. */
+const MAX_DPR = 2.5;
 
 function hexNum(css, fallback) {
     if (!css || typeof css !== "string") return fallback;
@@ -41,9 +42,9 @@ function kindHue(kind, accent) {
 /** Stroke/fill intensity by unlock state */
 function stateBright(state) {
     if (state === "unlocked") return { strokeA: 1, fillA: 0.92, labelA: 1, dim: false };
-    if (state === "available" || state === "unowned") return { strokeA: 0.55, fillA: 0.55, labelA: 0.75, dim: true };
-    if (state === "xor-out") return { strokeA: 0.28, fillA: 0.35, labelA: 0.4, dim: true };
-    return { strokeA: 0.22, fillA: 0.3, labelA: 0.35, dim: true };
+    if (state === "available" || state === "unowned") return { strokeA: 0.65, fillA: 0.6, labelA: 0.95, dim: true };
+    if (state === "xor-out") return { strokeA: 0.28, fillA: 0.35, labelA: 0.5, dim: true };
+    return { strokeA: 0.22, fillA: 0.3, labelA: 0.48, dim: true };
 }
 
 function isHotKind(kind) {
@@ -482,39 +483,47 @@ export function createNeuralMeshScene(container, handlers = {}) {
     function makeLabel(n) {
         const circle = !isRectNodeShape() && n.kind !== "class";
         const maxW = circle
-            ? Math.max(28, (n.r || 20) * 1.55)
-            : Math.max(40, (n.nw || 60) - 10);
+            ? Math.max(36, (n.r || 20) * 1.85)
+            : Math.max(48, (n.nw || 60) - 6);
         const fontSize =
             n.kind === "class"
-                ? 9
+                ? 13
                 : n.kind === "limitbreak" || n.kind === "ultimate"
                   ? circle
-                      ? 7
-                      : 8
-                  : circle
-                    ? 6.5
-                    : 7.5;
+                      ? 10
+                      : 11
+                  : n.kind === "talent" || n.kind === "mastery"
+                    ? circle
+                        ? 9
+                        : 10
+                    : circle
+                      ? 10
+                      : 11;
+        const unlocked = n.state === "unlocked";
+        const available = n.state === "available" || n.state === "unowned";
+        const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
         const t = new PIXI.Text({
             text: n.label,
+            resolution: dpr,
             style: {
-                fontFamily: "Orbitron, sans-serif",
+                fontFamily: "Orbitron, Fira Sans, sans-serif",
                 fontSize,
-                fill: 0xffffff,
-                letterSpacing: 0.35,
+                fontWeight: "700",
+                fill: unlocked ? 0xffffff : available ? 0xf5f5ff : 0xd0d0e0,
+                stroke: { color: 0x05050c, width: unlocked ? 3.5 : 2.5, join: "round" },
+                letterSpacing: 0.15,
                 align: "center",
+                lineHeight: fontSize + 2,
+                padding: 4,
                 wordWrap: n.kind !== "class",
                 wordWrapWidth: maxW,
                 breakWords: true,
             },
         });
         t.anchor.set(0.5);
-        // Dim only locked/xor; keep available readable
-        t.alpha =
-            n.state === "locked" || n.state === "xor-out"
-                ? 0.45
-                : n.state === "available" || n.state === "unowned"
-                  ? 0.88
-                  : 1;
+        t.roundPixels = true;
+        // Dim only locked/xor; keep available nearly full white
+        t.alpha = stateBright(n.state).labelA;
         t.eventMode = "none";
         return t;
     }

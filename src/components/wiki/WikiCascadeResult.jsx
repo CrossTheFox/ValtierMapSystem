@@ -16,7 +16,7 @@
  * specific graph path that connects them to the anchor.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
     Box, Button, Chip, Collapse, Dialog, DialogActions,
     DialogContent, DialogContentText, DialogTitle,
@@ -126,7 +126,7 @@ function ArchetypeBadge({ archetype }) {
     const color = ARCHETYPE_COLORS[archetype] ?? UI_COLORS.textSecondary;
     const tip   = REACTION_ARCHETYPE_TOOLTIPS[archetype] ?? "";
     return (
-        <Tooltip title={`Arquetipo (PANGeA): ${tip}`} slotProps={tooltipSlotProps}>
+        <Tooltip title={tip ? `Arquetipo: ${tip}` : "Arquetipo de reacción"} slotProps={tooltipSlotProps}>
             <Chip
                 label={label}
                 size="small"
@@ -233,7 +233,7 @@ function StrengthBadge({ change }) {
     );
 }
 
-function ChangeRow({ change, applying, onApply }) {
+function ChangeRow({ change, applying, onApply, applied = false }) {
     const relLabel = change.relationType
         ? (WIKI_RELATION_TYPE_LABELS[change.relationType] ?? change.relationType)
         : null;
@@ -244,7 +244,7 @@ function ChangeRow({ change, applying, onApply }) {
         ? (NARRATIVE_STATE_LABELS[change.newValue] ?? change.newValue)
         : change.newValue;
 
-    const canApply = change.valid && change.kind !== "dm_note";
+    const canApply = change.valid && change.kind !== "dm_note" && !applied;
 
     return (
         <Box
@@ -260,6 +260,7 @@ function ChangeRow({ change, applying, onApply }) {
                     : `${UI_COLORS.accentStrong}0a`,
                 border: `1px solid ${change.valid ? UI_COLORS.border : `${UI_COLORS.accentStrong}44`}`,
                 mb: 0.5,
+                opacity: applied ? 0.72 : 1,
             }}
         >
             <Box sx={{ color: change.valid ? UI_COLORS.anomaly : UI_COLORS.accentStrong, mt: 0.25 }}>
@@ -276,7 +277,7 @@ function ChangeRow({ change, applying, onApply }) {
                         <>
                             <strong>{change.fromEntityTitle}</strong>
                             <span style={{ color: UI_COLORS.textSecondary }}>
-                                {" · "}{change.field || "(field?)"}{": "}
+                                {" · "}{change.field || "(campo?)"}{": "}
                             </span>
                             <strong style={{ color: UI_COLORS.anomaly }}>{stateLabel || "—"}</strong>
                         </>
@@ -284,7 +285,7 @@ function ChangeRow({ change, applying, onApply }) {
                         <>
                             <strong>{change.fromEntityTitle || "?"}</strong>
                             <span style={{ color: UI_COLORS.textSecondary }}>
-                                {" → ["}{relLabel || change.relationType || "?"}{"] → "}
+                                {" → ["}{relLabel || "sin tipo"}{"] → "}
                             </span>
                             <strong>{change.toEntityTitle || "?"}</strong>
                             {change.newLabel && (
@@ -305,7 +306,20 @@ function ChangeRow({ change, applying, onApply }) {
                     </CyberText>
                 )}
             </Box>
-            {canApply && (
+            {applied ? (
+                <Chip
+                    label="Aplicado"
+                    size="small"
+                    sx={{
+                        height: 18,
+                        fontSize: "0.52rem",
+                        color: "#4ade80",
+                        border: "1px solid rgba(74,222,128,0.45)",
+                        bgcolor: "rgba(74,222,128,0.08)",
+                        "& .MuiChip-label": { px: 0.6 },
+                    }}
+                />
+            ) : canApply ? (
                 <Button
                     size="small"
                     variant="outlined"
@@ -326,12 +340,21 @@ function ChangeRow({ change, applying, onApply }) {
                 >
                     Aplicar
                 </Button>
-            )}
+            ) : null}
         </Box>
     );
 }
 
-function ImpactCard({ impact, applying, onApplyChange, onApplyImpact, relations = [] }) {
+function ImpactCard({
+    impact,
+    applying,
+    onApplyChange,
+    onApplyImpact,
+    relations = [],
+    applied = false,
+    appliedChangeKeys = new Set(),
+    changeKeyFn,
+}) {
     const [expanded, setExpanded] = useState(false);
     const wave  = impact.wave ?? 1;
     const waveColor = WAVE_COLORS[wave] ?? UI_COLORS.textSecondary;
@@ -341,7 +364,8 @@ function ImpactCard({ impact, applying, onApplyChange, onApplyImpact, relations 
     );
     const validChanges = enrichedChanges.filter((c) => c.valid && c.kind !== "dm_note");
     const hasPersonalityShift = Boolean(impact.personalityShift?.to);
-    const canApplyImpact = Boolean(impact.entityResolved)
+    const canApplyImpact = !applied
+        && Boolean(impact.entityResolved)
         && (validChanges.length > 0
             || hasPersonalityShift
             || Boolean(impact.emotionalReaction?.trim())
@@ -356,74 +380,146 @@ function ImpactCard({ impact, applying, onApplyChange, onApplyImpact, relations 
                 mb: 1,
                 bgcolor: `${UI_COLORS.backgroundPrimary}bb`,
                 overflow: "hidden",
+                opacity: applied ? 0.85 : 1,
             }}
         >
-            {/* Header */}
+            {/* Compact queue row */}
             <Box
                 sx={{
-                    display: "flex",
+                    display: "grid",
+                    gridTemplateColumns: "1fr auto",
+                    gap: 0.5,
                     alignItems: "center",
-                    gap: 0.75,
-                    px: 1.25,
-                    py: 0.75,
-                    cursor: "pointer",
-                    "&:hover": { bgcolor: `${waveColor}08` },
+                    px: 1.1,
+                    py: 0.85,
                 }}
-                onClick={() => setExpanded((v) => !v)}
             >
-                <CyberTitle sx={{ fontSize: "0.78rem", color: waveColor, flex: 1, minWidth: 0 }}>
-                    {impact.entityTitle}
-                </CyberTitle>
-                <ArchetypeBadge archetype={impact.reactionArchetype} />
-                <Tooltip title={CONFIDENCE_TOOLTIPS[conf]} slotProps={tooltipSlotProps}>
-                    <Chip
-                        label={conf}
-                        size="small"
+                <Box
+                    sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 0.5,
+                        minWidth: 0,
+                        cursor: "pointer",
+                    }}
+                    onClick={() => setExpanded((v) => !v)}
+                >
+                    <CyberTitle
                         sx={{
-                            height: 16,
-                            fontSize: "0.56rem",
-                            bgcolor: `${CONFIDENCE_COLORS[conf]}22`,
-                            color: CONFIDENCE_COLORS[conf],
-                            border: `1px solid ${CONFIDENCE_COLORS[conf]}44`,
-                            cursor: "help",
-                            "& .MuiChip-label": { px: 0.6 },
+                            fontSize: "0.7rem",
+                            color: waveColor,
+                            letterSpacing: 0.4,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            flex: 1,
+                            minWidth: 0,
                         }}
-                    />
-                </Tooltip>
-                {validChanges.length > 0 && (
-                    <Chip
-                        label={`${validChanges.length} cambio${validChanges.length > 1 ? "s" : ""}`}
-                        size="small"
-                        sx={{
-                            height: 16,
-                            fontSize: "0.56rem",
-                            bgcolor: `${UI_COLORS.anomaly}18`,
-                            color: UI_COLORS.anomaly,
-                            "& .MuiChip-label": { px: 0.6 },
-                        }}
-                    />
-                )}
-                {!impact.valid && (
-                    <Tooltip title={impact.validationErrors?.join(" | ")} slotProps={tooltipSlotProps}>
-                        <ErrorOutlineIcon sx={{ fontSize: "0.9rem", color: UI_COLORS.accentStrong }} />
-                    </Tooltip>
-                )}
-                <IconButton size="small" sx={{ color: UI_COLORS.textSecondary, p: 0.25 }}>
-                    {expanded ? <ExpandLessIcon sx={{ fontSize: "1rem" }} /> : <ExpandMoreIcon sx={{ fontSize: "1rem" }} />}
-                </IconButton>
-            </Box>
+                    >
+                        {impact.entityTitle}
+                    </CyberTitle>
+                    {!impact.valid && (
+                        <Tooltip title={impact.validationErrors?.join(" | ")} slotProps={tooltipSlotProps}>
+                            <ErrorOutlineIcon sx={{ fontSize: "0.9rem", color: UI_COLORS.accentStrong, flexShrink: 0 }} />
+                        </Tooltip>
+                    )}
+                    <IconButton size="small" sx={{ color: UI_COLORS.textSecondary, p: 0.2, flexShrink: 0 }}>
+                        {expanded
+                            ? <ExpandLessIcon sx={{ fontSize: "1rem" }} />
+                            : <ExpandMoreIcon sx={{ fontSize: "1rem" }} />}
+                    </IconButton>
+                </Box>
+                <Box sx={{ display: "flex", gap: 0.4, flexShrink: 0 }}>
+                    {applied ? (
+                        <Chip
+                            label="Aplicado"
+                            size="small"
+                            sx={{
+                                height: 20,
+                                fontSize: "0.52rem",
+                                color: "#4ade80",
+                                border: "1px solid rgba(74,222,128,0.45)",
+                                bgcolor: "rgba(74,222,128,0.08)",
+                                "& .MuiChip-label": { px: 0.6 },
+                            }}
+                        />
+                    ) : (
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            disabled={applying || !canApplyImpact}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onApplyImpact?.(impact);
+                            }}
+                            sx={{
+                                fontSize: "0.52rem",
+                                fontFamily: "'Orbitron', sans-serif",
+                                letterSpacing: 0.4,
+                                borderColor: UI_COLORS.accent,
+                                color: UI_COLORS.accent,
+                                py: 0.2,
+                                px: 0.85,
+                                minWidth: 0,
+                                bgcolor: `${UI_COLORS.accent}10`,
+                                "&:hover": { bgcolor: `${UI_COLORS.accent}18` },
+                                "&:disabled": { borderColor: UI_COLORS.border, color: UI_COLORS.textSecondary },
+                            }}
+                        >
+                            Aplicar
+                        </Button>
+                    )}
+                </Box>
 
-            {/* Emotional reaction — always visible */}
-            <Box sx={{ px: 1.25, pb: expanded ? 0 : 0.75 }}>
-                <CyberText sx={{ fontSize: "0.75rem", color: UI_COLORS.textPrimary, lineHeight: 1.5 }}>
-                    {impact.emotionalReaction}
+                <CyberText
+                    sx={{
+                        gridColumn: "1 / -1",
+                        fontSize: "0.72rem",
+                        color: UI_COLORS.textSecondary,
+                        lineHeight: 1.35,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                    }}
+                >
+                    {impact.emotionalReaction || "—"}
                 </CyberText>
+
+                <Box sx={{ gridColumn: "1 / -1", display: "flex", gap: 0.4, flexWrap: "wrap", alignItems: "center" }}>
+                    <ArchetypeBadge archetype={impact.reactionArchetype} />
+                    <Tooltip title={CONFIDENCE_TOOLTIPS[conf]} slotProps={tooltipSlotProps}>
+                        <Chip
+                            label={conf}
+                            size="small"
+                            sx={{
+                                height: 16,
+                                fontSize: "0.52rem",
+                                bgcolor: `${CONFIDENCE_COLORS[conf]}22`,
+                                color: CONFIDENCE_COLORS[conf],
+                                border: `1px solid ${CONFIDENCE_COLORS[conf]}44`,
+                                cursor: "help",
+                                "& .MuiChip-label": { px: 0.55 },
+                            }}
+                        />
+                    </Tooltip>
+                    {validChanges.length > 0 && (
+                        <Chip
+                            label={`${validChanges.length} cambio${validChanges.length > 1 ? "s" : ""}`}
+                            size="small"
+                            sx={{
+                                height: 16,
+                                fontSize: "0.52rem",
+                                bgcolor: `${UI_COLORS.anomaly}18`,
+                                color: UI_COLORS.anomaly,
+                                "& .MuiChip-label": { px: 0.55 },
+                            }}
+                        />
+                    )}
+                </Box>
             </Box>
 
-            {/* Expanded detail */}
             <Collapse in={expanded}>
-                <Box sx={{ px: 1.25, pb: 1, pt: 0.5 }}>
-                    {/* Narrative hook */}
+                <Box sx={{ px: 1.1, pb: 1, pt: 0.25, borderTop: `1px solid ${UI_COLORS.border}` }}>
                     {impact.narrativeHook && (
                         <Box
                             sx={{
@@ -434,7 +530,7 @@ function ImpactCard({ impact, applying, onApplyChange, onApplyImpact, relations 
                                 borderRadius: 0.75,
                             }}
                         >
-                            <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary, mb: 0.25, letterSpacing: 1 }}>
+                            <CyberText sx={{ fontSize: "0.65rem", color: UI_COLORS.textSecondary, mb: 0.25, letterSpacing: 1 }}>
                                 GANCHO NARRATIVO
                             </CyberText>
                             <CyberText sx={{ fontSize: "0.73rem", color: UI_COLORS.textPrimary }}>
@@ -443,14 +539,12 @@ function ImpactCard({ impact, applying, onApplyChange, onApplyImpact, relations 
                         </Box>
                     )}
 
-                    {/* Justification path */}
                     {impact.justificationPath && (
                         <CyberText sx={{ fontSize: "0.63rem", color: UI_COLORS.textSecondary, mb: 1, fontStyle: "italic" }}>
                             Ruta: {impact.justificationPath}
                         </CyberText>
                     )}
 
-                    {/* Personality shift */}
                     {hasPersonalityShift && (
                         <Box
                             sx={{
@@ -479,7 +573,6 @@ function ImpactCard({ impact, applying, onApplyChange, onApplyImpact, relations 
                         </Box>
                     )}
 
-                    {/* Proposed changes */}
                     {enrichedChanges.length > 0 && (
                         <Box>
                             <CyberText sx={{ fontSize: "0.65rem", color: UI_COLORS.textSecondary, mb: 0.5, letterSpacing: 1 }}>
@@ -491,12 +584,12 @@ function ImpactCard({ impact, applying, onApplyChange, onApplyImpact, relations 
                                     change={ch}
                                     applying={applying}
                                     onApply={onApplyChange}
+                                    applied={appliedChangeKeys.has(changeKeyFn?.(ch) ?? `${i}`)}
                                 />
                             ))}
                         </Box>
                     )}
 
-                    {/* Apply all button (relations/state + bloque IA en ficha) */}
                     {canApplyImpact && (
                         <Button
                             size="small"
@@ -511,7 +604,7 @@ function ImpactCard({ impact, applying, onApplyChange, onApplyImpact, relations 
                                 letterSpacing: 0.5,
                                 borderColor: `${UI_COLORS.anomaly}88`,
                                 color: UI_COLORS.anomaly,
-                                py: 0.25,
+                                py: 0.35,
                                 "&:hover": { bgcolor: `${UI_COLORS.anomaly}12` },
                             }}
                         >
@@ -547,6 +640,28 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
     const [creatingEvent, setCreatingEvent] = useState(false);
     /** @type {[{ impact: object, draftBody: string }|null, Function]} */
     const [impactReview, setImpactReview] = useState(null);
+    const [appliedImpactKeys, setAppliedImpactKeys] = useState(() => new Set());
+    const [appliedChangeKeys, setAppliedChangeKeys] = useState(() => new Set());
+
+    const changeKeyOf = useCallback((change) => {
+        return [
+            change?.kind ?? "?",
+            change?.fromEntityTitle ?? "",
+            change?.toEntityTitle ?? "",
+            change?.relationType ?? change?.field ?? "",
+            change?.newValue ?? "",
+            change?.noteText ?? "",
+        ].join("|");
+    }, []);
+
+    const impactKeyOf = useCallback((impact) => {
+        return `${impact?.entityId ?? ""}::${impact?.entityTitle ?? ""}::${impact?.wave ?? 0}`;
+    }, []);
+
+    useEffect(() => {
+        setAppliedImpactKeys(new Set());
+        setAppliedChangeKeys(new Set());
+    }, [result?.eventTitle, result?.summary, result?.impacts?.length]);
 
     const handleApplyChange = useCallback(async (change) => {
         if (!change.valid || !campaignId) return;
@@ -556,7 +671,7 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
             if (enriched.kind === "relation_add" || enriched.kind === "relation_update") {
                 if (!enriched.relationType) {
                     dispatch(showSnackbar({
-                        message: "No se puede aplicar: falta relationType.",
+                        message: "No se puede aplicar: falta el tipo de relación.",
                         severity: "warning",
                     }));
                     return;
@@ -590,6 +705,7 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
                     message: `Relación: ${enriched.fromEntityTitle} → ${enriched.toEntityTitle} · ${strengthLabel}`,
                     severity: "success",
                 }));
+                setAppliedChangeKeys((prev) => new Set(prev).add(changeKeyOf(enriched)));
             } else if (enriched.kind === "relation_remove") {
                 if (!enriched.existingRelationId) {
                     dispatch(showSnackbar({ message: "Relación no encontrada en el wiki.", severity: "warning" }));
@@ -602,6 +718,7 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
                         message: `Relación eliminada: ${enriched.fromEntityTitle} → ${enriched.toEntityTitle}`,
                         severity: "success",
                     }));
+                    setAppliedChangeKeys((prev) => new Set(prev).add(changeKeyOf(enriched)));
                 }
             } else if (enriched.kind === "entity_state_update") {
                 const targetEntity = enriched.fromEntity ?? entities.find((e) => e.title === enriched.fromEntityTitle);
@@ -619,6 +736,7 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
                 })).unwrap();
                 const label = NARRATIVE_STATE_LABELS[enriched.newValue] ?? enriched.newValue;
                 dispatch(showSnackbar({ message: `Estado de ${enriched.fromEntityTitle} → ${label}`, severity: "success" }));
+                setAppliedChangeKeys((prev) => new Set(prev).add(changeKeyOf(enriched)));
             }
         } catch (err) {
             dispatch(showSnackbar({ message: `Error: ${err.message}`, severity: "error" }));
@@ -626,7 +744,7 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
             setApplying(false);
             setConfirmChange(null);
         }
-    }, [campaignId, uid, relations, entities, dispatch]);
+    }, [campaignId, uid, relations, entities, dispatch, changeKeyOf]);
 
     const openImpactReview = useCallback((impact) => {
         if (!impact) return;
@@ -667,13 +785,16 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
                 message: `${head}${detailLine}${errLine}`,
                 severity: applyErrors.length || applied === 0 ? "warning" : "success",
             }));
+            if (applied > 0) {
+                setAppliedImpactKeys((prev) => new Set(prev).add(impactKeyOf(impact)));
+            }
         } catch (err) {
             dispatch(showSnackbar({ message: `Error al aplicar impacto: ${err.message}`, severity: "error" }));
         } finally {
             setApplying(false);
             setImpactReview(null);
         }
-    }, [campaignId, uid, entities, relations, dispatch, result?.eventTitle]);
+    }, [campaignId, uid, entities, relations, dispatch, result?.eventTitle, impactKeyOf]);
 
     const handleApplyCollectiveImpact = useCallback((collective) => {
         if (!campaignId || !collective) return;
@@ -730,28 +851,34 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
     }
     const waveNums = [...byWave.keys()].sort((a, b) => a - b);
     const impactCount = result.impacts?.length ?? 0;
+    const changeCount = (result.impacts ?? []).reduce(
+        (n, imp) => n + (imp.resolvedChanges ?? []).filter((c) => c.valid && c.kind !== "dm_note").length,
+        0,
+    );
+    const warnCount = (result.missingImpacts?.length ?? 0) + (result.errors?.length ?? 0);
+    const pendingImpacts = (result.impacts ?? []).filter((imp) => !appliedImpactKeys.has(impactKeyOf(imp)));
     const eventTitle = result.eventTitle?.trim()
         || eventInstruction?.trim().slice(0, 120)
         || "Evento catalizador";
     const eventSummary = result.eventSummary?.trim() || eventInstruction?.trim() || "";
 
     return (
-        <Box>
+        <Box sx={{ position: "relative", pb: pendingImpacts.length > 0 ? 7 : 0 }}>
             <Divider sx={{ bgcolor: UI_COLORS.border, mb: 1.5 }} />
 
             {/* Validation / parse errors */}
             {result.errors?.length > 0 && (
                 <Box
                     sx={{
-                        p: 1.25,
-                        mb: 1.5,
+                        p: 1,
+                        mb: 1,
                         bgcolor: `${UI_COLORS.accentStrong}14`,
                         border: `1px solid ${UI_COLORS.accentStrong}44`,
                         borderRadius: 1,
                     }}
                 >
                     {result.errors.map((err, i) => (
-                        <CyberText key={i} sx={{ fontSize: "0.74rem", color: UI_COLORS.accentStrong, mb: i < result.errors.length - 1 ? 0.5 : 0 }}>
+                        <CyberText key={i} sx={{ fontSize: "0.7rem", color: UI_COLORS.accentStrong, mb: i < result.errors.length - 1 ? 0.35 : 0 }}>
                             ⚠ {err}
                         </CyberText>
                     ))}
@@ -762,21 +889,18 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
             {result.missingImpacts?.length > 0 && (
                 <Box
                     sx={{
-                        p: 1.25,
-                        mb: 1.5,
+                        p: 1,
+                        mb: 1,
                         bgcolor: "#ffa72614",
                         border: "1px solid #ffa72644",
                         borderRadius: 1,
                     }}
                 >
-                    <CyberTitle sx={{ fontSize: "0.65rem", color: "#ffa726", letterSpacing: 2, mb: 0.5 }}>
-                        IMPACTS FALTANTES ({result.missingImpacts.length})
+                    <CyberTitle sx={{ fontSize: "0.62rem", color: "#ffa726", letterSpacing: 2, mb: 0.35 }}>
+                        REACCIONES FALTANTES ({result.missingImpacts.length})
                     </CyberTitle>
-                    <CyberText sx={{ fontSize: "0.72rem", color: UI_COLORS.textPrimary, mb: 0.5 }}>
-                        La IA no generó reacción para: {result.missingImpacts.join(", ")}.
-                    </CyberText>
-                    <CyberText sx={{ fontSize: "0.65rem", color: UI_COLORS.textSecondary }}>
-                        Regenera o completa manualmente las reacciones de estos personajes.
+                    <CyberText sx={{ fontSize: "0.7rem", color: UI_COLORS.textPrimary }}>
+                        Sin reacción para: {result.missingImpacts.join(", ")}. Regenera o completa a mano.
                     </CyberText>
                 </Box>
             )}
@@ -785,71 +909,92 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
             {result.waveMismatches?.length > 0 && (
                 <Box
                     sx={{
-                        p: 1,
-                        mb: 1.5,
+                        p: 0.85,
+                        mb: 1,
                         bgcolor: `${UI_COLORS.backgroundPrimary}cc`,
                         border: `1px solid ${UI_COLORS.border}`,
                         borderRadius: 1,
                     }}
                 >
                     {result.waveMismatches.map((wm, i) => (
-                        <CyberText key={i} sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary }}>
+                        <CyberText key={i} sx={{ fontSize: "0.65rem", color: UI_COLORS.textSecondary }}>
                             Onda: {wm.title} — esperada {wm.expected}, recibida {wm.got}
                         </CyberText>
                     ))}
                 </Box>
             )}
 
-            {/* Event header */}
+            {/* Event header — compact */}
             <Box
                 sx={{
-                    p: 1.25,
-                    mb: 1.5,
+                    p: 1.1,
+                    mb: 1,
                     bgcolor: `${UI_COLORS.backgroundPrimary}cc`,
                     border: `1px solid ${UI_COLORS.border}`,
                     borderLeft: `3px solid ${UI_COLORS.accent}`,
                     borderRadius: 1,
                 }}
             >
-                <CyberTitle sx={{ fontSize: "0.82rem", color: UI_COLORS.accent, mb: eventSummary ? 0.5 : 0 }}>
+                <CyberTitle sx={{ fontSize: "0.76rem", color: UI_COLORS.accent, mb: eventSummary ? 0.35 : 0 }}>
                     {eventTitle}
                 </CyberTitle>
                 {eventSummary && (
-                    <CyberText sx={{ fontSize: "0.76rem", color: UI_COLORS.textPrimary }}>
+                    <CyberText
+                        sx={{
+                            fontSize: "0.72rem",
+                            color: UI_COLORS.textSecondary,
+                            lineHeight: 1.35,
+                            display: "-webkit-box",
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: "vertical",
+                            overflow: "hidden",
+                        }}
+                    >
                         {eventSummary}
                     </CyberText>
                 )}
             </Box>
 
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mb: 1.25, px: 0.25 }}>
+                <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary }}>
+                    <strong style={{ color: UI_COLORS.textPrimary }}>{impactCount}</strong> reacciones
+                </CyberText>
+                <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary }}>
+                    <strong style={{ color: UI_COLORS.textPrimary }}>{changeCount}</strong> cambios
+                </CyberText>
+                <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary }}>
+                    <strong style={{ color: UI_COLORS.textPrimary }}>{warnCount}</strong> avisos
+                </CyberText>
+            </Box>
+
             {impactCount === 0 && (
                 <Box
                     sx={{
-                        p: 1.25,
-                        mb: 1.5,
+                        p: 1.1,
+                        mb: 1.25,
                         bgcolor: `${UI_COLORS.backgroundPrimary}cc`,
                         border: `1px solid ${UI_COLORS.border}`,
                         borderRadius: 1,
                     }}
                 >
-                    <CyberText sx={{ fontSize: "0.76rem", color: UI_COLORS.textSecondary }}>
-                        La IA no generó impactos por personaje. Suele deberse a JSON truncado, subgrafo sin
-                        personajes en ondas 1–3, o un evento demasiado vago. Reintenta con un texto más
-                        concreto o revisa que el ancla tenga vecinos personaje en el grafo.
+                    <CyberText sx={{ fontSize: "0.74rem", color: UI_COLORS.textSecondary }}>
+                        No hay reacciones por personaje. Reintenta con un evento más concreto o revisa
+                        que el ancla tenga vecinos en el grafo.
                     </CyberText>
                 </Box>
             )}
 
-            {/* Impacts by wave */}
+            {/* Impacts by wave — cola de revisión */}
             {waveNums.map((wave) => {
                 const waveColor = WAVE_COLORS[wave] ?? UI_COLORS.textSecondary;
                 const waveLabel = wave === 0 ? "ANCLA" : `ONDA ${wave}`;
                 const impactsInWave = byWave.get(wave);
                 return (
-                    <Box key={wave} sx={{ mb: 1.5 }}>
-                        <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 0.75 }}>
+                    <Box key={wave} sx={{ mb: 1.25 }}>
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 0.6 }}>
                             <WavesIcon sx={{ fontSize: "0.85rem", color: waveColor }} />
-                            <CyberTitle sx={{ fontSize: "0.68rem", color: waveColor, letterSpacing: 2 }}>
-                                {waveLabel} — {impactsInWave.length} entidad{impactsInWave.length > 1 ? "es" : ""}
+                            <CyberTitle sx={{ fontSize: "0.62rem", color: waveColor, letterSpacing: 2 }}>
+                                {waveLabel} — {impactsInWave.length}
                             </CyberTitle>
                         </Box>
                         {impactsInWave.map((imp, i) => (
@@ -858,6 +1003,9 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
                                 impact={imp}
                                 applying={applying}
                                 relations={relations}
+                                applied={appliedImpactKeys.has(impactKeyOf(imp))}
+                                appliedChangeKeys={appliedChangeKeys}
+                                changeKeyFn={changeKeyOf}
                                 onApplyChange={(ch) => setConfirmChange(ch)}
                                 onApplyImpact={openImpactReview}
                             />
@@ -872,7 +1020,7 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
                     <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 0.75 }}>
                         <WavesIcon sx={{ fontSize: "0.85rem", color: "#ffa726" }} />
                         <CyberTitle sx={{ fontSize: "0.68rem", color: "#ffa726", letterSpacing: 2 }}>
-                            IMPACTOS COLECTIVOS — {result.collectiveImpacts.length} entidad{result.collectiveImpacts.length > 1 ? "es" : ""}
+                            REACCIONES COLECTIVAS — {result.collectiveImpacts.length}
                         </CyberTitle>
                     </Box>
                     {result.collectiveImpacts.map((ci, i) => {
@@ -1052,6 +1200,49 @@ export default function WikiCascadeResult({ result, campaignId, eventInstruction
                     <CyberText sx={{ fontSize: "0.72rem", color: UI_COLORS.textPrimary }}>
                         {result.dmNotes}
                     </CyberText>
+                </Box>
+            )}
+
+            {pendingImpacts.length > 0 && (
+                <Box
+                    sx={{
+                        position: "sticky",
+                        bottom: 0,
+                        zIndex: 2,
+                        mt: 1.5,
+                        mx: -0.5,
+                        px: 1.25,
+                        py: 1,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 1,
+                        bgcolor: "rgba(8,8,16,0.96)",
+                        borderTop: `1px solid ${UI_COLORS.border}`,
+                        backdropFilter: "blur(8px)",
+                    }}
+                >
+                    <CyberText sx={{ fontSize: "0.7rem", color: UI_COLORS.textSecondary, flex: 1 }}>
+                        {pendingImpacts.length} pendiente{pendingImpacts.length !== 1 ? "s" : ""} de aplicar
+                    </CyberText>
+                    <Button
+                        size="small"
+                        variant="outlined"
+                        disabled={applying}
+                        onClick={() => openImpactReview(pendingImpacts[0])}
+                        sx={{
+                            fontSize: "0.55rem",
+                            fontFamily: "'Orbitron', sans-serif",
+                            letterSpacing: 0.6,
+                            borderColor: UI_COLORS.accent,
+                            color: UI_COLORS.accent,
+                            bgcolor: `${UI_COLORS.accent}12`,
+                            py: 0.5,
+                            px: 1.25,
+                            "&:hover": { bgcolor: `${UI_COLORS.accent}1c` },
+                        }}
+                    >
+                        Revisar siguiente
+                    </Button>
                 </Box>
             )}
 

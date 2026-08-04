@@ -20,6 +20,7 @@ import {
 } from "../constants/wikiRelationTypes.js";
 import { AI_MODES } from "../constants/wiki/narrativeAiSchemas.js";
 import {
+    REACTION_ARCHETYPE,
     REACTION_ARCHETYPE_LABELS,
     NARRATIVE_STATE,
     NARRATIVE_STATE_LABELS,
@@ -33,6 +34,52 @@ import {
 
 const KNOWN_NARRATIVE_STATE_VALUES = new Set(Object.values(NARRATIVE_STATE));
 const KNOWN_COLLECTIVE_ARCHETYPE_VALUES = new Set(Object.values(COLLECTIVE_ARCHETYPE));
+const KNOWN_REACTION_ARCHETYPE_VALUES = new Set(Object.values(REACTION_ARCHETYPE));
+
+function foldEnumText(value) {
+    return String(value ?? "")
+        .normalize("NFD")
+        .replace(/\p{M}/gu, "")
+        .toLowerCase()
+        .trim();
+}
+
+/**
+ * Map LLM output (snake_case or Spanish label, with/without accents) to canonical archetype key.
+ * @param {unknown} raw
+ * @returns {string|null}
+ */
+function normalizeReactionArchetypeValue(raw) {
+    if (raw == null) return null;
+    const s = String(raw).trim();
+    if (!s) return null;
+    if (s === "sin_arquetipo") return s;
+    if (KNOWN_REACTION_ARCHETYPE_VALUES.has(s)) return s;
+
+    const folded = foldEnumText(s);
+    if (KNOWN_REACTION_ARCHETYPE_VALUES.has(folded)) return folded;
+
+    for (const [key, label] of Object.entries(REACTION_ARCHETYPE_LABELS)) {
+        if (foldEnumText(label) === folded) return key;
+    }
+
+    // Common LLM variants / English
+    const ALIASES = {
+        guardian: REACTION_ARCHETYPE.GUARDIAN,
+        guardiana: REACTION_ARCHETYPE.GUARDIAN,
+        protector: REACTION_ARCHETYPE.GUARDIAN,
+        politico: REACTION_ARCHETYPE.POLITICO,
+        political: REACTION_ARCHETYPE.POLITICO,
+        intimo: REACTION_ARCHETYPE.INTIMO,
+        intimate: REACTION_ARCHETYPE.INTIMO,
+        rival: REACTION_ARCHETYPE.RIVAL,
+        pragmatico: REACTION_ARCHETYPE.PRAGMATICO,
+        pragmatic: REACTION_ARCHETYPE.PRAGMATICO,
+    };
+    if (ALIASES[folded]) return ALIASES[folded];
+
+    return null;
+}
 
 /**
  * Map free-text / label narrativeState from the LLM onto the enum key.
@@ -218,7 +265,7 @@ function validateCascadeChange(rawCh, j, {
         } else if (!nonempty(ch.toEntityTitle) || !toEntity) {
             chErr = `${errorPrefix}: entidad destino "${ch.toEntityTitle}" no encontrada.`;
         } else if (!nonempty(ch.relationType)) {
-            chErr = `${errorPrefix}: relationType requerido para ${ch.kind}.`;
+            chErr = `${errorPrefix}: tipo de relación requerido para ${ch.kind}.`;
         } else {
             relationType = normalizeRelationType(ch.relationType);
             if (!relationType) {
@@ -615,10 +662,14 @@ export function validateCascadeResponse(raw, contextEntities = [], allEntities =
             );
         }
 
-        if (imp.reactionArchetype
-            && !REACTION_ARCHETYPE_LABELS[imp.reactionArchetype]
-            && imp.reactionArchetype !== "sin_arquetipo") {
-            impErrors.push(`Arquetipo desconocido: "${imp.reactionArchetype}".`);
+        let reactionArchetype = imp.reactionArchetype ?? null;
+        if (reactionArchetype && reactionArchetype !== "sin_arquetipo") {
+            const normalizedArchetype = normalizeReactionArchetypeValue(reactionArchetype);
+            if (!normalizedArchetype) {
+                impErrors.push(`Arquetipo desconocido: "${imp.reactionArchetype}".`);
+            } else {
+                reactionArchetype = normalizedArchetype;
+            }
         }
 
         const personalityShift = (() => {
@@ -648,6 +699,7 @@ export function validateCascadeResponse(raw, contextEntities = [], allEntities =
 
         impacts.push({
             ...imp,
+            reactionArchetype,
             confidence:      computedConf,
             entityResolved:  entity ?? null,
             valid:           impErrors.length === 0,
@@ -683,7 +735,7 @@ export function validateCascadeResponse(raw, contextEntities = [], allEntities =
 
     if (missingImpacts.length > 0) {
         errors.push(
-            `Faltan impacts para: ${missingImpacts.join(", ")}.`
+            `Faltan reacciones para: ${missingImpacts.join(", ")}.`
         );
     }
 

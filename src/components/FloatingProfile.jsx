@@ -7,9 +7,6 @@ import CharactersSettingsDialog from "./CharactersSettingsDialog";
 import { useDispatch, useSelector } from 'react-redux';
 import { resetWorldState } from '../store/worldSlice';
 import { fetchPlayerCharacters } from '../store/characterSlice';
-import { showSnackbar, openWikiOverlay, restoreDialog } from '../store/uiSlice';
-import { DIALOG_IDS } from '../constants/dialogIds';
-import { ROLES } from '../constants/roles';
 
 const FloatingProfile = ({ profile }) => {
     const dispatch = useDispatch();
@@ -18,8 +15,6 @@ const FloatingProfile = ({ profile }) => {
     const accentColor = UI_COLORS.accent || "#00f2ea";
 
     const { list: characters } = useSelector((state) => state.characters);
-    const campaignId = useSelector((state) => state.world.selectedCampaignId);
-    const isDM = profile?.role === ROLES.DM;
 
     // Load characters owned by this player (ownerPlayerId); legacy characterIds merged if present
     useEffect(() => {
@@ -43,18 +38,6 @@ const FloatingProfile = ({ profile }) => {
         catch (error) { console.error("Logout Error:", error); }
     };
 
-    const handleOpenArchive = () => {
-        if (!campaignId) {
-            dispatch(showSnackbar({
-                message: "Selecciona una campaña antes de abrir el archivo narrativo.",
-                severity: "warning",
-            }));
-            return;
-        }
-        dispatch(restoreDialog(DIALOG_IDS.WIKI));
-        dispatch(openWikiOverlay({ mode: "list" }));
-    };
-
     return (
         <>
             <CyberProfile 
@@ -64,7 +47,6 @@ const FloatingProfile = ({ profile }) => {
                 setAdminOpen={setAdminOpen} 
                 setCharactersOpen={setCharactersOpen}
                 handleLogout={handleLogout}
-                onWikiOpen={isDM ? handleOpenArchive : undefined}
             />
 
             <AdminSettingsDialog 

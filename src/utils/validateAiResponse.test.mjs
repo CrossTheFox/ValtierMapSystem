@@ -226,6 +226,47 @@ describe("validateCascadeResponse", () => {
         assert.match(r.impacts[0].validationErrors[0], /Arquetipo desconocido/i);
     });
 
+    it("normalizes Spanish reaction archetype labels", () => {
+        const raw = {
+            ...cascadeBase,
+            impacts: [{
+                wave: 1,
+                entityTitle: "Oni Margalous",
+                reactionArchetype: "Pragmático",
+                emotionalReaction: "x",
+                narrativeHook: "x",
+                changes: [],
+                justificationPath: "x",
+                confidence: "alta",
+            }, {
+                wave: 1,
+                entityTitle: "Zorgun Margalous",
+                reactionArchetype: "Guardián",
+                emotionalReaction: "x",
+                narrativeHook: "x",
+                changes: [],
+                justificationPath: "x",
+                confidence: "alta",
+            }, {
+                wave: 2,
+                entityTitle: "Felicia Margalous",
+                reactionArchetype: "Político",
+                emotionalReaction: "x",
+                narrativeHook: "x",
+                changes: [],
+                justificationPath: "x",
+                confidence: "media",
+            }],
+        };
+        const r = validateCascadeResponse(raw, contextEntities);
+        const byTitle = Object.fromEntries(r.impacts.map((i) => [i.entityTitle, i]));
+        assert.equal(byTitle["Oni Margalous"].reactionArchetype, "pragmatico");
+        assert.ok(!(byTitle["Oni Margalous"].validationErrors ?? []).some((e) => /Arquetipo desconocido/i.test(e)));
+        assert.equal(byTitle["Zorgun Margalous"].reactionArchetype, "guardian");
+        assert.equal(byTitle["Felicia Margalous"].reactionArchetype, "politico");
+        assert.equal(byTitle["Oni Margalous"].valid, true);
+    });
+
     it("flags impact with entity not in context", () => {
         const raw = {
             ...cascadeBase,
@@ -528,7 +569,7 @@ describe("validateCascadeResponse – collectiveImpacts", () => {
         const r = validateCascadeResponse(raw, contextWithGalathia);
         const ch = r.collectiveImpacts[0].resolvedChanges[0];
         assert.equal(ch.valid, false);
-        assert.match(ch.validationError, /relationType/i);
+        assert.match(ch.validationError, /tipo de relaci[oó]n/i);
         assert.ok(r.invalidChangeTitles.includes("Galathia"));
     });
 });
