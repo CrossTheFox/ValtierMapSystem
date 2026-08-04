@@ -98,7 +98,9 @@ export const loadWorld = createAsyncThunk(
     async (campaignId) => {
         const maps = await getMapsByCampaign(campaignId);
         const campaignSnap = await getDoc(doc(db, "campaigns", campaignId));
-        const campaignName = campaignSnap.exists() ? campaignSnap.data().name ?? null : null;
+        const campaignData = campaignSnap.exists() ? campaignSnap.data() : {};
+        const campaignName = campaignData.name ?? null;
+        const rulesSystem = campaignData.rulesSystem || "icon";
 
         if (!maps.length) {
             const placeholder = createEmptyTableMap(campaignId);
@@ -109,6 +111,7 @@ export const loadWorld = createAsyncThunk(
                 locations: {},
                 charactersById: {},
                 campaignName,
+                rulesSystem,
             };
         }
 
@@ -123,6 +126,7 @@ export const loadWorld = createAsyncThunk(
             locations,
             charactersById,
             campaignName,
+            rulesSystem,
         };
     }
 );
@@ -152,6 +156,7 @@ const worldSlice = createSlice({
     initialState: {
         selectedCampaignId: null,
         selectedCampaignName: null,
+        rulesSystem: "icon",
         maps: [],
         map: null,
         activeMapId: null,
@@ -187,6 +192,7 @@ const worldSlice = createSlice({
             state.worldStatus = "idle";
             state.selectedCampaignId = null;
             state.selectedCampaignName = null;
+            state.rulesSystem = "icon";
         },
         setGridConfig: (state, action) => {
             state.gridConfig = { ...state.gridConfig, ...action.payload };
@@ -312,6 +318,9 @@ const worldSlice = createSlice({
                 );
                 if (action.payload.campaignName) {
                     state.selectedCampaignName = action.payload.campaignName;
+                }
+                if (action.payload.rulesSystem) {
+                    state.rulesSystem = action.payload.rulesSystem;
                 }
             })
             .addCase(loadWorld.rejected, (state, action) => {

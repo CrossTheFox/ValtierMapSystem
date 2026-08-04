@@ -18,7 +18,7 @@ export default function CharacterSheetBody({
     kitView = "tree",
     onKitViewChange,
     statDefinitions = [],
-    maxStat = 6,
+    maxStat = 4,
     wikiEntities = [],
     avatarSize,
 }) {

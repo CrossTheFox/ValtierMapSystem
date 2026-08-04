@@ -50,7 +50,9 @@
 | Barra de VIT click-to-set (session pool, umbral de muerte) | ✅ Live |
 | Pips de esfuerzo (Effort) — max desde `resourceTracks` | ✅ Live |
 | Pantalla de stats (iconos + roll al chat) | ✅ Live |
-| `AbilityHotbar` — barra scrollable; recibe `character` del HUD | ✅ Live |
+| `AbilityHotbar` — 9 páginas × 10 slots; Attack abre diálogo Boon/Curse; open en Redux | ✅ Live |
+| Tags combat (`tags` + VTT Configs → Contenido → TAGS) | ✅ Live |
+| Attack d20 + boons/curses + daño en un acto | ✅ Live |
 | `DiceRollerBar` — dados libres Nd4…Nd100 + custom | ✅ Live |
 | Overlay de revelado de dados (`DiceRevealOverlay`) | ✅ Live |
 | Hoja de personaje (`CharactersSettingsDialog`) — tabs Identidad + Kit | ✅ Live |
@@ -193,7 +195,9 @@ Todo el estado de token vive en **un solo documento Firestore** — lecturas bar
 
 | Item | Problema |
 |---|---|
-| **Sin accesos de teclado al hotbar** | Las habilidades del hotbar no tienen atajos 1–8. Toda interacción requiere clic. |
+| **Sin accesos de teclado al hotbar** | Las macros (9×10) aún no tienen atajos 1–0 / páginas. Toda interacción requiere clic. |
+| **Macros custom (fórmulas propias)** | Tipos `ability` / `trait` / `ultimate` / `shortcut` / `object` (stub) viven en `character.macroBar`. **Macros creadas por el jugador** (`type: custom`) están marcadas en el modelo y en el hotbar, pero el editor de macros custom se diseña en una iteración posterior. |
+| **Objetos en macros** | Slot type `object` reservado; pin + launch pendientes del sistema de inventario. |
 | **Mensajes de chat sin whisper** | No hay mensajes privados DM-a-jugador ni mensajes visibles solo para el DM. Todo el chat es público para los presentes. |
 | **Badge de no-leídos sin Redux** | El conteo de mensajes no leídos se gestiona manualmente en el padre (`UIOverlay`) y no está en el store. Si el componente se desmonta y remonta, el conteo se resetea. |
 | **`partyPositions` sin uso** | El campo `partyPositions` en `gameSlice` es poblado por `gameService` pero nunca montado en el árbol Pixi. Es deuda técnica vestigial. |
@@ -209,6 +213,28 @@ Todo el estado de token vive en **un solo documento Firestore** — lecturas bar
 | Whisper / GM-only chat | Requiere reglas Firestore adicionales por mensaje |
 | Combate multi-mapa simultáneo | Fuera de alcance del modelo de datos actual |
 | Dados 3D | Cosmético; dados simples son suficientes para ICON |
+
+---
+
+### 3.4 Planeado — Macros custom
+
+El hotbar ya soporta el tipo `custom` en `character.macroBar` (9 páginas × 10 slots) junto a `ability` / `trait` / `ultimate` / `shortcut` / `object`.
+
+**Pendiente de diseño (siguiente iteración):** editor de macros creadas por el jugador (fórmulas de dados, texto libre, atajos compuestos), UI de creación desde el HUD, y validación de snippets. Hasta entonces, alinear un slot `custom` muestra aviso “próximamente”.
+
+### 3.5 Live — Ataques ICON + Tags + Boons/Curses
+
+| Pieza | Estado |
+|---|---|
+| `abilityKind: standard \| attack` en `abilities/{key}` | ✅ Live |
+| `tagKeys[]` en abilities; catálogo `tags/{id}` con `rulesSystem` + `campaignId` | ✅ Live |
+| VTT Configs → Contenido → **TAGS** (core ICON + custom campaña) | ✅ Live |
+| Seed: `npm run seed:icon-tags` | ✅ |
+| Diálogo Boon/Curse al lanzar Attack desde hotbar | ✅ Live |
+| `rollAttackD20` (1–2 d6 keep highest ± d20) + daño de brackets en un acto | ✅ Live |
+| Chat: breakdown ATK + chips de tags en mensaje ability | ✅ Live |
+
+**Fuera de alcance aún:** hit/miss vs DEF, aplicar Pierce/Armor numéricamente, gastar Blessings al elegir boon, UI multi-sistema (solo campo `rulesSystem`).
 
 ---
 

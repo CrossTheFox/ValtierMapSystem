@@ -47,7 +47,7 @@ const uiSlice = createSlice({
             areaFilter: null,     // WikiAreaId | null — set when opening from drawer area nav
         },
         openDialogs: {
-            characters: false,   // CharactersGlobalDialog
+            characters: false,   // legacy key (roster moved into VTT Configs / settings)
             sheet: false,        // CharactersSettingsDialog (dossier)
             settings: false,     // AdminSettingsDialog
             loreBrowser: false,  // LoreDialog en modo browse (sin selectedLore)
@@ -62,12 +62,29 @@ const uiSlice = createSlice({
             kitView: "tree",
             nonce: 0,
         },
+        /**
+         * Deep-link into VTT Configs (AdminSettingsDialog).
+         * tab: 0 PERSONAJES … 3 CONTENIDO …; contentSub: LOCATIONS|JOBS|OBJECTS
+         */
+        settingsFocus: {
+            tab: 0,
+            contentSub: null,
+            jobId: null,
+            nonce: 0,
+        },
         /** IC speech bubbles over map tokens: characterId → { messageId, text, expiresAt } */
         tokenSpeech: {},
         /** Tokens selected on the active map (multi-select / marquee). */
         selectedTokenIds: [],
         /** Ephemeral turn-focus flash on the map (local, not Firestore). */
         turnFocus: null, // { id, x, y, mapId, createdAt }
+        /**
+         * Macro bar (AbilityHotbar) — survives map clicks / map switches.
+         * Only closes via the bolt toggle or the bar's X.
+         */
+        abilityBarOpen: false,
+        /** Active macro page index 0..8 */
+        macroPage: 0,
     },
     reducers: {
         selectLocationPreview(state, action) {
@@ -251,6 +268,29 @@ const uiSlice = createSlice({
                 nonce: (state.sheetFocus?.nonce || 0) + 1,
             };
         },
+        /**
+         * Open VTT Configs with optional deep-link into a tab / content sub / job.
+         * @param {{ tab?: number, contentSub?: string|null, jobId?: string|null }} [payload]
+         */
+        openSettingsFocus(state, action) {
+            const { tab = 0, contentSub = null, jobId = null } = action.payload || {};
+            state.openDialogs.settings = true;
+            state.minimizedDialogs[DIALOG_IDS.SETTINGS] = false;
+            state.settingsFocus = {
+                tab: Number.isFinite(tab) ? tab : 0,
+                contentSub: contentSub || null,
+                jobId: jobId || null,
+                nonce: (state.settingsFocus?.nonce || 0) + 1,
+            };
+        },
+        clearSettingsFocus(state) {
+            state.settingsFocus = {
+                tab: 0,
+                contentSub: null,
+                jobId: null,
+                nonce: state.settingsFocus?.nonce || 0,
+            };
+        },
         closeDialog(state, action) {
             const name = action.payload;
             if (name in state.openDialogs) {
@@ -316,6 +356,18 @@ const uiSlice = createSlice({
         clearTurnFocus(state) {
             state.turnFocus = null;
         },
+        toggleAbilityBar(state) {
+            state.abilityBarOpen = !state.abilityBarOpen;
+        },
+        setAbilityBarOpen(state, action) {
+            state.abilityBarOpen = !!action.payload;
+        },
+        setMacroPage(state, action) {
+            const n = Math.floor(Number(action.payload));
+            state.macroPage = Number.isFinite(n)
+                ? Math.max(0, Math.min(8, n))
+                : 0;
+        },
     },
 });
 
@@ -350,6 +402,8 @@ export const {
     setWikiOverlayAreaFilter,
     openDialog,
     openCharacterSheet,
+    openSettingsFocus,
+    clearSettingsFocus,
     closeDialog,
     showTokenSpeech,
     dismissTokenSpeech,
@@ -359,6 +413,9 @@ export const {
     clearTokenSelection,
     setTurnFocus,
     clearTurnFocus,
+    toggleAbilityBar,
+    setAbilityBarOpen,
+    setMacroPage,
 } = uiSlice.actions;
 
 export default uiSlice.reducer;

@@ -40,11 +40,6 @@ export default function DialogStackBar() {
             label: "LORE",
             minimized: minimizedDialogs[DIALOG_IDS.LORE_BROWSER],
         },
-        openDialogs.characters && {
-            id: DIALOG_IDS.CHARACTERS,
-            label: "CHARS",
-            minimized: minimizedDialogs[DIALOG_IDS.CHARACTERS],
-        },
         openDialogs.sheet && {
             id: DIALOG_IDS.SHEET,
             label: "DOSSIER",
@@ -52,7 +47,7 @@ export default function DialogStackBar() {
         },
         openDialogs.settings && {
             id: DIALOG_IDS.SETTINGS,
-            label: "CONFIG",
+            label: "VTT CFG",
             minimized: minimizedDialogs[DIALOG_IDS.SETTINGS],
         },
         wikiOverlay.open && {

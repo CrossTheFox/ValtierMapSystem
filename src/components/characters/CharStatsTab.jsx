@@ -5,7 +5,7 @@ import { CyberText } from "../customs/CustomTexts";
 import { UI_COLORS } from "../../constants/uiColors";
 const TXT_MUTED = { color: "rgba(255,255,255,0.55)" };
 
-export default function CharStatsTab({ character, statDefinitions = [], maxStat = 6 }) {
+export default function CharStatsTab({ character, statDefinitions = [], maxStat = 4 }) {
     const stats = character?.stats || {};
 
     return (

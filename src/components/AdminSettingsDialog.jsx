@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { Box } from "@mui/material";
+import PersonIcon from "@mui/icons-material/Person";
 import PeopleIcon from "@mui/icons-material/People";
 import MapIcon from "@mui/icons-material/Map";
-import GridViewIcon from "@mui/icons-material/GridView";
+import CategoryIcon from "@mui/icons-material/Category";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
 import TuneIcon from "@mui/icons-material/Tune";
 import { useSelector } from "react-redux";
@@ -13,6 +14,7 @@ import { CyberText } from "./customs/CustomTexts";
 import { UI_COLORS } from "../constants/uiColors";
 import usePopout from "../hooks/usePopout";
 import AdminEmptyCampaign from "./admin/AdminEmptyCampaign";
+import CharactersAdminTab from "./admin/CharactersAdminTab";
 import PlayersAdminTab from "./admin/PlayersAdminTab";
 import MapsAdminTab from "./admin/MapsAdminTab";
 import VttContentTab from "./admin/VttContentTab";
@@ -21,11 +23,11 @@ import SessionAdminTab from "./admin/SessionAdminTab";
 import WikiAiConfigDialog from "./wiki/WikiAiConfigDialog";
 
 function useAdminStats(campaignId) {
-    const [stats, setStats] = useState({ players: 0, maps: 0, locations: 0, wiki: 0 });
+    const [stats, setStats] = useState({ players: 0, maps: 0, locations: 0, wiki: 0, characters: 0 });
 
     useEffect(() => {
         if (!campaignId) {
-            setStats({ players: 0, maps: 0, locations: 0, wiki: 0 });
+            setStats({ players: 0, maps: 0, locations: 0, wiki: 0, characters: 0 });
             return undefined;
         }
 
@@ -34,8 +36,15 @@ function useAdminStats(campaignId) {
         unsubs.push(
             onSnapshot(
                 query(collection(db, "players"), where("campaignIds", "array-contains", campaignId)),
-                (snap) => setStats((s) => ({ ...s, players: snap.size }))
-            )
+                (snap) => setStats((s) => ({ ...s, players: snap.size })),
+            ),
+        );
+
+        unsubs.push(
+            onSnapshot(
+                query(collection(db, "characters"), where("campaignId", "==", campaignId)),
+                (snap) => setStats((s) => ({ ...s, characters: snap.size })),
+            ),
         );
 
         let locUnsub = null;
@@ -52,16 +61,16 @@ function useAdminStats(campaignId) {
                     }
                     locUnsub = onSnapshot(
                         query(collection(db, "locations"), where("mapId", "in", mapIds)),
-                        (locSnap) => setStats((s) => ({ ...s, locations: locSnap.size }))
+                        (locSnap) => setStats((s) => ({ ...s, locations: locSnap.size })),
                     );
-                }
-            )
+                },
+            ),
         );
 
         unsubs.push(
             onSnapshot(collection(db, "campaigns", campaignId, "wikiEntities"), (snap) => {
                 setStats((s) => ({ ...s, wiki: snap.size }));
-            })
+            }),
         );
 
         return () => {
@@ -75,6 +84,7 @@ function useAdminStats(campaignId) {
 
 function CampaignStatsBar({ stats }) {
     const items = [
+        { label: "PERSONAJES", value: stats.characters },
         { label: "JUGADORES", value: stats.players },
         { label: "MAPAS", value: stats.maps },
         { label: "LOCACIONES", value: stats.locations },
@@ -105,8 +115,11 @@ function CampaignStatsBar({ stats }) {
     );
 }
 
+/** Panel DM unificado: roster, jugadores, mapas, contenido, wiki y sesión. */
 export default function AdminSettingsDialog({ open, onClose, popupMode = false }) {
     const [tab, setTab] = useState(0);
+    const [contentSub, setContentSub] = useState(null);
+    const [focusJobId, setFocusJobId] = useState(null);
     const [aiConfigOpen, setAiConfigOpen] = useState(false);
     const { isPopped, popout } = usePopout("admin");
 
@@ -114,13 +127,22 @@ export default function AdminSettingsDialog({ open, onClose, popupMode = false }
     const campaignName = useSelector((s) => s.world.selectedCampaignName);
     const narrativeSettings = useSelector((s) => s.wiki.narrativeSettings);
     const uid = useSelector((s) => s.player.profile?.uid);
+    const settingsFocus = useSelector((s) => s.ui.settingsFocus);
 
     const stats = useAdminStats(campaignId);
 
+    useEffect(() => {
+        if (!open || !settingsFocus?.nonce) return;
+        if (Number.isFinite(settingsFocus.tab)) setTab(settingsFocus.tab);
+        setContentSub(settingsFocus.contentSub || null);
+        setFocusJobId(settingsFocus.jobId || null);
+    }, [open, settingsFocus?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
+
     const adminTabs = [
-        { label: "ACCESOS", icon: <PeopleIcon /> },
+        { label: "PERSONAJES", icon: <PersonIcon /> },
+        { label: "JUGADORES", icon: <PeopleIcon /> },
         { label: "MAPAS", icon: <MapIcon /> },
-        { label: "VTT", icon: <GridViewIcon /> },
+        { label: "CONTENIDO", icon: <CategoryIcon /> },
         { label: "WIKI", icon: <MenuBookIcon /> },
         { label: "SESIÓN", icon: <TuneIcon /> },
     ];
@@ -140,19 +162,26 @@ export default function AdminSettingsDialog({ open, onClose, popupMode = false }
         <AdminEmptyCampaign />
     ) : (
         <>
-            <TabPanel isSelected={tab === 0} pValue={2}>
-                <PlayersAdminTab campaignId={campaignId} />
+            <TabPanel isSelected={tab === 0} pValue={0}>
+                <CharactersAdminTab campaignId={campaignId} />
             </TabPanel>
             <TabPanel isSelected={tab === 1} pValue={2}>
+                <PlayersAdminTab campaignId={campaignId} />
+            </TabPanel>
+            <TabPanel isSelected={tab === 2} pValue={2}>
                 <MapsAdminTab campaignId={campaignId} />
             </TabPanel>
-            <TabPanel isSelected={tab === 2} pValue={1}>
-                <VttContentTab campaignId={campaignId} />
-            </TabPanel>
-            <TabPanel isSelected={tab === 3} pValue={2}>
-                <WikiAdminTab campaignId={campaignId} onOpenAiConfig={() => setAiConfigOpen(true)} />
+            <TabPanel isSelected={tab === 3} pValue={1}>
+                <VttContentTab
+                    campaignId={campaignId}
+                    initialSub={contentSub}
+                    initialJobId={focusJobId}
+                />
             </TabPanel>
             <TabPanel isSelected={tab === 4} pValue={2}>
+                <WikiAdminTab campaignId={campaignId} onOpenAiConfig={() => setAiConfigOpen(true)} />
+            </TabPanel>
+            <TabPanel isSelected={tab === 5} pValue={2}>
                 <SessionAdminTab campaignId={campaignId} />
             </TabPanel>
         </>
@@ -163,7 +192,7 @@ export default function AdminSettingsDialog({ open, onClose, popupMode = false }
             <BaseTabbedDialog
                 open={open}
                 onClose={onClose}
-                title="SYSTEM_ADMIN_PANEL"
+                title="VTT CONFIGS"
                 subtitle={subtitle}
                 tabs={adminTabs}
                 activeTab={tab}
@@ -172,7 +201,7 @@ export default function AdminSettingsDialog({ open, onClose, popupMode = false }
                 isPopped={isPopped}
                 onPopout={handlePopout}
                 dialogId="settings"
-                sizePreset="lg"
+                sizePreset="xl"
             >
                 {campaignId && (
                     <Box sx={{ px: 2, pt: 1, flexShrink: 0 }}>

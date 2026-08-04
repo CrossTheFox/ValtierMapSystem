@@ -17,6 +17,7 @@ import {
 import { useAssetUrl } from "../../hooks/useAssetUrl";
 import { listCampaignCharacters } from "../../utils/characterCombat";
 import { setActiveCharacterId, persistActiveCharacter } from "../../store/playerSlice";
+import { INLINE_ROLL_MARKER_RE } from "../../utils/abilityRollCommands";
 
 const MSG_BODY_SX = {
     fontSize: "0.8rem",
@@ -272,12 +273,12 @@ function diceVars(accent) {
 }
 
 /** Plain-DOM avatar: styling comes from the parent card class, not emotion. */
-function RawAvatar({ path, name }) {
+function RawAvatar({ path, name, className = "dc-avatar" }) {
     const src = useAssetUrl(path || null);
     if (src) {
         return (
             <img
-                className="dc-avatar"
+                className={className}
                 src={src}
                 alt={name}
                 decoding="sync"
@@ -285,7 +286,7 @@ function RawAvatar({ path, name }) {
             />
         );
     }
-    return <span className="dc-avatar">{(name || "?").slice(0, 1).toUpperCase()}</span>;
+    return <span className={className}>{(name || "?").slice(0, 1).toUpperCase()}</span>;
 }
 
 function faceMode(value, sides) {
@@ -302,6 +303,7 @@ function DiceChatCard({ msg, avatarByCharacterId }) {
     const sides = Math.max(2, Math.floor(Number(dr.sides) || 20));
     const total = dr.total;
     const mode = dr.mode; // highest | lowest | null
+    const isAttack = dr.kind === "attack";
     const isAction = mode === "highest" || mode === "lowest";
     const formula = msg.diceFormula || dr.formula || "";
     const name = msg.characterName || msg.senderName || "???";
@@ -319,9 +321,11 @@ function DiceChatCard({ msg, avatarByCharacterId }) {
 
     const accent =
         hot === "fail" ? DICE_FAIL : hot === "crit" ? DICE_CRIT : UI_COLORS.anomaly;
-    const badge = isAction ? "ACTION" : "DADO";
+    const badge = isAttack ? "ATK" : isAction ? "ACTION" : "DADO";
     const modeLabel =
         mode === "highest" ? "keep max" : mode === "lowest" ? "keep min" : null;
+
+    const modDice = Array.isArray(dr.modifierDice) ? dr.modifierDice : [];
 
     return (
         <Box sx={DICE_CARD_SX} style={diceVars(accent)}>
@@ -352,17 +356,288 @@ function DiceChatCard({ msg, avatarByCharacterId }) {
                                     {face}
                                 </span>
                             ))}
-                            {!!dr.mod && (
+                            {isAttack && modDice.length > 0 && (
+                                <>
+                                    <span className="dc-mod">
+                                        {dr.polarity === "curse" ? "−" : "+"}
+                                    </span>
+                                    {modDice.map((face, i) => (
+                                        <span
+                                            key={`m-${face}-${i}`}
+                                            className={`dc-face ${face === dr.modifierKept ? "crit" : "normal"}`}
+                                            title={face === dr.modifierKept ? "kept" : "discarded"}
+                                        >
+                                            {face}
+                                        </span>
+                                    ))}
+                                </>
+                            )}
+                            {!isAttack && !!dr.mod && (
                                 <span className="dc-mod">
                                     {dr.mod >= 0 ? `+${dr.mod}` : dr.mod}
                                 </span>
                             )}
                         </div>
                     )}
-                    <div className="dc-label">RESULTADO</div>
+                    <div className="dc-label">
+                        {isAttack
+                            ? (dr.polarity === "boon"
+                                ? `d20 + boon → ${total}`
+                                : dr.polarity === "curse"
+                                    ? `d20 − curse → ${total}`
+                                    : "RESULTADO")
+                            : "RESULTADO"}
+                    </div>
                 </div>
                 <div className="dc-total">{total}</div>
             </div>
+        </Box>
+    );
+}
+
+const ABILITY_CARD_SX = {
+    mb: 0.9,
+    borderRadius: "6px",
+    border: "1px solid var(--ab-a66)",
+    background:
+        "linear-gradient(135deg, var(--ab-a14) 0%, rgba(7,7,14,0.94) 40%, rgba(0,0,0,0.6) 100%)",
+    boxShadow: "0 0 18px var(--ab-a22), inset 0 0 0 1px rgba(255,255,255,0.04)",
+    overflow: "hidden",
+    "& .ab-head": {
+        display: "flex",
+        alignItems: "center",
+        gap: "7px",
+        px: 1,
+        pt: 0.7,
+        pb: 0.45,
+        borderBottom: "1px solid var(--ab-a33)",
+    },
+    "& .ab-avatar": {
+        width: 24,
+        height: 24,
+        flexShrink: 0,
+        borderRadius: "50%",
+        overflow: "hidden",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        objectFit: "cover",
+        fontFamily: FONT_BODY,
+        fontSize: "0.6rem",
+        bgcolor: "var(--ab-a33)",
+        border: "1px solid var(--ab-a66)",
+        color: "var(--ab-a)",
+    },
+    "& .ab-who": { flex: 1, minWidth: 0 },
+    "& .ab-name": {
+        fontFamily: FONT_BODY,
+        fontSize: "0.72rem",
+        fontWeight: 700,
+        letterSpacing: "0.3px",
+        lineHeight: 1.2,
+        color: UI_COLORS.textPrimary,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+    },
+    "& .ab-sub": {
+        fontFamily: FONT_BODY,
+        fontSize: "0.52rem",
+        lineHeight: 1.8,
+        letterSpacing: "0.8px",
+        color: UI_COLORS.textSecondary,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+    },
+    "& .ab-badge": {
+        flexShrink: 0,
+        height: 18,
+        display: "inline-flex",
+        alignItems: "center",
+        px: 0.75,
+        borderRadius: "9px",
+        fontFamily: FONT_BODY,
+        fontSize: "0.5rem",
+        letterSpacing: "1.2px",
+        fontWeight: 700,
+        bgcolor: "var(--ab-a22)",
+        color: "var(--ab-a)",
+        border: "1px solid var(--ab-a66)",
+    },
+    "& .ab-meta": {
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: "5px",
+        px: 1,
+        pt: 0.65,
+        pb: 0.35,
+    },
+    "& .ab-cost": {
+        fontFamily: FONT_MONO,
+        fontSize: "0.58rem",
+        letterSpacing: "0.04em",
+        color: UI_COLORS.textPrimary,
+        border: `1px solid ${UI_COLORS.accent}55`,
+        bgcolor: `${UI_COLORS.accent}12`,
+        px: "6px",
+        py: "2px",
+        borderRadius: "3px",
+    },
+    "& .ab-tag": {
+        fontFamily: FONT_MONO,
+        fontSize: "0.52rem",
+        letterSpacing: "0.06em",
+        textTransform: "uppercase",
+        color: UI_COLORS.anomaly,
+        border: `1px solid ${UI_COLORS.anomaly}77`,
+        bgcolor: `${UI_COLORS.anomaly}18`,
+        boxShadow: `0 0 8px ${UI_COLORS.anomaly}22`,
+        px: "6px",
+        py: "2px",
+        borderRadius: "3px",
+    },
+    "& .ab-body": {
+        px: 1.1,
+        pt: 0.55,
+        pb: 0.95,
+        fontFamily: FONT_BODY,
+        fontSize: "0.78rem",
+        lineHeight: 1.55,
+        color: UI_COLORS.textPrimary,
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word",
+    },
+    "& .ab-roll": {
+        display: "inline-flex",
+        alignItems: "baseline",
+        gap: "3px",
+        fontFamily: FONT_MONO,
+        fontWeight: 700,
+        fontSize: "0.88rem",
+        px: "5px",
+        py: "0px",
+        mx: "1px",
+        borderRadius: "3px",
+        border: "1px solid currentColor",
+        verticalAlign: "baseline",
+        cursor: "help",
+    },
+    "& .ab-roll.normal": {
+        color: UI_COLORS.anomaly,
+        bgcolor: `${UI_COLORS.anomaly}14`,
+        boxShadow: `0 0 8px ${UI_COLORS.anomaly}33`,
+    },
+    "& .ab-roll.crit": {
+        color: DICE_CRIT,
+        bgcolor: `${DICE_CRIT}18`,
+        boxShadow: `0 0 10px ${DICE_CRIT}44`,
+    },
+    "& .ab-roll.fail": {
+        color: DICE_FAIL,
+        bgcolor: `${DICE_FAIL}14`,
+        boxShadow: `0 0 10px ${DICE_FAIL}44`,
+    },
+    "& .ab-roll-tip": {
+        fontSize: "0.5rem",
+        fontWeight: 500,
+        opacity: 0.65,
+        letterSpacing: "0.02em",
+    },
+};
+
+const abilityVarsCache = new Map();
+
+function abilityVars(accent) {
+    let cached = abilityVarsCache.get(accent);
+    if (!cached) {
+        cached = {
+            "--ab-a": accent,
+            "--ab-a14": `${accent}14`,
+            "--ab-a22": `${accent}22`,
+            "--ab-a33": `${accent}33`,
+            "--ab-a66": `${accent}66`,
+        };
+        abilityVarsCache.set(accent, cached);
+    }
+    return cached;
+}
+
+function AbilityInlineBody({ text, inlineRolls }) {
+    const rolls = Array.isArray(inlineRolls) ? inlineRolls : [];
+    const raw = String(text || "");
+    if (!raw) return null;
+    if (!rolls.length || !raw.includes("⟦")) {
+        return <>{raw}</>;
+    }
+
+    const nodes = [];
+    let last = 0;
+    const re = new RegExp(INLINE_ROLL_MARKER_RE.source, "g");
+    let m;
+    while ((m = re.exec(raw)) !== null) {
+        if (m.index > last) nodes.push(raw.slice(last, m.index));
+        const idx = Number(m[1]);
+        const roll = rolls[idx];
+        if (roll) {
+            const hot = roll.hot || "normal";
+            nodes.push(
+                <span
+                    key={`r-${idx}-${m.index}`}
+                    className={`ab-roll ${hot}`}
+                    title={`${roll.formula}${roll.rolls?.length ? ` → [${roll.rolls.join(", ")}]` : ""}`}
+                >
+                    {roll.total}
+                    <span className="ab-roll-tip">{roll.formula}</span>
+                </span>,
+            );
+        } else {
+            nodes.push(m[0]);
+        }
+        last = m.index + m[0].length;
+    }
+    if (last < raw.length) nodes.push(raw.slice(last));
+    return <>{nodes}</>;
+}
+
+function AbilityChatCard({ msg, avatarByCharacterId }) {
+    const isAttack = msg.abilityKind === "attack";
+    const accent = isAttack ? UI_COLORS.accent : UI_COLORS.anomaly;
+    const name = msg.characterName || msg.senderName || "???";
+    const livePath = msg.characterId ? avatarByCharacterId?.get(msg.characterId) : null;
+    const avatarPath = livePath || msg.characterAvatarUrl;
+    const tags = Array.isArray(msg.abilityTags) ? msg.abilityTags : [];
+    const cost = msg.abilityCost || null;
+
+    return (
+        <Box sx={ABILITY_CARD_SX} style={abilityVars(accent)}>
+            <div className="ab-head">
+                <RawAvatar path={avatarPath} name={name} className="ab-avatar" />
+                <div className="ab-who">
+                    <div className="ab-name">
+                        {(msg.abilityLabel || "HABILIDAD").toUpperCase()}
+                        <ChatTime createdAt={msg.createdAt} />
+                    </div>
+                    <div className="ab-sub">{name}</div>
+                </div>
+                <span className="ab-badge">{isAttack ? "ATK" : "ABILITY"}</span>
+            </div>
+
+            {(cost || tags.length > 0) && (
+                <div className="ab-meta">
+                    {cost ? <span className="ab-cost">{cost}</span> : null}
+                    {tags.map((t) => (
+                        <span key={t} className="ab-tag">{t}</span>
+                    ))}
+                </div>
+            )}
+
+            {msg.text ? (
+                <div className="ab-body">
+                    <AbilityInlineBody text={msg.text} inlineRolls={msg.abilityInlineRolls} />
+                </div>
+            ) : null}
         </Box>
     );
 }
@@ -373,34 +648,7 @@ function ChatMessage({ msg, glossaryEntities, avatarByCharacterId }) {
     }
 
     if (msg.type === CHAT_MESSAGE_TYPES.ABILITY) {
-        return (
-            <Box
-                sx={{
-                    mb: 0.75,
-                    px: 1,
-                    py: 0.75,
-                    border: `1px solid ${UI_COLORS.accent}55`,
-                    borderLeft: `3px solid ${UI_COLORS.accent}`,
-                    bgcolor: "rgba(0,0,0,0.4)",
-                    borderRadius: "0 4px 4px 0",
-                }}
-            >
-                <CyberText sx={{ fontSize: "0.6rem", color: UI_COLORS.textSecondary }}>
-                    {msg.characterName || msg.senderName} · HABILIDAD
-                    <ChatTime createdAt={msg.createdAt} />
-                </CyberText>
-                <CyberTitle sx={{ fontSize: "0.75rem", color: UI_COLORS.accent, my: 0.35 }}>
-                    {msg.abilityLabel}
-                </CyberTitle>
-                {msg.text && (
-                    <GlossaryTextRenderer
-                        text={msg.text}
-                        entities={glossaryEntities}
-                        sx={MSG_BODY_SX}
-                    />
-                )}
-            </Box>
-        );
+        return <AbilityChatCard msg={msg} avatarByCharacterId={avatarByCharacterId} />;
     }
 
     if (msg.isOOC) {

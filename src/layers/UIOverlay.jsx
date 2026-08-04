@@ -1,12 +1,12 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSelector, useDispatch } from "react-redux";
-import { closeDialog, showTokenSpeech } from "../store/uiSlice";
+import { closeDialog, showTokenSpeech, toggleAbilityBar } from "../store/uiSlice";
+import { isDmRole } from "../utils/tokenControl";
 
 import LocationInfoCard from "../components/LocationInfoCard";
 import LoreDialog from "../components/LoreDialog";
 import CharactersSettingsDialog from "../components/CharactersSettingsDialog";
 import AdminSettingsDialog from "../components/AdminSettingsDialog";
-import CharactersGlobalDialog from "../components/CharactersGlobalDialog";
 import NarrativeWikiOverlay from "../components/wiki/NarrativeWikiOverlay";
 import CyberSnackbar from "../components/customs/CyberSnackbar";
 import MapContextMenu from "../components/MapContextMenu";
@@ -36,12 +36,11 @@ const MemoLocationInfoCard = memo(LocationInfoCard);
 const MemoLoreDialog = memo(LoreDialog);
 const MemoNarrativeWikiOverlay = memo(NarrativeWikiOverlay);
 const MemoCyberSnackbar = memo(CyberSnackbar);
-const MemoCharactersGlobalDialog = memo(CharactersGlobalDialog);
 const MemoCharactersSettingsDialog = memo(CharactersSettingsDialog);
 const MemoAdminSettingsDialog = memo(AdminSettingsDialog);
-const MemoInitiativeTurnBar = memo(InitiativeTurnBar);
 const MemoMapSelectorHUD = memo(MapSelectorHUD);
 const MemoTopRightHUD = memo(TopRightHUD);
+const MemoInitiativeTurnBar = memo(InitiativeTurnBar);
 const MemoCharacterCombatHud = memo(CharacterCombatHud);
 const MemoDialogStackBar = memo(DialogStackBar);
 const MemoMeasuringHUD = memo(MeasuringHUD);
@@ -62,10 +61,11 @@ export default function UIOverlay() {
     const openDialogs = useSelector((state) => state.ui.openDialogs);
     const campaignId = useSelector((s) => s.world.selectedCampaignId);
     const isAuthenticated = !!profile;
+    const isDM = isDmRole(profile?.role);
 
     const [tokenPanelOpen, setTokenPanelOpen] = useState(false);
     const [chatPanelOpen, setChatPanelOpen] = useState(false);
-    const [abilityBarOpen, setAbilityBarOpen] = useState(false);
+    const abilityBarOpen = useSelector((s) => !!s.ui.abilityBarOpen);
     const [chat, setChat] = useState(EMPTY_CHAT);
     // Everything already in Firestore when the HUD mounts counts as read.
     const [lastReadMs, setLastReadMs] = useState(() => Date.now());
@@ -128,7 +128,6 @@ export default function UIOverlay() {
         }).length;
     }, [messages, lastReadMs, chatPanelOpen, profile?.uid]);
 
-    const closeCharacters = useCallback(() => dispatch(closeDialog("characters")), [dispatch]);
     const closeSheet = useCallback(() => dispatch(closeDialog("sheet")), [dispatch]);
     const closeSettings = useCallback(() => dispatch(closeDialog("settings")), [dispatch]);
     // Marking read on the click keeps the toggle a single render (no effect cascade).
@@ -142,7 +141,7 @@ export default function UIOverlay() {
         setLastReadMs(Date.now());
     }, []);
     const toggleToken = useCallback(() => setTokenPanelOpen((v) => !v), []);
-    const toggleAbilityBar = useCallback(() => setAbilityBarOpen((v) => !v), []);
+    const onToggleAbilityBar = useCallback(() => dispatch(toggleAbilityBar()), [dispatch]);
 
     const leftRail = useMemo(
         () => (isAuthenticated ? <MemoLeftToolsRail /> : null),
@@ -158,17 +157,12 @@ export default function UIOverlay() {
             <MemoLoreDialog />
             {isAuthenticated && <MemoNarrativeWikiOverlay />}
 
-            <MemoCharactersGlobalDialog
-                open={!!openDialogs.characters}
-                onClose={closeCharacters}
-            />
-
             <MemoCharactersSettingsDialog
                 open={!!openDialogs.sheet}
                 onClose={closeSheet}
             />
 
-            {isAuthenticated && (
+            {isAuthenticated && isDM && (
                 <MemoAdminSettingsDialog
                     open={!!openDialogs.settings}
                     onClose={closeSettings}
@@ -205,7 +199,7 @@ export default function UIOverlay() {
                 {isAuthenticated && (
                     <MemoCharacterCombatHud
                         abilityBarOpen={abilityBarOpen}
-                        onToggleAbilityBar={toggleAbilityBar}
+                        onToggleAbilityBar={onToggleAbilityBar}
                     />
                 )}
                 <MemoDialogStackBar />

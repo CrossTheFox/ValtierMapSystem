@@ -1,19 +1,17 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Badge, Box, IconButton, Tooltip } from "@mui/material";
 import PersonPinCircleIcon from "@mui/icons-material/PersonPinCircle";
 import ChatIcon from "@mui/icons-material/Chat";
 import { useDispatch, useSelector } from "react-redux";
-import { useNavigate } from "react-router-dom";
 
-import { restoreDialog, openDialog, openCharacterSheet, showSnackbar, openWikiOverlay } from "../../store/uiSlice";
-import { DIALOG_IDS } from "../../constants/dialogIds";
+import { openCharacterSheet } from "../../store/uiSlice";
 import { resetWorldState } from "../../store/worldSlice";
 import { fetchPlayerCharacters } from "../../store/characterSlice";
 import { logoutPlayer } from "../../../firebase/playersAuth";
 import { UI_COLORS } from "../../constants/uiColors";
-import { ROLES } from "../../constants/roles";
 import { VTT_HUD } from "../../constants/vttHudTokens";
 import { useAssetUrl } from "../../hooks/useAssetUrl";
+import { listCampaignCharacters } from "../../utils/characterCombat";
 
 const menuItemSx = {
     display: "block",
@@ -64,27 +62,40 @@ export default function TopRightHUD({
     onToggleChatPanel,
 }) {
     const dispatch = useDispatch();
-    const navigate = useNavigate();
     const [menuOpen, setMenuOpen] = useState(false);
     const menuRef = useRef(null);
 
-    const { list: characters } = useSelector((s) => s.characters);
-    const campaignId = useSelector((s) => s.world.selectedCampaignId);
+    const { list: sheetCharacters } = useSelector((s) => s.characters);
+    const charactersById = useSelector((s) => s.world.charactersById ?? {});
     const locations = useSelector((s) => s.world.locations);
-    const isDM = profile?.role === ROLES.DM || profile?.role === "gm";
 
-    const activeCharacter = (() => {
-        const fromSheet =
-            characters.find((c) => c.id === profile?.activeCharacterId) ||
-            characters[0] ||
-            null;
-        if (!fromSheet) return null;
-        for (const loc of Object.values(locations || {})) {
-            const live = loc.characters?.find((c) => c.id === fromSheet.id);
-            if (live) return { ...fromSheet, ...live };
+    /** Prefer activeCharacterId from full campaign roster (DM can select any PC). */
+    const activeCharacter = useMemo(() => {
+        const byId = new Map(
+            listCampaignCharacters(charactersById, locations).map((c) => [c.id, c]),
+        );
+        (sheetCharacters || []).forEach((c) => {
+            if (!c?.id) return;
+            byId.set(c.id, { ...(byId.get(c.id) || {}), ...c });
+        });
+
+        const id = profile?.activeCharacterId;
+        let base = (id && byId.get(id)) || null;
+        if (!base) {
+            // Owned sheet first, then any roster entry.
+            base = (id && sheetCharacters.find((c) => c.id === id))
+                || sheetCharacters[0]
+                || [...byId.values()][0]
+                || null;
         }
-        return fromSheet;
-    })();
+        if (!base) return null;
+
+        for (const loc of Object.values(locations || {})) {
+            const live = loc.characters?.find((c) => c.id === base.id);
+            if (live) return { ...base, ...live };
+        }
+        return base;
+    }, [profile?.activeCharacterId, sheetCharacters, charactersById, locations]);
 
     const avatarPath = activeCharacter?.tokenImageUrl || activeCharacter?.imageUrl || null;
     const avatarUrl = useAssetUrl(avatarPath);
@@ -120,27 +131,6 @@ export default function TopRightHUD({
         } catch (err) {
             console.error("Logout error:", err);
         }
-    };
-
-    const handleArchive = () => {
-        setMenuOpen(false);
-        if (!campaignId) {
-            dispatch(
-                showSnackbar({
-                    message: "Selecciona una campaña antes de abrir el archivo narrativo.",
-                    severity: "warning",
-                })
-            );
-            return;
-        }
-        dispatch(restoreDialog(DIALOG_IDS.WIKI));
-        dispatch(openWikiOverlay({ mode: "list" }));
-    };
-
-    const handleOpenSettings = () => {
-        setMenuOpen(false);
-        dispatch(restoreDialog(DIALOG_IDS.SETTINGS));
-        dispatch(openDialog("settings"));
     };
 
     const avatarInitial = (profile?.nickname || "?")[0].toUpperCase();
@@ -344,26 +334,6 @@ export default function TopRightHUD({
                     >
                         ⚔ DOSSIER
                     </Box>
-
-                    {isDM && (
-                        <Box
-                            component="button"
-                            onClick={handleOpenSettings}
-                            sx={menuItemSx}
-                        >
-                            ⚙ CONFIGURACIÓN
-                        </Box>
-                    )}
-
-                    {isDM && (
-                        <Box
-                            component="button"
-                            onClick={handleArchive}
-                            sx={menuItemSx}
-                        >
-                            ◈ NARRATIVE_ARCHIVE
-                        </Box>
-                    )}
 
                     <Box
                         component="button"

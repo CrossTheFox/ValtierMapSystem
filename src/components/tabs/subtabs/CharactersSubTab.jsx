@@ -14,22 +14,28 @@ import { CyberCheckbox } from '../../customs/CyberCheckbox';
 
 import { updateCampaignElement, createCampaignElement } from '../../../../firebase/services/campaignService';
 import { deleteStorageFile, uploadCharacterImage } from '../../../../firebase/services/assetLoader';
+import { listClasesForCampaign, getClaseDoc } from '../../../../firebase/services/classService';
+import { createWikiEntity } from '../../../../firebase/services/wikiEntityService';
+import { linkWikiPersonajeToVtt } from '../../../../firebase/services/wikiVttLinkService';
 
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { showSnackbar } from '../../../store/uiSlice';
 
 import { db } from "../../../../firebase/firebaseConfig";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 
 import { EntityImageManager } from '../../EntityImageManager';
+import CharacterCombatFields from '../../characters/CharacterCombatFields';
 
 import { UI_COLORS } from '../../../constants/uiColors';
 import {
     defaultStatsFromDefinitions,
     emptyBond,
 } from '../../../constants/statSystem';
+import { sanitizeCombatPartial } from '../../../constants/combatStats';
 import { useStatSystem } from '../../../hooks/useStatSystem';
 import { normalizeCharacterDoc } from '../../../utils/normalizeCharacter';
+import { resolveCombatStats } from '../../../utils/resolveCombatStats';
 import { WIKI_ENTITY_TYPES } from '../../../constants/wikiEntityTypes';
 import { MEMBERSHIP_STATUS, MEMBERSHIP_STATUS_OPTIONS } from '../../../constants/wiki/entityFieldSchemas';
 import { upsertMembership, removeMembership } from '../../../utils/wikiCustomFields';
@@ -40,6 +46,7 @@ function normalizeCharacterSheet(char, statDefs) {
     return {
         ...base,
         stats: { ...defaultStatsFromDefinitions(statDefs), ...(base.stats || {}) },
+        combatOverrides: base.combatOverrides || {},
     };
 }
 
@@ -59,8 +66,16 @@ const CustomFilledIcon = ({ isMax, isUnknown }) => (
     }} />
 );
 
-export default function CharactersSubTab({ currentCampaignId, locations }) {
+export default function CharactersSubTab({
+    currentCampaignId,
+    locations,
+    initialCharacterId = null,
+    autoCreate = false,
+    embedded = false,
+    onSaved = null,
+}) {
     const dispatch = useDispatch();
+    const uid = useSelector((s) => s.player.profile?.uid);
     const { stats: campaignStats } = useStatSystem(currentCampaignId);
 
     const [characters, setCharacters] = useState([]);
@@ -68,8 +83,15 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
     const [pendingDeletions, setPendingDeletions] = useState([]);
     const [loading, setLoading] = useState(false);
     const [wikiEntities, setWikiEntities] = useState([]);
+    const [jobOptions, setJobOptions] = useState([]);
+    const [selectedClaseDoc, setSelectedClaseDoc] = useState(null);
     const [newOrgId, setNewOrgId] = useState("");
     const [newOrgStatus, setNewOrgStatus] = useState(MEMBERSHIP_STATUS.CONFIRMADO);
+    const [bootstrapped, setBootstrapped] = useState(false);
+    const [archiveMode, setArchiveMode] = useState("create"); // create | link | skip
+    const [archiveTitle, setArchiveTitle] = useState("");
+    const [archiveSummary, setArchiveSummary] = useState("");
+    const [archiveLinkId, setArchiveLinkId] = useState("");
 
     // Fetch independiente para los personajes
     useEffect(() => {
@@ -83,6 +105,84 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
         return () => unsubChar();
     }, [currentCampaignId]);
 
+    // Entrada desde roster: crear nuevo o editar uno concreto
+    useEffect(() => {
+        if (bootstrapped) return undefined;
+        if (autoCreate) {
+            setBootstrapped(true);
+            setSelectedItem({
+                name: "NEW_ENTRY_UNNAMED",
+                isNew: true,
+                campaignId: currentCampaignId,
+                age: 0,
+                bio: "",
+                locationId: "",
+                type: "npc",
+                status: "alive",
+                stats: defaultStatsFromDefinitions(campaignStats),
+                bond: emptyBond(),
+                bondPowers: [],
+                isLocked: true,
+                unlockGoal: "",
+                speciesEntityId: null,
+                organizationMemberships: [],
+                assignedClassIds: [],
+                activeClassId: null,
+                combatOverrides: {},
+                vit: 4,
+            });
+            setArchiveMode("create");
+            return undefined;
+        }
+        if (!initialCharacterId || !characters.length) return undefined;
+        const found = characters.find((c) => c.id === initialCharacterId);
+        if (found) {
+            setBootstrapped(true);
+            setSelectedItem(normalizeCharacterSheet(found, campaignStats));
+        }
+        return undefined;
+    }, [autoCreate, initialCharacterId, characters, campaignStats, currentCampaignId, bootstrapped]);
+
+    // Jobs / clases for combat defaults
+    useEffect(() => {
+        if (!currentCampaignId) {
+            setJobOptions([]);
+            return undefined;
+        }
+        let cancelled = false;
+        listClasesForCampaign(currentCampaignId)
+            .then((list) => {
+                if (!cancelled) setJobOptions(list);
+            })
+            .catch(() => {
+                if (!cancelled) setJobOptions([]);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [currentCampaignId]);
+
+    const selectedJobId =
+        selectedItem?.activeClassId || selectedItem?.assignedClassIds?.[0] || null;
+
+    useEffect(() => {
+        let cancelled = false;
+        if (!selectedJobId) {
+            setSelectedClaseDoc(null);
+            return undefined;
+        }
+        getClaseDoc(selectedJobId)
+            .then((doc) => {
+                if (!cancelled) setSelectedClaseDoc(doc);
+            })
+            .catch(() => {
+                if (!cancelled) setSelectedClaseDoc(null);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [selectedJobId]);
+
     // Wiki entities (species + organizations) for narrative integration
     useEffect(() => {
         if (!currentCampaignId) return;
@@ -93,10 +193,6 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
         return () => unsub();
     }, [currentCampaignId]);
 
-    const speciesOptions = wikiEntities.filter((e) => e.entityType === WIKI_ENTITY_TYPES.ESPECIE);
-    const orgOptions = wikiEntities.filter((e) => e.entityType === WIKI_ENTITY_TYPES.ORGANIZACION);
-    const orgTitle = (id) => wikiEntities.find((e) => e.id === id)?.title || id;
-
     const handleAddNew = () => {
         setSelectedItem({
             name: "NEW_ENTRY_UNNAMED",
@@ -105,14 +201,24 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
             age: 0,
             bio: "",
             locationId: "",
+            type: "npc",
+            status: "alive",
             stats: defaultStatsFromDefinitions(campaignStats),
             bond: emptyBond(),
             bondPowers: [],
             isLocked: true,
             unlockGoal: "",
             speciesEntityId: null,
-            organizationMemberships: []
+            organizationMemberships: [],
+            assignedClassIds: [],
+            activeClassId: null,
+            combatOverrides: {},
+            vit: 4,
         });
+        setArchiveMode("create");
+        setArchiveTitle("");
+        setArchiveSummary("");
+        setArchiveLinkId("");
     };
 
     const handleAddOrg = () => {
@@ -135,6 +241,29 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
         }));
     };
 
+    const applyArchiveForCharacter = async (vttCharacterId, charName) => {
+        if (!currentCampaignId || !vttCharacterId || archiveMode === "skip") return;
+        if (archiveMode === "create") {
+            const title = (archiveTitle || charName || "Personaje").trim();
+            const created = await createWikiEntity(
+                currentCampaignId,
+                {
+                    entityType: WIKI_ENTITY_TYPES.PERSONAJE,
+                    title,
+                    summary: (archiveSummary || "").trim(),
+                    linkedVttCharacterId: vttCharacterId,
+                    visibility: "dm_only",
+                },
+                uid,
+            );
+            await linkWikiPersonajeToVtt(currentCampaignId, created.id, vttCharacterId, uid);
+            return;
+        }
+        if (archiveMode === "link" && archiveLinkId) {
+            await linkWikiPersonajeToVtt(currentCampaignId, archiveLinkId, vttCharacterId, uid);
+        }
+    };
+
     const handleUpdate = async () => {
         setLoading(true);
         try {
@@ -143,9 +272,26 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
                 setPendingDeletions([]);
             }
 
+            let savedId = selectedItem.id || null;
+
             if (selectedItem.isNew) {
-                const { isNew, effort: _e, strain: _s, ...newData } = selectedItem;
+                const { isNew, effort: _e, strain: _s, ...raw } = selectedItem;
+                const combatOverrides = sanitizeCombatPartial(raw.combatOverrides);
+                const resolved = resolveCombatStats(
+                    { ...raw, combatOverrides },
+                    selectedClaseDoc,
+                );
+                const newData = {
+                    ...raw,
+                    type: raw.type || "npc",
+                    status: raw.status || "alive",
+                    combatOverrides,
+                    vit: resolved.vit,
+                    assignedClassIds: Array.isArray(raw.assignedClassIds) ? raw.assignedClassIds : [],
+                    activeClassId: raw.activeClassId || raw.assignedClassIds?.[0] || null,
+                };
                 const docRef = await createCampaignElement('characters', newData);
+                savedId = docRef.id;
                 setSelectedItem({ id: docRef.id, ...newData });
 
                 await reconcileCharacterMemberships(
@@ -155,13 +301,28 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
                     newData.organizationMemberships || []
                 );
 
+                await applyArchiveForCharacter(docRef.id, newData.name);
+
                 dispatch(showSnackbar({
                     message: "PROTOCOL_EXECUTED: NEW_ENTRY_SECURED",
                     severity: "success"
                 }));
             } else {
-                const { id, effort: _e2, strain: _s2, ...updateData } = selectedItem;
+                const { id, effort: _e2, strain: _s2, ...raw } = selectedItem;
+                const combatOverrides = sanitizeCombatPartial(raw.combatOverrides);
+                const resolved = resolveCombatStats(
+                    { ...raw, combatOverrides },
+                    selectedClaseDoc,
+                );
+                const updateData = {
+                    ...raw,
+                    combatOverrides,
+                    vit: resolved.vit,
+                    assignedClassIds: Array.isArray(raw.assignedClassIds) ? raw.assignedClassIds : [],
+                    activeClassId: raw.activeClassId || raw.assignedClassIds?.[0] || null,
+                };
                 await updateCampaignElement('characters', id, updateData);
+                savedId = id;
 
                 const prevMemberships = characters.find((c) => c.id === id)?.organizationMemberships || [];
                 await reconcileCharacterMemberships(
@@ -171,12 +332,17 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
                     updateData.organizationMemberships || []
                 );
 
+                await applyArchiveForCharacter(id, updateData.name);
+
                 dispatch(showSnackbar({
                     message: "DATABASE_OVERRIDE: SUCCESS",
                     severity: "info"
                 }));
             }
+
+            if (typeof onSaved === "function") onSaved(savedId);
         } catch (error) {
+            console.error(error);
             dispatch(showSnackbar({
                 message: "CRITICAL_ERROR: SYNC_FAILED",
                 severity: "error"
@@ -202,8 +368,14 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
         handleStatChange(statKey, currentValue === -1 ? 0 : -1);
     };
 
+    const speciesOptions = wikiEntities.filter((e) => e.entityType === WIKI_ENTITY_TYPES.ESPECIE);
+    const orgOptions = wikiEntities.filter((e) => e.entityType === WIKI_ENTITY_TYPES.ORGANIZACION);
+    const personajeOptions = wikiEntities.filter((e) => e.entityType === WIKI_ENTITY_TYPES.PERSONAJE);
+    const orgTitle = (id) => wikiEntities.find((e) => e.id === id)?.title || id;
+
     return (
-        <Stack spacing={3}>             
+        <Stack spacing={embedded ? 2 : 3}>
+            {!embedded && (
             <Stack direction="row" spacing={1} alignItems="center">
                 <CyberAutocomplete
                     sx={{ width: '50%' }}
@@ -255,17 +427,23 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
                     </IconButton>
                 </Tooltip>
             </Stack>
+            )}
 
             {selectedItem && (
-                <Accordion sx={{ 
+                <Accordion
+                    defaultExpanded
+                    expanded={embedded ? true : undefined}
+                    sx={{ 
                     backgroundColor: 'rgba(0,0,0,0.3)', 
                     border: `1px solid ${UI_COLORS.accent || "#00f2ea"}66`,
                     borderRadius: 0,
-                    mb: 4 
+                    mb: embedded ? 0 : 4,
                 }}>
+                    {!embedded && (
                     <AccordionSummary expandMoreIcon={<ExpandMoreIcon sx={{color: '#00f2ea'}} />}>
-                        <CyberText sx={{ color: '#00f2ea' }}>PROTOCOL: EDIT_{selectedItem.name.toUpperCase()}</CyberText>
+                        <CyberText sx={{ color: '#00f2ea' }}>PROTOCOL: EDIT_{(selectedItem.name || "??").toUpperCase()}</CyberText>
                     </AccordionSummary>
+                    )}
                     <AccordionDetails>
                         <Grid container spacing={3}>
                             <Grid size={4}>
@@ -281,6 +459,30 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
                                         value={selectedItem.age || ''} 
                                         onChange={(e) => setSelectedItem({...selectedItem, age: parseInt(e.target.value)})}
                                     />
+                                    <CyberInput
+                                        select
+                                        label="TYPE"
+                                        value={selectedItem.type || "npc"}
+                                        onChange={(e) => setSelectedItem({ ...selectedItem, type: e.target.value })}
+                                    >
+                                        {["pc", "npc", "deity"].map((t) => (
+                                            <option key={t} value={t} style={{ backgroundColor: "#000", color: "#fff" }}>
+                                                {t.toUpperCase()}
+                                            </option>
+                                        ))}
+                                    </CyberInput>
+                                    <CyberInput
+                                        select
+                                        label="STATUS"
+                                        value={selectedItem.status || "alive"}
+                                        onChange={(e) => setSelectedItem({ ...selectedItem, status: e.target.value })}
+                                    >
+                                        {["alive", "dead", "deity"].map((t) => (
+                                            <option key={t} value={t} style={{ backgroundColor: "#000", color: "#fff" }}>
+                                                {t.toUpperCase()}
+                                            </option>
+                                        ))}
+                                    </CyberInput>
                                     <CyberInput
                                         select
                                         label="SPECIES_DESIGNATION"
@@ -320,6 +522,17 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
                                     onUpdate={setSelectedItem}
                                     onMarkForDeletion={(path) => setPendingDeletions(prev => [...prev, path])}
                                     uploadFn={uploadCharacterImage}
+                                />
+                            </Grid>
+
+                            <Grid size={12}>
+                                <CharacterCombatFields
+                                    character={selectedItem}
+                                    claseDoc={selectedClaseDoc}
+                                    jobOptions={jobOptions}
+                                    onChange={(partial) =>
+                                        setSelectedItem((prev) => ({ ...prev, ...partial }))
+                                    }
                                 />
                             </Grid>
 
@@ -643,6 +856,85 @@ export default function CharactersSubTab({ currentCampaignId, locations }) {
                                 </Stack>
                             </Grid>
                         </Grid>
+
+                        <Box
+                            sx={{
+                                mt: 2,
+                                p: 2,
+                                border: `1px solid ${UI_COLORS.anomaly}44`,
+                                borderRadius: 1,
+                                bgcolor: `${UI_COLORS.anomaly}08`,
+                            }}
+                        >
+                            <CyberText sx={{ color: UI_COLORS.anomaly, fontSize: "0.75rem", mb: 1.25, display: "block" }}>
+                                NARRATIVE_ARCHIVE
+                            </CyberText>
+                            <CyberText sx={{ fontSize: "0.65rem", color: UI_COLORS.textSecondary, mb: 1.5, display: "block", lineHeight: 1.4 }}>
+                                Al guardar: crear ficha personaje en Archive, vincular una existente, u omitir.
+                            </CyberText>
+                            <Stack direction="row" spacing={1} sx={{ mb: 1.5, flexWrap: "wrap" }}>
+                                {[
+                                    { id: "create", label: "Crear ficha" },
+                                    { id: "link", label: "Link existente" },
+                                    { id: "skip", label: "Omitir" },
+                                ].map((opt) => (
+                                    <Box
+                                        key={opt.id}
+                                        component="button"
+                                        type="button"
+                                        onClick={() => setArchiveMode(opt.id)}
+                                        sx={{
+                                            px: 1.25,
+                                            py: 0.6,
+                                            borderRadius: 0.75,
+                                            border: `1px solid ${archiveMode === opt.id ? UI_COLORS.anomaly : UI_COLORS.border}`,
+                                            bgcolor: archiveMode === opt.id ? `${UI_COLORS.anomaly}18` : "transparent",
+                                            color: archiveMode === opt.id ? UI_COLORS.anomaly : UI_COLORS.textSecondary,
+                                            fontFamily: "'Orbitron', sans-serif",
+                                            fontSize: "0.55rem",
+                                            letterSpacing: "0.08em",
+                                            cursor: "pointer",
+                                        }}
+                                    >
+                                        {opt.label}
+                                    </Box>
+                                ))}
+                            </Stack>
+                            {archiveMode === "create" && (
+                                <Stack spacing={1.25}>
+                                    <CyberInput
+                                        label="ARCHIVE_TITLE"
+                                        value={archiveTitle}
+                                        placeholder={selectedItem.name || "Título"}
+                                        onChange={(e) => setArchiveTitle(e.target.value)}
+                                    />
+                                    <CyberInput
+                                        label="ARCHIVE_SUMMARY"
+                                        multiline
+                                        rows={2}
+                                        value={archiveSummary}
+                                        onChange={(e) => setArchiveSummary(e.target.value)}
+                                    />
+                                </Stack>
+                            )}
+                            {archiveMode === "link" && (
+                                <CyberInput
+                                    select
+                                    label="FICHA_PERSONAJE_ARCHIVE"
+                                    value={archiveLinkId}
+                                    onChange={(e) => setArchiveLinkId(e.target.value)}
+                                >
+                                    <option value="" style={{ backgroundColor: "#000", color: "#fff" }}>
+                                        — elegir —
+                                    </option>
+                                    {personajeOptions.map((ent) => (
+                                        <option key={ent.id} value={ent.id} style={{ backgroundColor: "#000", color: "#fff" }}>
+                                            {(ent.title || ent.id).toUpperCase()}
+                                        </option>
+                                    ))}
+                                </CyberInput>
+                            )}
+                        </Box>
 
                         <Box sx={{ mt: 3, pb: 2 }}>
                             <CyberButton onClick={handleUpdate} loading={loading} sx={{ width: 'fit-content' }}>

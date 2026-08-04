@@ -3,6 +3,7 @@ import { getAbilitiesByIds } from "../../firebase/services/characterService";
 import { getAbilityKeysForClase, getClaseDocsByIds } from "../../firebase/services/classService";
 import { formatClassLabel } from "../constants/characterSheetTokens";
 import { archGlow } from "../components/tabs/subtabs/skillMatrix/orbitLayoutEngine";
+import { normalizeTraitCategory } from "../constants/abilityKinds";
 
 /**
  * Shared Firebase loader for job / class data.
@@ -24,7 +25,7 @@ import { archGlow } from "../components/tabs/subtabs/skillMatrix/orbitLayoutEngi
  *   }>,
  * }
  */
-export function useCharacterJobData(character) {
+export function useCharacterJobData(character, reloadKey = 0) {
     const assignedKey = Array.isArray(character?.assignedClassIds)
         ? character.assignedClassIds.filter(Boolean).join(",")
         : "";
@@ -72,7 +73,7 @@ export function useCharacterJobData(character) {
         }
         load();
         return () => { cancelled = true; };
-    }, [character?.id, assignedKey, classIds, character?.allAbilities, character?.unlockedAbilities]);
+    }, [character?.id, assignedKey, classIds, character?.allAbilities, character?.unlockedAbilities, reloadKey]);
 
     /** Build a normalized job list from the raw payload */
     const jobList = useMemo(() => {
@@ -152,6 +153,9 @@ function normalizeLeaf(raw) {
         key:   raw.key || raw.id || "",
         label: (raw.label || raw.displayName || raw.name || raw.key || "").toUpperCase(),
         blurb: raw.content || raw.description || raw.text || raw.blurb || raw.summary || "",
+        abilityKind: String(raw.abilityKind || "").toLowerCase() === "attack" ? "attack" : "standard",
+        tagKeys: Array.isArray(raw.tagKeys) ? raw.tagKeys.map(String).filter(Boolean) : [],
+        traitCategory: normalizeTraitCategory(raw.traitCategory),
     };
 }
 

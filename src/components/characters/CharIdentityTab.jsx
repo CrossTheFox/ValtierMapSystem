@@ -100,7 +100,7 @@ function SectionLabel({ children }) {
 export default function CharIdentityTab({
     character,
     statDefinitions = [],
-    maxStat = 6,
+    maxStat = 4,
     wikiEntities = [],
 }) {
     const [radarOpen, setRadarOpen] = useState(false);

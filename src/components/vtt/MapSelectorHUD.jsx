@@ -10,7 +10,7 @@ import TuneIcon from "@mui/icons-material/Tune";
 import MapIcon from "@mui/icons-material/Map";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import CheckIcon from "@mui/icons-material/Check";
-import PeopleAltIcon from "@mui/icons-material/PeopleAlt";
+import SettingsIcon from "@mui/icons-material/Settings";
 import AutoStoriesIcon from "@mui/icons-material/AutoStories";
 import HubIcon from "@mui/icons-material/Hub";
 import SportsKabaddiIcon from "@mui/icons-material/SportsKabaddi";
@@ -158,15 +158,20 @@ export default function MapSelectorHUD({ children = null }) {
                     {campaignLabel}
                 </Box>
                 <Box sx={{ display: "flex", gap: 0.4 }}>
-                    <Tooltip title="Personajes" placement="bottom">
-                        <IconButton
-                            size="small"
-                            onClick={() => dispatch(openDialog("characters"))}
-                            sx={navIconSx(openDialogs.characters)}
-                        >
-                            <PeopleAltIcon sx={{ fontSize: "1.05rem" }} />
-                        </IconButton>
-                    </Tooltip>
+                    {isDM && (
+                        <Tooltip title="VTT Configs" placement="bottom">
+                            <IconButton
+                                size="small"
+                                onClick={() => {
+                                    dispatch(restoreDialog(DIALOG_IDS.SETTINGS));
+                                    dispatch(openDialog("settings"));
+                                }}
+                                sx={navIconSx(openDialogs.settings)}
+                            >
+                                <SettingsIcon sx={{ fontSize: "1.05rem" }} />
+                            </IconButton>
+                        </Tooltip>
+                    )}
                     <Tooltip title="Lore" placement="bottom">
                         <IconButton
                             size="small"

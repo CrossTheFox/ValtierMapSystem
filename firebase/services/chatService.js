@@ -8,6 +8,12 @@ import {
     onSnapshot,
     serverTimestamp,
 } from "firebase/firestore";
+import { resolveAbilityContentInline } from "../../src/utils/abilityRollCommands.js";
+import { resolveCombatStats } from "../../src/utils/resolveCombatStats.js";
+import { rollAttackD20 } from "../../src/utils/attackRoll.js";
+import { normalizeAbilityKind, ABILITY_KINDS, sanitizeTagKeys } from "../../src/constants/abilityKinds.js";
+import { getCharacterById } from "./characterService";
+import { getClaseDoc } from "./classService";
 
 const messagesCol = (campaignId) => collection(db, "campaigns", campaignId, "messages");
 
@@ -29,6 +35,10 @@ export async function sendChatMessage(campaignId, {
     isOOC = false,
     abilityId,
     abilityLabel,
+    abilityTags,
+    abilityKind,
+    abilityCost,
+    abilityInlineRolls,
     diceResult,
     diceFormula,
 }) {
@@ -43,6 +53,10 @@ export async function sendChatMessage(campaignId, {
         isOOC: Boolean(isOOC),
         abilityId: abilityId ?? null,
         abilityLabel: abilityLabel ?? null,
+        abilityTags: Array.isArray(abilityTags) ? abilityTags : null,
+        abilityKind: abilityKind ?? null,
+        abilityCost: abilityCost ?? null,
+        abilityInlineRolls: Array.isArray(abilityInlineRolls) ? abilityInlineRolls : null,
         diceResult: diceResult ?? null,
         diceFormula: diceFormula ?? null,
         createdAt: serverTimestamp(),
@@ -190,17 +204,100 @@ export async function rollDiceInChat(campaignId, profile, character, formula) {
     return diceResult;
 }
 
-/** Post a callable ability into campaign chat. */
-export async function callAbilityInChat(campaignId, profile, ability) {
+/** Post an ICON attack d20 (+boons / −curses) into chat. */
+export async function rollAttackD20InChat(campaignId, profile, character, attackMods = {}) {
+    const diceResult = rollAttackD20(attackMods);
+    const who = character?.name || profile?.nickname || "Jugador";
+    await sendChatMessage(campaignId, {
+        type: CHAT_MESSAGE_TYPES.DICE,
+        text: `${who} ataque ${diceResult.formula}`,
+        senderId: profile?.uid,
+        senderName: profile?.nickname ?? "Jugador",
+        characterId: character?.id ?? null,
+        characterName: character?.name ?? null,
+        characterAvatarUrl: character?.tokenImageUrl || character?.imageUrl || null,
+        diceResult,
+        diceFormula: diceResult.formula,
+        isOOC: false,
+    });
+    return diceResult;
+}
+
+/**
+ * Post a callable ability into campaign chat.
+ * Damage / secondary dice resolve inline on the card (Roll20-style numbers).
+ * Attacks: options.attackMods → animated d20 only (no damage dice animation).
+ */
+export async function callAbilityInChat(campaignId, profile, ability, options = {}) {
+    const abilityKind = normalizeAbilityKind(ability.abilityKind);
+    const tagKeys = sanitizeTagKeys(ability.tagKeys);
+    const isAttack = abilityKind === ABILITY_KINDS.ATTACK;
+    const content = ability.content ?? "";
+    const hasRollCue = isAttack || /\[[^\]]*(?:d|@\{)/i.test(content);
+
+    let character = options.character || null;
+    let claseDoc = options.claseDoc || null;
+    let combatStats = options.combatStats || null;
+
+    if ((hasRollCue || isAttack) && !combatStats) {
+        if (!character && ability.characterId) {
+            try {
+                character = await getCharacterById(ability.characterId);
+            } catch (err) {
+                console.warn("[callAbilityInChat] character fetch failed", err);
+            }
+        }
+        if (!claseDoc && character) {
+            const classId = character.activeClassId || character.assignedClassIds?.[0];
+            if (classId) {
+                try {
+                    claseDoc = await getClaseDoc(classId);
+                } catch (err) {
+                    console.warn("[callAbilityInChat] clase fetch failed", err);
+                }
+            }
+        }
+        combatStats = resolveCombatStats(character, claseDoc);
+    }
+
+    const rollChar = character || {
+        id: ability.characterId ?? null,
+        name: ability.characterName ?? null,
+        tokenImageUrl: ability.characterAvatarUrl ?? null,
+        imageUrl: ability.characterAvatarUrl ?? null,
+    };
+
+    // Attack d20 first (animated card), then ability card with inline damage.
+    if (isAttack) {
+        const mods = options.attackMods || { boons: 0, curses: 0 };
+        try {
+            await rollAttackD20InChat(campaignId, profile, rollChar, mods);
+        } catch (err) {
+            console.warn("[callAbilityInChat] attack roll failed", err);
+        }
+    }
+
+    const { displayText, inlineRolls } = resolveAbilityContentInline(content, combatStats || {}, {
+        skipD20: isAttack,
+    });
+
     await sendChatMessage(campaignId, {
         type: CHAT_MESSAGE_TYPES.ABILITY,
-        text: ability.content ?? "",
+        text: displayText || content,
         senderId: profile?.uid,
         senderName: profile?.nickname ?? "Jugador",
         characterId: ability.characterId ?? null,
         characterName: ability.characterName ?? null,
+        characterAvatarUrl: ability.characterAvatarUrl
+            || character?.tokenImageUrl
+            || character?.imageUrl
+            || null,
         abilityId: ability.id,
         abilityLabel: ability.label,
+        abilityTags: tagKeys.length ? tagKeys : null,
+        abilityKind,
+        abilityCost: ability.cost || null,
+        abilityInlineRolls: inlineRolls.length ? inlineRolls : null,
         isOOC: false,
     });
 }

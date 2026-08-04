@@ -1,3 +1,5 @@
+import { resolveCombatStats } from "./resolveCombatStats.js";
+
 /** Default VIT when a character has none set (HP = VIT × 4). */
 export const DEFAULT_VIT = 4;
 
@@ -5,22 +7,22 @@ export const DEFAULT_VIT = 4;
 export const DEFAULT_ACTIONS_MAX = 3;
 
 /**
- * @param {{ vit?: unknown }|null|undefined} character
+ * @param {{ vit?: unknown, combatOverrides?: object }|null|undefined} character
+ * @param {Record<string, unknown>|null|undefined} [claseDoc]
  * @returns {number}
  */
-export function resolveVit(character) {
-    const raw = Number(character?.vit);
-    if (Number.isFinite(raw) && raw > 0) return Math.floor(raw);
-    return DEFAULT_VIT;
+export function resolveVit(character, claseDoc = null) {
+    return resolveCombatStats(character, claseDoc).vit;
 }
 
 /**
  * Sheet / full HP max at full VIT (VIT_max × 4).
- * @param {{ vit?: unknown }|null|undefined} character
+ * @param {{ vit?: unknown, combatOverrides?: object }|null|undefined} character
+ * @param {Record<string, unknown>|null|undefined} [claseDoc]
  * @returns {number}
  */
-export function resolveHpMax(character) {
-    return resolveVit(character) * 4;
+export function resolveHpMax(character, claseDoc = null) {
+    return resolveCombatStats(character, claseDoc).hpMax;
 }
 
 /**

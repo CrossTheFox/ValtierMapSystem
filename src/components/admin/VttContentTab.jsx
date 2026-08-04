@@ -1,26 +1,61 @@
 import { useState, useEffect } from "react";
 import { Box, Button } from "@mui/material";
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "../../../firebase/firebaseConfig";
 import { UI_COLORS } from "../../constants/uiColors";
 import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
+import { CyberTitle, CyberText } from "../customs/CustomTexts";
 import { setDialogMinimized } from "../../store/uiSlice";
 import { DIALOG_IDS } from "../../constants/dialogIds";
 import AdminSidebarNav from "./AdminSidebarNav";
 import LocationsSubTab from "../tabs/subtabs/LocationsSubTab";
-import CharactersSubTab from "../tabs/subtabs/CharactersSubTab";
+import AbilityEditorPanel from "./AbilityEditorPanel";
+import TagsEditorPanel from "./TagsEditorPanel";
+import { DEFAULT_RULE_SYSTEM } from "../../constants/ruleSystems";
 
 const SUB_ITEMS = [
     { id: "LOCATIONS", label: "LOCACIONES", hint: "Marcadores del mapa" },
-    { id: "CHARACTERS", label: "PERSONAJES", hint: "Fichas VTT / ICON" },
+    { id: "JOBS", label: "JOBS / ABILITIES", hint: "Combat stats + comandos" },
+    { id: "TAGS", label: "TAGS", hint: "Pierce, statuses, efectos" },
+    { id: "OBJECTS", label: "OBJETOS", hint: "Inventario / ítems (próx.)" },
 ];
 
-export default function VttContentTab({ campaignId }) {
+function ObjectsPlaceholder() {
+    return (
+        <Box
+            sx={{
+                p: 3,
+                border: `1px dashed ${UI_COLORS.border}`,
+                borderRadius: 1.5,
+                bgcolor: `${UI_COLORS.backgroundPrimary}88`,
+                maxWidth: 480,
+            }}
+        >
+            <CyberTitle sx={{ fontSize: "0.85rem", color: UI_COLORS.accent, letterSpacing: "0.12em", mb: 1 }}>
+                OBJETOS
+            </CyberTitle>
+            <CyberText sx={{ fontSize: "0.78rem", color: UI_COLORS.textPrimary, mb: 1, lineHeight: 1.5 }}>
+                Placeholder para el catálogo de objetos, ítems y equipo de campaña.
+            </CyberText>
+            <CyberText sx={{ fontSize: "0.7rem", color: UI_COLORS.textSecondary, fontFamily: "'Fira Code', monospace" }}>
+                // PENDING — inventario · loot · reliquias VTT
+            </CyberText>
+        </Box>
+    );
+}
+
+/** Contendido VTT: Locaciones, Jobs/Abilities, Objetos (placeholder). */
+export default function VttContentTab({ campaignId, initialSub = null, initialJobId = null }) {
     const dispatch = useDispatch();
-    const [activeSub, setActiveSub] = useState("LOCATIONS");
+    const rulesSystem = useSelector((s) => s.world.rulesSystem) || DEFAULT_RULE_SYSTEM;
+    const [activeSub, setActiveSub] = useState(initialSub || "LOCATIONS");
     const [locations, setLocations] = useState([]);
     const [maps, setMaps] = useState([]);
+
+    useEffect(() => {
+        if (initialSub) setActiveSub(initialSub);
+    }, [initialSub]);
 
     useEffect(() => {
         if (!campaignId) return undefined;
@@ -81,9 +116,13 @@ export default function VttContentTab({ campaignId }) {
                     {activeSub === "LOCATIONS" && (
                         <LocationsSubTab currentCampaignId={campaignId} locations={locations} maps={maps} />
                     )}
-                    {activeSub === "CHARACTERS" && (
-                        <CharactersSubTab currentCampaignId={campaignId} locations={locations} />
+                    {activeSub === "JOBS" && (
+                        <AbilityEditorPanel campaignId={campaignId} initialJobId={initialJobId} />
                     )}
+                    {activeSub === "TAGS" && (
+                        <TagsEditorPanel campaignId={campaignId} rulesSystem={rulesSystem} />
+                    )}
+                    {activeSub === "OBJECTS" && <ObjectsPlaceholder />}
                 </Box>
             </Box>
         </Box>

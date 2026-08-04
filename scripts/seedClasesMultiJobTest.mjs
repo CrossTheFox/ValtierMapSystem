@@ -95,6 +95,15 @@ async function main() {
             campaignId: ch.campaignId || null,
             isTestData: false,
             sourceCharacterId: CHARACTER_ID,
+            combatStats: {
+                vit: 4,
+                defense: 8,
+                speed: 4,
+                fray: 1,
+                damageDie: 6,
+                armor: 0,
+                vigor: 0,
+            },
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         })
     );
@@ -124,6 +133,18 @@ async function main() {
                 label: "Test Trait",
                 content: "Módulo pasivo de prueba.",
                 parentId: "_stub_vaga_root",
+            },
+        },
+        {
+            key: "_stub_vaga_strike",
+            doc: {
+                key: "_stub_vaga_strike",
+                type: "ability",
+                label: "Test Strike",
+                content:
+                    "Ataque de prueba. Daño: [1d[@{damage-die}]+@{fray}].",
+                parentId: "_stub_vaga_root",
+                classArchetype: "vagabond",
             },
         },
         {
@@ -166,11 +187,21 @@ async function main() {
             classArchetype: "vagabond",
             campaignId: ch.campaignId || null,
             isTestData: true,
+            combatStats: {
+                vit: 4,
+                defense: 12,
+                speed: 5,
+                fray: 1,
+                damageDie: 8,
+                armor: 0,
+                vigor: 0,
+            },
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         })
     );
     enqueue((b) => batchSetAbilityEntry(b, STUB_VAGABOND_ID, "_stub_vaga_root"));
     enqueue((b) => batchSetAbilityEntry(b, STUB_VAGABOND_ID, "_stub_vaga_trait"));
+    enqueue((b) => batchSetAbilityEntry(b, STUB_VAGABOND_ID, "_stub_vaga_strike"));
 
     // --- Stub class: Mendicant ---
     await commitIfNeeded();

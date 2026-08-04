@@ -3,7 +3,7 @@ import styled from "@emotion/styled";
 import { ROLES } from "../../constants/roles";
 import { useAssetUrl } from "../../hooks/useAssetUrl";
 
-export const CyberProfile = ({ profile, activeCharacter, accentColor, setAdminOpen, setCharactersOpen, handleLogout, onWikiOpen }) => {
+export const CyberProfile = ({ profile, activeCharacter, accentColor, setAdminOpen, setCharactersOpen, handleLogout }) => {
     const [isOpen, setIsOpen] = useState(false);
     const avatarUrl = useAssetUrl(activeCharacter?.tokenImageUrl || activeCharacter?.imageUrl || null);
 
@@ -46,11 +46,6 @@ export const CyberProfile = ({ profile, activeCharacter, accentColor, setAdminOp
                     {isDM && (
                         <button className="menu-item" onClick={() => setAdminOpen(true)}>
                             ADMIN_SETTINGS
-                        </button>
-                    )}
-                    {isDM && onWikiOpen && (
-                        <button className="menu-item" onClick={() => { setIsOpen(false); onWikiOpen(); }}>
-                            NARRATIVE_ARCHIVE
                         </button>
                     )}
 

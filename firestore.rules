@@ -73,6 +73,12 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
+    // Combat / status tags (ICON core + campaign custom)
+    match /tags/{tagId} {
+      allow read: if isAuthenticated();
+      allow write: if isDM();
+    }
+
     // ICON jobs / classes
     match /clases/{classId} {
       allow read, write: if isAuthenticated();

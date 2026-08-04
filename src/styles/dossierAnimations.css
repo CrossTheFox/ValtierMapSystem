@@ -127,13 +127,34 @@
 .dossier-ping-cross::before { left: 50%; top: 2px; bottom: 2px; width: 1.5px; transform: translateX(-50%); }
 .dossier-ping-cross::after  { top: 50%; left: 2px; right: 2px; height: 1.5px; transform: translateY(-50%); }
 
+/* ── Limit Break locked pulse ─────────────────────────────────────── */
+@keyframes lb-locked-pulse {
+  0%, 100% { opacity: 0.45; letter-spacing: 0.14em; }
+  50%      { opacity: 1; letter-spacing: 0.22em; }
+}
+
+@keyframes lb-locked-x {
+  0%, 100% { transform: scale(1); opacity: 0.7; }
+  50%      { transform: scale(1.08); opacity: 1; }
+}
+
+.dossier-lb-locked-label {
+  animation: lb-locked-pulse 1.8s ease-in-out infinite;
+}
+
+.dossier-lb-locked-x {
+  animation: lb-locked-x 1.8s ease-in-out infinite;
+}
+
 /* ── Reduced-motion overrides ─────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .dossier-trail,
   .dossier-stat-row.glitch-snap,
   .dossier-narr-card.is-selected .dossier-brackets span,
   .dossier-ping-ring,
-  .dossier-ping-cross {
+  .dossier-ping-cross,
+  .dossier-lb-locked-label,
+  .dossier-lb-locked-x {
     animation: none !important;
     transition: none !important;
   }

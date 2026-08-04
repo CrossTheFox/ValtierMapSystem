@@ -3,6 +3,7 @@ import {
     defaultStatsFromDefinitions,
     emptyBond,
 } from "../constants/statSystem";
+import { normalizeMacroBar } from "../constants/macroBar";
 import { normalizeTokenCrop } from "./tokenImageFit";
 
 /**
@@ -52,12 +53,17 @@ export function normalizeCharacterDoc(char) {
 
     const vitRaw = Number(char.vit);
     const vit = Number.isFinite(vitRaw) && vitRaw > 0 ? Math.floor(vitRaw) : 4;
+    const combatOverrides =
+        char.combatOverrides && typeof char.combatOverrides === "object"
+            ? { ...char.combatOverrides }
+            : {};
 
     return {
         ...char,
         assignedClassIds,
         activeClassId,
         vit,
+        combatOverrides,
         tokenCrop: normalizeTokenCrop(char.tokenCrop),
         stats: {
             ...defaultStatsFromDefinitions(DEFAULT_STAT_SYSTEM),
@@ -73,5 +79,6 @@ export function normalizeCharacterDoc(char) {
         organizationMemberships: Array.isArray(char.organizationMemberships) ? char.organizationMemberships : [],
         unlockedAbilities: rawUnl,
         allAbilities,
+        macroBar: normalizeMacroBar(char.macroBar),
     };
 }

@@ -1,8 +1,15 @@
 import { db } from "../firebaseConfig";
-import { collection, addDoc, getDocs, query, where, documentId, doc, updateDoc } from "firebase/firestore";
+import { collection, addDoc, getDocs, getDoc, query, where, documentId, doc, updateDoc } from "firebase/firestore";
 
 export async function createCharacterDoc(characterData) {
     return await addDoc(collection(db, "characters"), characterData);
+}
+
+/** @param {string} characterId */
+export async function getCharacterById(characterId) {
+    if (!characterId) return null;
+    const snap = await getDoc(doc(db, "characters", characterId));
+    return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
 export async function getCharactersByLocation(locationId) {

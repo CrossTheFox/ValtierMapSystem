@@ -8,8 +8,13 @@ export function createCharacter({
     name,
     age,
     bio,
-    imageUrl
+    imageUrl,
+    vit = 4,
+    assignedClassIds = [],
+    activeClassId = null,
+    combatOverrides = {},
 }) {
+    const classIds = Array.isArray(assignedClassIds) ? assignedClassIds : [];
     return {
         campaignId,
         locationId,
@@ -19,6 +24,11 @@ export function createCharacter({
         age,
         bio,
         imageUrl,
+        vit,
+        assignedClassIds: classIds,
+        activeClassId: activeClassId || classIds[0] || null,
+        combatOverrides:
+            combatOverrides && typeof combatOverrides === "object" ? combatOverrides : {},
         relations: {},
         // Narrative wiki integration (optional)
         speciesEntityId: null, // -> wikiEntities especie

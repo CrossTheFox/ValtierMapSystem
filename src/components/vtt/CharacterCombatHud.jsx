@@ -35,10 +35,12 @@ import { useStatSystem } from "../../hooks/useStatSystem";
 import { useCharacterSessionPools } from "../../hooks/useCharacterSessionPools";
 import { usePinnedCharacters } from "../../hooks/usePinnedCharacters";
 import { useAssetUrl } from "../../hooks/useAssetUrl";
+import { useResolvedCombatStats } from "../../hooks/useResolvedCombatStats";
 import { setActiveCharacterId, persistActiveCharacter } from "../../store/playerSlice";
 import { openCharacterSheet, showSnackbar } from "../../store/uiSlice";
 import { canControlToken, isDmRole } from "../../utils/tokenControl";
 import {
+    DEFAULT_VIT,
     listCampaignCharacters,
     resolveHpMax,
     resolveVit,
@@ -96,9 +98,30 @@ const VIT_RED_LOST = "#8a1020";
 const VIT_RED_LOST_GLOW = "rgba(255, 42, 74, 0.35)";
 const VIT_RED_GLOW = "rgba(255, 42, 74, 0.55)";
 
+/** Visual VIT ring always has 4 quarters (HP = VIT × 4); maps onto vitCur/vitMax. */
+const VIT_RING_SEGMENTS = 4;
+
+function vitToFilledSegs(vitCur, vitMax) {
+    const vmax = Math.max(1, Math.floor(Number(vitMax) || DEFAULT_VIT));
+    const cur = Math.min(Math.max(Math.floor(Number(vitCur) || 0), 0), vmax);
+    if (cur <= 0) return 0;
+    if (cur >= vmax) return VIT_RING_SEGMENTS;
+    return Math.max(1, Math.round((cur / vmax) * VIT_RING_SEGMENTS));
+}
+
+function segToVit(segIndex, vitMax) {
+    const vmax = Math.max(1, Math.floor(Number(vitMax) || DEFAULT_VIT));
+    if (segIndex < 0) return 0;
+    return Math.max(
+        0,
+        Math.min(vmax, Math.round(((segIndex + 1) / VIT_RING_SEGMENTS) * vmax)),
+    );
+}
+
 /**
  * Segmented VIT ring only — portrait is display-only (no activate).
- * Filled = current VIT (bright). Lost quarters stay crimson (damaged).
+ * Always 4 quarters. Filled = proportion of current VIT (bright).
+ * Lost quarters stay crimson (damaged).
  */
 function VitRingAvatar({
     char,
@@ -108,25 +131,30 @@ function VitRingAvatar({
     onVitChange,
     dead = false,
 }) {
-    const maxSeg = Math.max(1, Math.min(16, Math.floor(Number(vitMax) || 1)));
-    const cur = Math.min(Math.max(Math.floor(Number(vitCur) || 0), 0), maxSeg);
+    const vmax = Math.max(1, Math.floor(Number(vitMax) || DEFAULT_VIT));
+    const cur = Math.min(Math.max(Math.floor(Number(vitCur) || 0), 0), vmax);
+    const filled = vitToFilledSegs(cur, vmax);
     const ringPad = 7;
     const outer = size + ringPad * 2;
     const cx = outer / 2;
     const cy = outer / 2;
     const r = size / 2 + 3.5;
     const stroke = 4.5;
-    const gapDeg = maxSeg <= 4 ? 14 : maxSeg <= 8 ? 10 : 7;
-    const sweep = (360 - gapDeg * maxSeg) / maxSeg;
+    const gapDeg = 14;
+    const sweep = (360 - gapDeg * VIT_RING_SEGMENTS) / VIT_RING_SEGMENTS;
     const startBase = -90;
 
     const handleSegClick = (e, segIndex) => {
         if (typeof onVitChange !== "function") return;
         e.stopPropagation();
-        if (segIndex < cur) {
-            onVitChange(segIndex === cur - 1 ? segIndex : segIndex + 1);
+        if (segIndex < filled) {
+            // Clicking a lit quarter: drop to that quarter's floor (or clear it if last lit).
+            const next = segIndex === filled - 1
+                ? segToVit(segIndex - 1, vmax)
+                : segToVit(segIndex, vmax);
+            onVitChange(next);
         } else {
-            onVitChange(segIndex + 1);
+            onVitChange(segToVit(segIndex, vmax));
         }
     };
 
@@ -143,14 +171,14 @@ function VitRingAvatar({
     };
 
     const segs = [];
-    for (let i = 0; i < maxSeg; i += 1) {
+    for (let i = 0; i < VIT_RING_SEGMENTS; i += 1) {
         const start = startBase + i * (sweep + gapDeg) + gapDeg / 2;
         const end = start + sweep;
         segs.push({
             start,
             end,
             i,
-            state: i < cur ? "alive" : "lost",
+            state: i < filled ? "alive" : "lost",
         });
     }
 
@@ -158,7 +186,7 @@ function VitRingAvatar({
         <CyberTooltip
             title={dead
                 ? "CAÍDO · VIT 0"
-                : `VIT ${cur}/${maxSeg} · clic en un tramo del anillo`}
+                : `VIT ${cur}/${vmax} · clic en un tramo del anillo`}
             placement="top"
         >
             <Box
@@ -238,11 +266,13 @@ function VitRingAvatar({
  * Sits behind content (zIndex 0). Intensity scales with missing VIT (4=none … 0=critical).
  */
 function SurfaceCrackOverlay({ vitCur, vitMax }) {
-    const vmax = Math.max(1, vitMax || 4);
+    const vmax = Math.max(1, vitMax || DEFAULT_VIT);
     const cur = Math.min(Math.max(vitCur, 0), vmax);
-    if (cur >= 4 || cur >= vmax) return null;
+    const filled = vitToFilledSegs(cur, vmax);
+    // Healthy when all 4 quarters are lit.
+    if (filled >= VIT_RING_SEGMENTS) return null;
 
-    const severity = cur <= 0 ? 4 : cur === 1 ? 3 : cur === 2 ? 2 : 1;
+    const severity = filled <= 0 ? 4 : filled === 1 ? 3 : filled === 2 ? 2 : 1;
     const stroke = severity >= 3 ? UI_COLORS.accentStrong : UI_COLORS.accent;
     const cyan = UI_COLORS.anomaly;
     const pulse = severity >= 3;
@@ -1052,20 +1082,26 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         setActivateAnchor(anchor || surfaceRef.current);
     };
 
-    const vitMax = selected ? resolveVit(selected) : 4;
-    const sheetHpMax = selected ? resolveHpMax(selected) : 16;
+    const { combatStats } = useResolvedCombatStats(selected);
+    const vitMax = selected ? combatStats.vit : 4;
+    const sheetHpMax = selected ? combatStats.hpMax : 16;
+    const vigorMax = Math.max(0, Number(combatStats?.vigorMax) || 0);
 
     const combatTracks = useMemo(() => {
         if (!selected) return [];
         const effortBase = (resourceTracks || []).find((t) => t.key === "effort")
             || { key: "effort", label: "Effort", maxDefault: 3 };
         const effortMaxDefault = Math.max(1, Math.floor(Number(effortBase.maxDefault) || 3));
-        return [
+        const tracks = [
             { ...effortBase, key: "effort", maxDefault: effortMaxDefault },
             { key: "vit", label: "VIT", maxDefault: vitMax, defaultFull: true },
             { key: "hp", label: "HP", maxDefault: sheetHpMax, defaultFull: true },
         ];
-    }, [resourceTracks, vitMax, sheetHpMax, selected]);
+        if (vigorMax > 0) {
+            tracks.push({ key: "vigor", label: "Vigor", maxDefault: vigorMax, defaultFull: true });
+        }
+        return tracks;
+    }, [resourceTracks, vitMax, sheetHpMax, selected, vigorMax]);
 
     const effortMax = useMemo(() => {
         const t = combatTracks.find((x) => x.key === "effort");
@@ -1084,6 +1120,9 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
     const hpPct = sessionHpMax > 0 ? (hpCur / sessionHpMax) * 100 : 0;
     const effortCur = selected
         ? Math.min(Math.max(pools.effort?.current ?? 0, 0), effortMax)
+        : 0;
+    const vigorCur = selected && vigorMax > 0
+        ? Math.min(Math.max(pools.vigor?.current ?? vigorMax, 0), vigorMax)
         : 0;
     const isDead = Boolean(selected && vitCur <= 0);
 
@@ -1357,6 +1396,15 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                     </Box>
 
                     <Box sx={{ position: "relative", zIndex: 1 }}>
+                    {vigorMax > 0 && (
+                        <TrackRow label="VIGOR" valueLabel={`${vigorCur}/${vigorMax}`}>
+                            <EffortBar
+                                current={vigorCur}
+                                max={vigorMax}
+                                onSet={(v) => setTrack("vigor", { current: v })}
+                            />
+                        </TrackRow>
+                    )}
                     <TrackRow label="HP" valueLabel={`${hpCur}/${sessionHpMax}`}>
                         <Box
                             sx={{
@@ -1389,6 +1437,50 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                             onSet={(v) => setTrack("effort", { current: v })}
                         />
                     </TrackRow>
+
+                    <Box
+                        sx={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                            gap: "4px 8px",
+                            mt: 0.35,
+                            pt: 0.5,
+                            borderTop: `1px solid ${UI_COLORS.border}`,
+                        }}
+                    >
+                        {[
+                            { k: "DEF", v: combatStats.defense },
+                            { k: "SPD", v: `${combatStats.speed}/${combatStats.dash}` },
+                            { k: "FRAY", v: combatStats.fray },
+                            { k: "DIE", v: `d${combatStats.damageDie}` },
+                            { k: "ARM", v: combatStats.armor },
+                            { k: "VIG", v: combatStats.vigorMax },
+                        ].map((row) => (
+                            <Box key={row.k} sx={{ minWidth: 0 }}>
+                                <CyberText
+                                    sx={{
+                                        fontFamily: "monospace",
+                                        fontSize: "0.42rem",
+                                        letterSpacing: "0.08em",
+                                        color: UI_COLORS.textSecondary,
+                                        display: "block",
+                                    }}
+                                >
+                                    {row.k}
+                                </CyberText>
+                                <CyberText
+                                    sx={{
+                                        fontFamily: "Orbitron, sans-serif",
+                                        fontSize: "0.58rem",
+                                        color: "#ffffff",
+                                        lineHeight: 1.1,
+                                    }}
+                                >
+                                    {row.v}
+                                </CyberText>
+                            </Box>
+                        ))}
+                    </Box>
                     </Box>
                 </Box>
                 )}
@@ -1535,9 +1627,6 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                             <AbilityHotbar
                                 open={abilityBarOpen}
                                 character={selected}
-                                onClose={() => {
-                                    if (abilityBarOpen) onToggleAbilityBar?.();
-                                }}
                             />
                         )}
                     </>
