@@ -10,6 +10,8 @@ import { loadTexture } from "../../firebase/services/assetLoader";
 import {
     resolveCellSize,
     snapToGridCenter,
+    snapWorldToGridPoint,
+    buildRulerMeasure,
     resolveTokenDiameter,
     resolveTokenSizeKey,
     getMapWidth,
@@ -19,6 +21,8 @@ import { canControlToken, findNearestLocation, isDmRole } from "../utils/tokenCo
 import { bindViewportLabelSync } from "../utils/pixiCrispText";
 import { applyTokenImageFit, tokenVisualKey } from "../utils/tokenImageFit";
 import {
+    clearAllMapSelection,
+    clearMapMarkSelection,
     clearTokenSelection,
     openContextMenu,
     setSelectedTokenIds,
@@ -31,8 +35,132 @@ import {
 const HOVER_CYAN = 0x00f2ea;
 const SELECT_MAGENTA = 0xff66ff;
 const SELECT_CYAN = 0x00f2ea;
+const MOVE_ARROW = 0x00f2ea;
+const MOVE_ARROW_STR = "#00f2ea";
+const DARK_BG = 0x050508;
 const HIDDEN_ALPHA = 0.45;
 const MARQUEE_MIN_PX = 6;
+
+function makeMoveGuideLabel() {
+    return new PIXI.Text({
+        text: "",
+        style: {
+            fontFamily: "Fira Code, Courier New, monospace",
+            fontSize: 12,
+            fontWeight: "bold",
+            fill: MOVE_ARROW_STR,
+            align: "center",
+            lineHeight: 16,
+        },
+    });
+}
+
+/** Local-only Roll20-style move arrow + ruler-style distance chip. */
+function paintMoveGuide(guide, {
+    fromX,
+    fromY,
+    toX,
+    toY,
+    radius = 20,
+    scale = 1,
+    cellsLabel = "",
+    relLabel = "",
+}) {
+    if (!guide) return;
+    const g = guide.g;
+    const label = guide.label;
+    const s = scale || 1;
+    g.clear();
+
+    // Ghost ring at origin
+    g.circle(fromX, fromY, radius);
+    g.stroke({ width: 2.25 / s, color: 0xff4444, alpha: 0.85 });
+    g.circle(fromX, fromY, Math.max(3, radius * 0.12));
+    g.fill({ color: MOVE_ARROW, alpha: 0.95 });
+
+    const dx = toX - fromX;
+    const dy = toY - fromY;
+    const len = Math.hypot(dx, dy);
+    if (len < 2) {
+        if (label) {
+            label.text = "";
+            label.visible = false;
+        }
+        return;
+    }
+
+    // Shaft
+    g.moveTo(fromX, fromY);
+    g.lineTo(toX, toY);
+    g.stroke({ width: 3 / s, color: MOVE_ARROW, alpha: 0.95, cap: "round" });
+
+    // Arrowhead
+    const ux = dx / len;
+    const uy = dy / len;
+    const head = 14 / s;
+    const wing = 7 / s;
+    const bx = toX - ux * head;
+    const by = toY - uy * head;
+    const px = -uy;
+    const py = ux;
+    g.moveTo(toX, toY);
+    g.lineTo(bx + px * wing, by + py * wing);
+    g.lineTo(bx - px * wing, by - py * wing);
+    g.closePath();
+    g.fill({ color: MOVE_ARROW, alpha: 1 });
+
+    if (!label) return;
+    const lines = [
+        cellsLabel ? `◈  ${cellsLabel}` : "",
+        relLabel || "",
+    ].filter(Boolean);
+    if (!lines.length) {
+        label.text = "";
+        label.visible = false;
+        return;
+    }
+
+    label.text = lines.join("\n");
+    label.style.fill = MOVE_ARROW_STR;
+    label.visible = true;
+    label.anchor.set(0.5, 0.5);
+    label.scale.set(1 / s);
+
+    const lx = toX + ux * (22 / s);
+    const ly = toY + uy * (22 / s);
+    label.x = lx;
+    label.y = ly;
+
+    const tw = label.width;
+    const th = label.height;
+    const pad = 5 / s;
+    const brd = 3 / s;
+    g.roundRect(lx - tw / 2 - pad, ly - th / 2 - pad, tw + pad * 2, th + pad * 2, brd);
+    g.fill({ color: DARK_BG, alpha: 0.92 });
+    g.roundRect(lx - tw / 2 - pad, ly - th / 2 - pad, tw + pad * 2, th + pad * 2, brd);
+    g.stroke({ width: 1 / s, color: MOVE_ARROW, alpha: 0.85 });
+
+    // Label sits above chip (sibling after graphics)
+    label.zIndex = 2;
+}
+
+function clearMoveGuide(guide) {
+    if (!guide) return;
+    guide.g.clear();
+    if (guide.label) {
+        guide.label.text = "";
+        guide.label.visible = false;
+    }
+    // Back-compat if old dual labels still present
+    if (guide.labelSq) {
+        guide.labelSq.text = "";
+        guide.labelSq.visible = false;
+    }
+    if (guide.labelRel) {
+        guide.labelRel.text = "";
+        guide.labelRel.visible = false;
+    }
+}
 
 function ringColorForChar(char) {
     if (!char) return 0x888899;
@@ -354,19 +482,25 @@ export default function TokenLayer() {
     const profile = useSelector((s) => s.player.profile);
     const selectedTokenIds = useSelector((s) => s.ui.selectedTokenIds ?? []);
     const rulerActive = useSelector((s) => !!s.ui.rulerTool?.active);
+    const drawActive = useSelector((s) => !!s.ui.drawTool?.active);
     const isSelectingPosition = useSelector((s) => !!s.ui.isSelectingPosition);
 
     const layerRef = useRef(null);
     const marqueeRef = useRef(null);
+    const moveGuideRef = useRef(null);
+    const paintDragGuideRef = useRef(null);
     const markersRef = useRef(new Map());
     const draggingRef = useRef(null);
     const marqueeDragRef = useRef(null);
     const selectedRef = useRef(selectedTokenIds);
     const profileRef = useRef(profile);
     const rulerRef = useRef(rulerActive);
+    const drawRef = useRef(drawActive);
     const selectPosRef = useRef(isSelectingPosition);
     const campaignIdRef = useRef(campaignId);
     const mapIdRef = useRef(mapId);
+    const mapRef = useRef(map);
+    const gridConfigRef = useRef(gridConfig);
     const cellSizeRef = useRef(resolveCellSize(map, gridConfig));
     const locationsRef = useRef(locations);
     const charByIdRef = useRef(new Map());
@@ -374,6 +508,8 @@ export default function TokenLayer() {
 
     useEffect(() => { campaignIdRef.current = campaignId; }, [campaignId]);
     useEffect(() => { mapIdRef.current = mapId; }, [mapId]);
+    useEffect(() => { mapRef.current = map; }, [map]);
+    useEffect(() => { gridConfigRef.current = gridConfig; }, [gridConfig]);
     useEffect(() => {
         cellSizeRef.current = resolveCellSize(map, gridConfig);
     }, [map, gridConfig]);
@@ -381,6 +517,7 @@ export default function TokenLayer() {
     useEffect(() => { selectedRef.current = selectedTokenIds; }, [selectedTokenIds]);
     useEffect(() => { profileRef.current = profile; }, [profile]);
     useEffect(() => { rulerRef.current = rulerActive; }, [rulerActive]);
+    useEffect(() => { drawRef.current = drawActive; }, [drawActive]);
     useEffect(() => { selectPosRef.current = isSelectingPosition; }, [isSelectingPosition]);
 
     // Clear selection when map changes
@@ -390,13 +527,14 @@ export default function TokenLayer() {
 
     const charById = useMemo(() => {
         const m = new Map();
-        Object.values(charactersById || {}).forEach((c) => {
-            if (c?.id) m.set(c.id, c);
-        });
+        // Nested location copies can lag ownership fields — prefer charactersById.
         Object.values(locations || {}).forEach((loc) => {
             (loc.characters || []).forEach((c) => {
                 if (c?.id) m.set(c.id, c);
             });
+        });
+        Object.values(charactersById || {}).forEach((c) => {
+            if (c?.id) m.set(c.id, c);
         });
         return m;
     }, [charactersById, locations]);
@@ -428,6 +566,53 @@ export default function TokenLayer() {
         layer.addChild(marquee);
         marqueeRef.current = marquee;
 
+        const moveGuideRoot = new PIXI.Container();
+        moveGuideRoot.eventMode = "none";
+        moveGuideRoot.zIndex = 10000;
+        const moveG = new PIXI.Graphics();
+        const moveLabel = makeMoveGuideLabel();
+        moveLabel.eventMode = "none";
+        moveGuideRoot.addChild(moveG);
+        moveGuideRoot.addChild(moveLabel);
+        layer.addChild(moveGuideRoot);
+        moveGuideRef.current = { root: moveGuideRoot, g: moveG, label: moveLabel };
+
+        const updateMoveGuideFromDrag = (drag) => {
+            const guide = moveGuideRef.current;
+            if (!guide || !drag?.members?.length) return;
+            const primary = drag.members.find((m) => m.tokenId === drag.primaryTokenId)
+                || drag.members[0];
+            if (!primary) return;
+            const fromX = primary.startX;
+            const fromY = primary.startY;
+            const toX = primary.marker.x;
+            const toY = primary.marker.y;
+            const cell = cellSizeRef.current;
+            const mapNow = mapRef.current;
+            const gridNow = gridConfigRef.current || {};
+            const a = snapWorldToGridPoint(fromX, fromY, mapNow, gridNow);
+            const b = snapWorldToGridPoint(toX, toY, mapNow, gridNow);
+            const measure = buildRulerMeasure(a, b, mapNow);
+            const dCol = b.col - a.col;
+            const dRow = b.row - a.row;
+            const rel = `Δ${dCol >= 0 ? "+" : ""}${dCol}, Δ${dRow >= 0 ? "+" : ""}${dRow}`;
+            const entry = markersRef.current.get(primary.tokenId);
+            const radius = entry?.marker
+                ? Math.max(12, (entry.marker.width || cell) * 0.42)
+                : cell * 0.45;
+            paintMoveGuide(guide, {
+                fromX,
+                fromY,
+                toX,
+                toY,
+                radius,
+                scale: viewport.scale?.x || 1,
+                cellsLabel: `${measure.totalCells} sq`,
+                relLabel: rel,
+            });
+        };
+        paintDragGuideRef.current = updateMoveGuideFromDrag;
+
         const onMove = (e) => {
             const drag = draggingRef.current;
             if (drag) {
@@ -440,6 +625,7 @@ export default function TokenLayer() {
                     m.marker.x = m.startX + dx;
                     m.marker.y = m.startY + dy;
                 }
+                updateMoveGuideFromDrag(drag);
                 return;
             }
 
@@ -480,7 +666,7 @@ export default function TokenLayer() {
             const worldH = Math.abs(mq.curY - mq.startY);
             const scale = viewport.scale?.x || 1;
             if (worldW * scale < MARQUEE_MIN_PX && worldH * scale < MARQUEE_MIN_PX) {
-                if (!e.shiftKey) dispatch(clearTokenSelection());
+                if (!e.shiftKey) dispatch(clearAllMapSelection());
                 return;
             }
 
@@ -514,6 +700,7 @@ export default function TokenLayer() {
             const drag = draggingRef.current;
             if (!drag) return;
             draggingRef.current = null;
+            clearMoveGuide(moveGuideRef.current);
             viewport.plugins?.resume?.("drag");
 
             const cell = cellSizeRef.current;
@@ -546,7 +733,7 @@ export default function TokenLayer() {
 
         const onViewportDown = (e) => {
             if (e.button !== 0) return;
-            if (rulerRef.current || selectPosRef.current) return;
+            if (rulerRef.current || drawRef.current || selectPosRef.current) return;
             if (draggingRef.current) return;
             // Only start marquee if the event wasn't claimed by a token
             if (e.target && e.target !== viewport && e.target !== viewport.children?.[0]) {
@@ -559,7 +746,10 @@ export default function TokenLayer() {
             let t = e.target;
             let onToken = false;
             while (t && t !== viewport) {
-                if (t.__tokenId) { onToken = true; break; }
+                if (t.__tokenId || t.__rulerId || t.__drawingId || t.__markHandle) {
+                    onToken = true;
+                    break;
+                }
                 t = t.parent;
             }
             if (onToken) return;
@@ -592,6 +782,9 @@ export default function TokenLayer() {
             viewport.off("pointermove", onMove);
             viewport.off("pointerup", onUp);
             viewport.off("pointerupoutside", onUp);
+            clearMoveGuide(moveGuideRef.current);
+            moveGuideRef.current = null;
+            paintDragGuideRef.current = null;
             markers.forEach((entry) => {
                 killGsapDeep(entry.marker);
                 safeDestroy(entry.marker, { children: true });
@@ -649,6 +842,7 @@ export default function TokenLayer() {
                     nextIds = selected.includes(tokenId)
                         ? selected.filter((id) => id !== tokenId)
                         : selectable ? [...selected, tokenId] : selected;
+                    dispatch(clearMapMarkSelection());
                     dispatch(setSelectedTokenIds(nextIds));
                     return;
                 }
@@ -658,6 +852,7 @@ export default function TokenLayer() {
                 } else {
                     nextIds = selected;
                 }
+                dispatch(clearMapMarkSelection());
                 dispatch(setSelectedTokenIds(nextIds));
 
                 if (!movable) return;
@@ -693,9 +888,11 @@ export default function TokenLayer() {
                     offsetY: wp.y - primary.marker.y,
                     originX: primary.marker.x,
                     originY: primary.marker.y,
+                    primaryTokenId: primary.tokenId,
                     members,
                 };
                 if (hoverRing) hoverRing.visible = false;
+                paintDragGuideRef.current?.(draggingRef.current);
             });
         };
 

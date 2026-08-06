@@ -3,7 +3,8 @@ import * as PIXI from "pixi.js";
 import { useSelector, useDispatch } from "react-redux";
 import {
     openContextMenu,
-    setRulerDraftA,
+    pushRulerDraftPoint,
+    setRulerDraftPoints,
     clearRulerDraft,
 } from "../store/uiSlice";
 import { useViewport } from "../context/ViewportContext";
@@ -12,7 +13,7 @@ import { killGsapDeep, safeDestroy } from "./pixiCleanup";
 import { lerpColor } from "../helpers/colors";
 import { RENDER_LAYERS } from "../constants/renderLayers";
 import { UI_COLORS } from "../constants/uiColors";
-import { buildRulerMeasure, snapWorldToGridPoint } from "../utils/gridMath";
+import { buildPolylineMeasure, snapWorldToGridPoint } from "../utils/gridMath";
 import { addMapRuler } from "../../firebase/services/gameService";
 import gsap from "gsap";
 
@@ -41,7 +42,8 @@ function createLocationMarker(locId, texture, dispatch, rulerRef, locationsRef, 
     const locationContainer = new PIXI.Container();
     locationContainer.eventMode = "static";
     locationContainer.cursor    = "pointer";
-    locationContainer.hitArea   = new PIXI.Circle(0, 0, 40);
+    // Keep pin hit small so nearby tokens (above in z-order) stay easy to grab.
+    locationContainer.hitArea   = new PIXI.Circle(0, 0, 22);
 
     const icon = new PIXI.Sprite(texture);
     icon.anchor.set(0.5);
@@ -121,23 +123,35 @@ function createLocationMarker(locId, texture, dispatch, rulerRef, locationsRef, 
                 session.map,
                 session.gridConfig,
             );
-            if (!ruler.draftA) {
-                dispatch(setRulerDraftA(point));
-            } else if (session.campaignId && session.mapId) {
-                const measure = buildRulerMeasure(ruler.draftA, point, session.map);
-                addMapRuler(session.campaignId, {
-                    mapId: session.mapId,
-                    a: ruler.draftA,
-                    b: point,
-                    straight: measure.straight,
-                    diagonal: measure.diagonal,
-                    totalCells: measure.totalCells,
-                    meters: measure.meters,
-                    distanceLabel: measure.distanceLabel,
-                    createdBy: session.uid ?? null,
-                    createdByName: session.nickname ?? null,
-                }).catch(console.error);
-                dispatch(clearRulerDraft());
+            const draftPoints = Array.isArray(ruler.draftPoints) ? ruler.draftPoints : [];
+            const ctrl = Boolean(
+                event.ctrlKey || event.metaKey
+                || event.originalEvent?.ctrlKey || event.originalEvent?.metaKey,
+            );
+
+            if (draftPoints.length === 0) {
+                dispatch(pushRulerDraftPoint(point));
+            } else {
+                const nextPoints = [...draftPoints, point];
+                if (ctrl) {
+                    dispatch(setRulerDraftPoints(nextPoints));
+                } else if (session.campaignId && session.mapId) {
+                    const measure = buildPolylineMeasure(nextPoints, session.map);
+                    addMapRuler(session.campaignId, {
+                        mapId: session.mapId,
+                        points: nextPoints,
+                        a: nextPoints[0],
+                        b: nextPoints[nextPoints.length - 1],
+                        straight: measure.straight,
+                        diagonal: measure.diagonal,
+                        totalCells: measure.totalCells,
+                        meters: measure.meters,
+                        distanceLabel: measure.distanceLabel,
+                        createdBy: session.uid ?? null,
+                        createdByName: session.nickname ?? null,
+                    }).catch(console.error);
+                    dispatch(clearRulerDraft());
+                }
             }
             return;
         }
@@ -161,7 +175,7 @@ function createLocationMarker(locId, texture, dispatch, rulerRef, locationsRef, 
 
         // Cancel in-progress ruler instead of opening the location menu
         const ruler = rulerRef.current;
-        if (button === 2 && ruler?.active && ruler?.draftA) {
+        if (button === 2 && ruler?.active && Array.isArray(ruler.draftPoints) && ruler.draftPoints.length > 0) {
             dispatch(clearRulerDraft());
             return;
         }

@@ -40,6 +40,7 @@ export default function VttDiceChatDock({
                 onSkip={skipDiceReveal}
             />
             <Box
+                data-no-token-drop
                 sx={{
                     position: "fixed",
                     top: VTT_RIGHT_DOCK.top,

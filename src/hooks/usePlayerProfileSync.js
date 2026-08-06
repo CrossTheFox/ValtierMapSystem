@@ -21,6 +21,8 @@ export function usePlayerProfileSync() {
                 characterIds: data.characterIds || [],
                 activeCharacterId: data.activeCharacterId || null,
             }));
+        }, (err) => {
+            console.warn("[usePlayerProfileSync]", err?.code || err?.message || err);
         });
     }, [uid, dispatch]);
 }

@@ -36,9 +36,34 @@ const uiSlice = createSlice({
         /** Shared-table ruler placement mode (left tools). */
         rulerTool: {
             active: false,
-            /** First node while placing: { x, y, col, row } */
-            draftA: null,
+            /** Anchored points of the in-progress polyline: [{ x, y, col, row }, ...] */
+            draftPoints: [],
         },
+        /** Map shapes tool (circle / rect / polygon-on-grid). */
+        drawTool: {
+            active: false,
+            /** "circle" | "rect" | "freehand" (polygon) */
+            shape: "circle",
+            /** "round" | "square" — circle footprint from center */
+            circleMode: "round",
+            /** Stroke/fill hex for new figures */
+            color: "#00f2ea",
+            /** First corner / center while placing circle|rect */
+            draftPoint: null,
+            /** Completed parts waiting to be saved (Ctrl chain) */
+            draftParts: [],
+            /**
+             * Polygon draft: grid-snapped vertices while placing "freehand".
+             * (Legacy name kept; no longer a free-drag stroke.)
+             */
+            draftPath: null,
+            /** Completed polygon point-lists in the current compound (Ctrl chain) */
+            draftPaths: [],
+        },
+        /** Selected map rulers (local). */
+        selectedRulerIds: [],
+        /** Selected map drawings (local). */
+        selectedDrawingIds: [],
         wikiOverlay: {
             open: false,
             mode: "list",         // "list" | "detail" | "edit" | "create"
@@ -199,17 +224,121 @@ const uiSlice = createSlice({
         // ── Shared ruler tool ─────────────────────────────────────
         setRulerMode(state, action) {
             state.rulerTool.active = Boolean(action.payload);
-            if (!state.rulerTool.active) state.rulerTool.draftA = null;
+            if (!state.rulerTool.active) state.rulerTool.draftPoints = [];
+            if (state.rulerTool.active && state.drawTool) {
+                state.drawTool.active = false;
+                state.drawTool.draftPoint = null;
+                state.drawTool.draftParts = [];
+                state.drawTool.draftPath = null;
+                state.drawTool.draftPaths = [];
+            }
         },
         toggleRulerMode(state) {
             state.rulerTool.active = !state.rulerTool.active;
-            if (!state.rulerTool.active) state.rulerTool.draftA = null;
+            if (!state.rulerTool.active) state.rulerTool.draftPoints = [];
         },
+        /** @deprecated Prefer pushRulerDraftPoint — kept for gradual migration */
         setRulerDraftA(state, action) {
-            state.rulerTool.draftA = action.payload;
+            state.rulerTool.draftPoints = action.payload ? [action.payload] : [];
+        },
+        setRulerDraftPoints(state, action) {
+            state.rulerTool.draftPoints = Array.isArray(action.payload) ? action.payload : [];
+        },
+        pushRulerDraftPoint(state, action) {
+            if (!action.payload) return;
+            state.rulerTool.draftPoints.push(action.payload);
         },
         clearRulerDraft(state) {
-            state.rulerTool.draftA = null;
+            state.rulerTool.draftPoints = [];
+        },
+
+        // ── Draw / shapes tool ────────────────────────────────────
+        setDrawMode(state, action) {
+            const payload = action.payload;
+            if (payload === false || payload == null) {
+                state.drawTool.active = false;
+                state.drawTool.draftPoint = null;
+                state.drawTool.draftParts = [];
+                state.drawTool.draftPath = null;
+                state.drawTool.draftPaths = [];
+                return;
+            }
+            const shape = typeof payload === "string"
+                ? payload
+                : (payload.shape || state.drawTool.shape || "circle");
+            const active = typeof payload === "object" && "active" in payload
+                ? Boolean(payload.active)
+                : true;
+            state.drawTool.active = active;
+            state.drawTool.shape = shape;
+            state.drawTool.draftPoint = null;
+            state.drawTool.draftParts = [];
+            state.drawTool.draftPath = null;
+            state.drawTool.draftPaths = [];
+            if (active) {
+                state.rulerTool.active = false;
+                state.rulerTool.draftPoints = [];
+            }
+        },
+        setDrawShape(state, action) {
+            state.drawTool.shape = action.payload || "circle";
+            state.drawTool.draftPoint = null;
+            state.drawTool.draftParts = [];
+            state.drawTool.draftPath = null;
+            state.drawTool.draftPaths = [];
+        },
+        setDrawCircleMode(state, action) {
+            state.drawTool.circleMode = action.payload === "square" ? "square" : "round";
+        },
+        setDrawColor(state, action) {
+            if (typeof action.payload === "string" && action.payload.trim()) {
+                state.drawTool.color = action.payload.trim();
+            }
+        },
+        setDrawDraftPoint(state, action) {
+            state.drawTool.draftPoint = action.payload ?? null;
+        },
+        setDrawDraftParts(state, action) {
+            state.drawTool.draftParts = Array.isArray(action.payload) ? action.payload : [];
+        },
+        pushDrawDraftPart(state, action) {
+            if (!action.payload) return;
+            state.drawTool.draftParts.push(action.payload);
+        },
+        setDrawDraftPath(state, action) {
+            state.drawTool.draftPath = action.payload ?? null;
+        },
+        setDrawDraftPaths(state, action) {
+            state.drawTool.draftPaths = Array.isArray(action.payload) ? action.payload : [];
+        },
+        pushDrawDraftPath(state, action) {
+            if (!action.payload) return;
+            state.drawTool.draftPaths.push(action.payload);
+        },
+        clearDrawDraft(state) {
+            state.drawTool.draftPoint = null;
+            state.drawTool.draftParts = [];
+            state.drawTool.draftPath = null;
+            state.drawTool.draftPaths = [];
+        },
+
+        setSelectedRulerIds(state, action) {
+            const ids = Array.isArray(action.payload) ? action.payload : [];
+            state.selectedRulerIds = [...new Set(ids.filter(Boolean).map(String))];
+        },
+        clearRulerSelection(state) {
+            state.selectedRulerIds = [];
+        },
+        setSelectedDrawingIds(state, action) {
+            const ids = Array.isArray(action.payload) ? action.payload : [];
+            state.selectedDrawingIds = [...new Set(ids.filter(Boolean).map(String))];
+        },
+        clearDrawingSelection(state) {
+            state.selectedDrawingIds = [];
+        },
+        clearMapMarkSelection(state) {
+            state.selectedRulerIds = [];
+            state.selectedDrawingIds = [];
         },
 
         // ── Wiki Overlay ──────────────────────────────────────────
@@ -339,6 +468,11 @@ const uiSlice = createSlice({
         clearTokenSelection(state) {
             state.selectedTokenIds = [];
         },
+        clearAllMapSelection(state) {
+            state.selectedTokenIds = [];
+            state.selectedRulerIds = [];
+            state.selectedDrawingIds = [];
+        },
         setTurnFocus(state, action) {
             const p = action.payload;
             if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) {
@@ -394,7 +528,25 @@ export const {
     setRulerMode,
     toggleRulerMode,
     setRulerDraftA,
+    setRulerDraftPoints,
+    pushRulerDraftPoint,
     clearRulerDraft,
+    setDrawMode,
+    setDrawShape,
+    setDrawCircleMode,
+    setDrawColor,
+    setDrawDraftPoint,
+    setDrawDraftParts,
+    pushDrawDraftPart,
+    setDrawDraftPath,
+    setDrawDraftPaths,
+    pushDrawDraftPath,
+    clearDrawDraft,
+    setSelectedRulerIds,
+    clearRulerSelection,
+    setSelectedDrawingIds,
+    clearDrawingSelection,
+    clearMapMarkSelection,
     openWikiOverlay,
     closeWikiOverlay,
     setWikiOverlayMode,
@@ -411,6 +563,7 @@ export const {
     setSelectedTokenIds,
     toggleTokenSelected,
     clearTokenSelection,
+    clearAllMapSelection,
     setTurnFocus,
     clearTurnFocus,
     toggleAbilityBar,

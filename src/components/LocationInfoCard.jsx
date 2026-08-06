@@ -32,7 +32,8 @@ export default function LocationInfoCard({ popupMode = false }) {
     const [open, setOpen] = useState(popupMode);
 
     const { isPopped, popout } = usePopout("location");
-    const wikiEntities = useCampaignWikiEntities(campaignId);
+    // Only subscribe while the dialog is open — avoids a permanent wiki listen on the VTT.
+    const wikiEntities = useCampaignWikiEntities(open || popupMode ? campaignId : null);
 
     const locationWikiEntity = useMemo(() => {
         if (!location?.id) return null;
@@ -78,9 +79,9 @@ export default function LocationInfoCard({ popupMode = false }) {
         { label: "Misiones",    icon: <AssignmentIcon /> },
     ];
 
-    // Wiki icon only when a linked archive entry exists
-    const wikiAction = !popupMode && locationWikiEntity ? (
-        <CyberTooltip title={isDM ? "Ficha wiki de esta ubicación" : "Ver en el archivo"}>
+    // Wiki / Narrative Archive entry — DM only
+    const wikiAction = isDM && !popupMode && locationWikiEntity ? (
+        <CyberTooltip title="Ficha wiki de esta ubicación">
             <IconButton
                 size="small"
                 onClick={handleOpenWiki}

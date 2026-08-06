@@ -113,8 +113,9 @@ export default function WikiImageUpload({
             setError("");
             setUploading(true);
             try {
-                const { url } = await uploadImage(file);
-                onChange(url);
+                const result = await uploadImage(file);
+                // Prefer Storage path: durable across object re-uploads / token rotation.
+                onChange(result.path || result.url);
             } catch (e) {
                 setError("Error al subir la imagen. Inténtalo de nuevo.");
                 console.error(e);

@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { Box, IconButton, Tooltip } from "@mui/material";
 import ChatIcon from "@mui/icons-material/Chat";
-import PushPinIcon from "@mui/icons-material/PushPin";
-import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
 
 import { UI_COLORS } from "../../constants/uiColors";
 import { updateCharacterFields } from "../../../firebase/services/characterService";
@@ -14,6 +12,8 @@ import { useDossier } from "../CharactersSettingsDialog";
 import MacroPinButton from "./MacroPinButton";
 import { MACRO_SLOT_TYPES } from "../../constants/macroBar";
 import { normalizeTokenCrop, tokenCropCss } from "../../utils/tokenImageFit";
+import { updateCharacterInList } from "../../store/characterSlice";
+import { updateCharacterInState } from "../../store/worldSlice";
 
 /* ── colour tokens ──────────────────────────────────────────────── */
 const C = {
@@ -144,14 +144,15 @@ function NarrCard({
     tagColor,
     title,
     text,
+    frequency = null,
     selKey,
     selected,
     onSelect,
     editMode,
     onSave,
+    onSaveTitle,
+    onSaveFrequency,
     onSendToChat,
-    onToggleShortcut,
-    isShortcut = false,
     compact = false,
     character = null,
     macroEntry = null,
@@ -159,11 +160,30 @@ function NarrCard({
     const { spawnPing } = useDossier();
     const isSelected = selected === selKey;
     const isBond = selKey?.startsWith("bond:");
+    const editing = Boolean(editMode && isSelected);
+    const canEditTitle = editing && typeof onSaveTitle === "function";
+    const canEditFrequency = editing && typeof onSaveFrequency === "function";
 
     const handleClick = (e) => {
-        if (e.target.tagName === "TEXTAREA" || e.target.closest?.("button")) return;
+        if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT" || e.target.closest?.("button")) return;
         onSelect(selKey);
         spawnPing(e.clientX, e.clientY);
+    };
+
+    const metaInputSx = {
+        fontFamily: "Orbitron, sans-serif",
+        fontSize: "0.82rem",
+        letterSpacing: "0.1em",
+        color: "#ffffff",
+        bgcolor: "rgba(0,0,0,0.45)",
+        border: `1px solid rgba(255,102,255,0.35)`,
+        borderRadius: "4px",
+        outline: "none",
+        px: "8px",
+        py: "4px",
+        minWidth: 0,
+        "&::placeholder": { color: "rgba(255,255,255,0.35)", opacity: 1 },
+        "&:focus": { borderColor: C.cyan, boxShadow: `0 0 10px ${C.cyan}33` },
     };
 
     return (
@@ -189,7 +209,7 @@ function NarrCard({
                 <span className="tl" /><span className="tr" /><span className="bl" /><span className="br" />
             </div>
 
-            <Box sx={{ display: "flex", alignItems: "center", gap: "8px", mb: "6px" }}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: "8px", mb: "6px", flexWrap: "wrap" }}>
                 <Box component="span" sx={{
                     fontFamily: "Orbitron, sans-serif",
                     fontSize: "0.62rem",
@@ -197,20 +217,69 @@ function NarrCard({
                     color: "#ffffff",
                     border: `1px solid ${tagColor ? tagColor + "88" : "rgba(255,204,51,0.55)"}`,
                     px: "6px", py: "2px", borderRadius: "3px",
+                    flexShrink: 0,
                 }}>
                     {tag}
                 </Box>
-                <Box component="span" sx={{
-                    fontFamily: "Orbitron, sans-serif",
-                    fontSize: "0.82rem",
-                    letterSpacing: "0.1em",
-                    color: "#ffffff",
-                    flex: 1,
-                    minWidth: 0,
-                }}>
-                    {title}
-                </Box>
-                <Box sx={{ display: "flex", gap: 0.25, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+                {canEditTitle ? (
+                    <Box
+                        component="input"
+                        value={title || ""}
+                        placeholder="TÍTULO"
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => onSaveTitle(e.target.value)}
+                        sx={{ ...metaInputSx, flex: "1 1 140px", maxWidth: "100%" }}
+                    />
+                ) : (
+                    <Box component="span" sx={{
+                        fontFamily: "Orbitron, sans-serif",
+                        fontSize: "0.82rem",
+                        letterSpacing: "0.1em",
+                        color: "#ffffff",
+                        flex: 1,
+                        minWidth: 0,
+                    }}>
+                        {title}
+                    </Box>
+                )}
+                {(canEditFrequency || (frequency != null && String(frequency).trim() !== "")) && (
+                    canEditFrequency ? (
+                        <Box
+                            component="input"
+                            value={frequency || ""}
+                            placeholder="FRECUENCIA · ej. 1/sesión"
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => onSaveFrequency(e.target.value)}
+                            sx={{
+                                ...metaInputSx,
+                                flex: "0 1 200px",
+                                fontSize: "0.62rem",
+                                letterSpacing: "0.08em",
+                                color: C.cyan,
+                                borderColor: "rgba(0,242,234,0.35)",
+                            }}
+                        />
+                    ) : (
+                        <Box component="span" sx={{
+                            fontFamily: "Orbitron, sans-serif",
+                            fontSize: "0.58rem",
+                            letterSpacing: "0.08em",
+                            color: C.cyan,
+                            border: `1px solid ${C.cyan}55`,
+                            px: "6px",
+                            py: "2px",
+                            borderRadius: "3px",
+                            flexShrink: 0,
+                            maxWidth: "46%",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                        }}>
+                            {frequency}
+                        </Box>
+                    )
+                )}
+                <Box sx={{ display: "flex", gap: 0.25, flexShrink: 0, ml: "auto" }} onClick={(e) => e.stopPropagation()}>
                     {macroEntry && character && (
                         <MacroPinButton character={character} entry={macroEntry} size="tiny" />
                     )}
@@ -235,34 +304,10 @@ function NarrCard({
                             </IconButton>
                         </Tooltip>
                     )}
-                    {typeof onToggleShortcut === "function" && (
-                        <Tooltip title={isShortcut ? "Quitar de Shortcuts" : "Añadir a Shortcuts"} slotProps={tooltipSlotProps}>
-                            <IconButton
-                                size="small"
-                                aria-label="Shortcut"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onToggleShortcut();
-                                }}
-                                sx={{
-                                    color: isShortcut ? C.cyan : "#ffffff",
-                                    border: `1px solid ${isShortcut ? C.cyan : C.border}`,
-                                    width: 28,
-                                    height: 28,
-                                    bgcolor: isShortcut ? `${C.cyan}14` : "transparent",
-                                    "&:hover": { borderColor: C.cyan, bgcolor: `${C.cyan}18` },
-                                }}
-                            >
-                                {isShortcut
-                                    ? <PushPinIcon sx={{ fontSize: "0.95rem" }} />
-                                    : <PushPinOutlinedIcon sx={{ fontSize: "0.95rem" }} />}
-                            </IconButton>
-                        </Tooltip>
-                    )}
                 </Box>
             </Box>
 
-            {editMode && isSelected ? (
+            {editing ? (
                 <textarea
                     value={text || ""}
                     onClick={(e) => e.stopPropagation()}
@@ -372,6 +417,7 @@ function SectionLabel({ children, limit }) {
 
 /* ── Main component ───────────────────────────────────────────────── */
 export default function DossierIdView({ character }) {
+    const dispatch = useDispatch();
     const { editMode, spawnPing, patchDraft } = useDossier();
     const campaignId = useSelector((s) => s.world.selectedCampaignId);
     const profile = useSelector((s) => s.player.profile);
@@ -381,15 +427,29 @@ export default function DossierIdView({ character }) {
     const tokenInputRef  = useRef(null);
     const [uploading, setUploading] = useState(false);
 
+    const syncCharacterMedia = useCallback(async (partial) => {
+        if (!character?.id || !partial) return;
+        // Preview + GUARDAR de inmediato (no depender solo de Redux/fetch).
+        patchDraft(partial);
+        try {
+            await updateCharacterFields(character.id, partial);
+            dispatch(updateCharacterInList({ id: character.id, data: partial }));
+            dispatch(updateCharacterInState({
+                id: character.id,
+                locationId: character.locationId,
+                data: partial,
+            }));
+        } catch (err) {
+            console.error("[DossierIdView] persist media:", err);
+        }
+    }, [character?.id, character?.locationId, dispatch, patchDraft]);
+
     const bond = character?.bond || {};
     const rawStats = character?.stats || {};
     const stats = Object.fromEntries(
         ACTION_KEYS.map((k) => [k, Math.min(MAX_STAT, Math.max(0, Number(rawStats[k]) || 0))]),
     );
     const bondPowers = Array.isArray(character?.bondPowers) ? character.bondPowers : [];
-    const narrativeShortcuts = Array.isArray(character?.narrativeShortcuts)
-        ? character.narrativeShortcuts
-        : [];
 
     /** Persist clamp for legacy >4 values (outside draft). */
     useEffect(() => {
@@ -415,9 +475,9 @@ export default function DossierIdView({ character }) {
         patchDraft({ bond: { [field]: value } });
     }, [patchDraft]);
 
-    const saveBondPower = useCallback((powerId, value) => {
+    const saveBondPower = useCallback((powerId, partial) => {
         const updated = bondPowers.map((bp) =>
-            (bp.id || bp.key) === powerId ? { ...bp, description: value } : bp
+            (bp.id || bp.key) === powerId ? { ...bp, ...partial } : bp
         );
         patchDraft({ bondPowers: updated });
     }, [bondPowers, patchDraft]);
@@ -428,19 +488,6 @@ export default function DossierIdView({ character }) {
         next[idx] = value;
         patchDraft({ bond: { ideals: next } });
     }, [bond.ideals, patchDraft]);
-
-    const isShortcutPinned = useCallback((key) => (
-        narrativeShortcuts.some((s) => s.key === key)
-    ), [narrativeShortcuts]);
-
-    const toggleShortcut = useCallback((entry) => {
-        if (!entry?.key) return;
-        const exists = narrativeShortcuts.some((s) => s.key === entry.key);
-        const next = exists
-            ? narrativeShortcuts.filter((s) => s.key !== entry.key)
-            : [...narrativeShortcuts, entry];
-        patchDraft({ narrativeShortcuts: next });
-    }, [narrativeShortcuts, patchDraft]);
 
     const sendNarrativeToChat = useCallback(async ({ kind, title, text, id }) => {
         if (!campaignId || !character) return;
@@ -474,8 +521,9 @@ export default function DossierIdView({ character }) {
         if (!file || !character?.id) return;
         setUploading(true);
         try {
-            const { url } = await uploadCharacterImage(character.id, file);
-            patchDraft({ bannerUrl: url });
+            // Persist Storage path (not download URL): tokens expire when the object is replaced.
+            const { path } = await uploadCharacterImage(character.id, file);
+            await syncCharacterMedia({ bannerUrl: path });
         } catch (err) {
             console.error("[DossierIdView] banner upload:", err);
         } finally {
@@ -494,8 +542,10 @@ export default function DossierIdView({ character }) {
         if (!file || !character?.id) return;
         setUploading(true);
         try {
-            const { url } = await uploadCharacterImage(character.id, file);
-            patchDraft({ imageUrl: url });
+            const { path } = await uploadCharacterImage(character.id, file);
+            // Token del mapa / HUD (CharacterCombatHud avatar) lee tokenImageUrl primero.
+            // Persist Storage path so useAssetUrl can always mint a fresh download URL.
+            await syncCharacterMedia({ imageUrl: path, tokenImageUrl: path });
         } catch (err) {
             console.error("[DossierIdView] token upload:", err);
         } finally {
@@ -517,7 +567,7 @@ export default function DossierIdView({ character }) {
     const handleAddBond = () => {
         if (!editMode) return;
         const id = `bp_${Date.now()}`;
-        const next = [...bondPowers, { id, title: "NEW BOND", description: "" }];
+        const next = [...bondPowers, { id, title: "NEW BOND", frequency: "", description: "" }];
         patchDraft({ bondPowers: next });
     };
 
@@ -608,12 +658,14 @@ export default function DossierIdView({ character }) {
                             <Box
                                 className="banner-cue"
                                 sx={{
-                                    position: "absolute", inset: 0, opacity: 0,
+                                    position: "absolute", inset: 0,
+                                    opacity: 0,
                                     transition: "opacity 0.2s",
                                     background: "rgba(0,0,0,0.55)",
                                     display: "grid", placeItems: "center",
                                     fontFamily: "Orbitron, sans-serif", fontSize: "0.5rem",
                                     color: C.cyan, letterSpacing: "0.12em",
+                                    pointerEvents: "none",
                                 }}
                             >
                                 CLICK · CAMBIAR / BORRAR
@@ -775,12 +827,6 @@ export default function DossierIdView({ character }) {
                                 text: bond.secondWind || "",
                                 id: "narrative:sw",
                             })}
-                            onToggleShortcut={() => toggleShortcut({
-                                key: "sw",
-                                kind: "SECOND WIND",
-                                title: "SECOND WIND",
-                            })}
-                            isShortcut={isShortcutPinned("sw")}
                         />
                         <NarrCard
                             compact
@@ -802,12 +848,6 @@ export default function DossierIdView({ character }) {
                                 text: bond.specialAbility || bond.description || "",
                                 id: "narrative:sa",
                             })}
-                            onToggleShortcut={() => toggleShortcut({
-                                key: "sa",
-                                kind: "SPECIAL ABILITY",
-                                title: "SPECIAL ABILITY",
-                            })}
-                            isShortcut={isShortcutPinned("sa")}
                         />
                     </Box>
 
@@ -816,6 +856,7 @@ export default function DossierIdView({ character }) {
                         const id = bp.id || bp.key || bp.name;
                         const title = bp.title || bp.name || bp.label || "BOND";
                         const text = bp.description || bp.content || bp.text || "";
+                        const frequency = bp.frequency || "";
                         const scKey = `bond:${id}`;
                         return (
                             <NarrCard
@@ -823,6 +864,7 @@ export default function DossierIdView({ character }) {
                                 tag="BOND"
                                 tagColor={C.cyan}
                                 title={title}
+                                frequency={frequency}
                                 text={text}
                                 selKey={scKey}
                                 selected={selected}
@@ -835,19 +877,15 @@ export default function DossierIdView({ character }) {
                                     label: title,
                                     blurb: text,
                                 }}
-                                onSave={(v) => saveBondPower(id, v)}
+                                onSave={(v) => saveBondPower(id, { description: v })}
+                                onSaveTitle={(v) => saveBondPower(id, { title: v, name: v })}
+                                onSaveFrequency={(v) => saveBondPower(id, { frequency: v })}
                                 onSendToChat={() => sendNarrativeToChat({
                                     kind: "BOND",
-                                    title,
+                                    title: frequency ? `${title} · ${frequency}` : title,
                                     text,
                                     id: `narrative:${scKey}`,
                                 })}
-                                onToggleShortcut={() => toggleShortcut({
-                                    key: scKey,
-                                    kind: "BOND",
-                                    title,
-                                })}
-                                isShortcut={isShortcutPinned(scKey)}
                             />
                         );
                     })}

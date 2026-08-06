@@ -130,6 +130,86 @@ export function buildRulerMeasure(pointA, pointB, map) {
     };
 }
 
+/** Normalize ruler endpoints: prefer `points[]`, fall back to legacy `a`/`b`. */
+export function normalizeRulerPoints(ruler) {
+    if (Array.isArray(ruler?.points) && ruler.points.length >= 2) {
+        return ruler.points.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+    }
+    if (ruler?.a && ruler?.b) return [ruler.a, ruler.b];
+    return [];
+}
+
+/** Sum segment measures along a polyline (≥ 2 points). */
+export function buildPolylineMeasure(points, map) {
+    const pts = Array.isArray(points) ? points : [];
+    if (pts.length < 2) {
+        return {
+            straight: 0,
+            diagonal: 0,
+            totalCells: 0,
+            meters: 0,
+            pixelDist: 0,
+            distanceLabel: "",
+        };
+    }
+    let straight = 0;
+    let diagonal = 0;
+    let totalCells = 0;
+    let pixelDist = 0;
+    for (let i = 1; i < pts.length; i += 1) {
+        const m = buildRulerMeasure(pts[i - 1], pts[i], map);
+        straight += m.straight;
+        diagonal += m.diagonal;
+        totalCells += m.totalCells;
+        pixelDist += m.pixelDist;
+    }
+    return {
+        straight,
+        diagonal,
+        totalCells,
+        pixelDist,
+        meters: map ? pixelDist * (map.metersPerPixel ?? 1) : pixelDist,
+        distanceLabel: formatMapDistance(pixelDist, map),
+    };
+}
+
+/** Axis-aligned bounding box from world points. */
+export function aabbFromPoints(points) {
+    const pts = (Array.isArray(points) ? points : []).filter(
+        (p) => p && Number.isFinite(p.x) && Number.isFinite(p.y),
+    );
+    if (pts.length === 0) return null;
+    let minX = pts[0].x;
+    let maxX = pts[0].x;
+    let minY = pts[0].y;
+    let maxY = pts[0].y;
+    for (let i = 1; i < pts.length; i += 1) {
+        minX = Math.min(minX, pts[i].x);
+        maxX = Math.max(maxX, pts[i].x);
+        minY = Math.min(minY, pts[i].y);
+        maxY = Math.max(maxY, pts[i].y);
+    }
+    return { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY };
+}
+
+/** Translate points by delta (shallow copies). */
+export function translatePoints(points, dx, dy) {
+    return (Array.isArray(points) ? points : []).map((p) => ({
+        ...p,
+        x: p.x + dx,
+        y: p.y + dy,
+        col: p.col,
+        row: p.row,
+    }));
+}
+
+/** Re-snap world points to grid after a drag. */
+export function resnapPoints(points, map, gridConfig = {}) {
+    return (Array.isArray(points) ? points : []).map((p) =>
+        snapWorldToGridPoint(p.x, p.y, map, gridConfig),
+    );
+}
+
 export function resolveTokenSizeKey(char, sizeOverride) {
     if (sizeOverride && TOKEN_SIZE_MULTIPLIERS[sizeOverride]) return sizeOverride;
     const base = char?.tokenSize;

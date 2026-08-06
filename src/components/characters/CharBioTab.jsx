@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { Box, CircularProgress, ToggleButton, ToggleButtonGroup } from "@mui/material";
 
 import { CyberText, CyberTitle } from "../customs/CustomTexts";
@@ -13,6 +13,7 @@ import WikiImageUpload from "../wiki/WikiImageUpload";
 import TokenImageCropEditor from "./TokenImageCropEditor";
 import { TOKEN_SIZE_OPTIONS } from "../../utils/gridMath";
 import { DEFAULT_TOKEN_CROP, normalizeTokenCrop } from "../../utils/tokenImageFit";
+import { isDmRole } from "../../utils/tokenControl";
 
 const TXT_MUTED = { color: "rgba(255,255,255,0.55)" };
 
@@ -43,6 +44,7 @@ function BioSectionLabel({ children }) {
 
 export default function CharBioTab({ character, wikiEntities = [] }) {
     const dispatch = useDispatch();
+    const isDM = isDmRole(useSelector((s) => s.player.profile?.role));
     const [bio, setBio] = useState(character?.bio || "");
     const [tokenImageUrl, setTokenImageUrl] = useState(character?.tokenImageUrl || null);
     const [tokenSize, setTokenSize] = useState(character?.tokenSize || "normal");
@@ -276,6 +278,8 @@ export default function CharBioTab({ character, wikiEntities = [] }) {
                 }}
             />
 
+            {isDM && (
+            <>
             <BioSectionLabel>FICHA NARRATIVA (CODEX)</BioSectionLabel>
             {wikiEntity ? (
                 <Box
@@ -327,6 +331,8 @@ export default function CharBioTab({ character, wikiEntities = [] }) {
                 <CyberText sx={{ ...TXT_MUTED, fontSize: "0.85rem", lineHeight: 1.5 }}>
                     Este personaje no tiene ficha vinculada en el Narrative Archive.
                 </CyberText>
+            )}
+            </>
             )}
         </Box>
     );

@@ -155,7 +155,7 @@ export default function UIOverlay() {
         >
             <MemoLocationInfoCard />
             <MemoLoreDialog />
-            {isAuthenticated && <MemoNarrativeWikiOverlay />}
+            {isAuthenticated && isDM && <MemoNarrativeWikiOverlay />}
 
             <MemoCharactersSettingsDialog
                 open={!!openDialogs.sheet}

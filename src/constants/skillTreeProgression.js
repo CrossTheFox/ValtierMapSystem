@@ -74,6 +74,13 @@ export function resolveCharacterLevel(character) {
     return Number.isFinite(n) ? Math.max(0, Math.min(12, Math.floor(n))) : 0;
 }
 
+/** Ability Points (ICON job progression). */
+export function resolveCharacterAp(character) {
+    const raw = character?.ap ?? character?.abilityPoints ?? character?.stats?.ap;
+    const n = Number(raw);
+    return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+}
+
 /** @param {Record<string, unknown>} character */
 export function resolveCharacterChapter(character) {
     const raw = character?.chapter ?? character?.stats?.chapter;

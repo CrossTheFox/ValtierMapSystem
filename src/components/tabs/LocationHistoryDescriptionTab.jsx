@@ -9,7 +9,7 @@ import {
     TimelineDot,
     TimelineOppositeContent,
 } from "@mui/lab";
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { loadFirebaseAsset, getCachedUrl } from "../../../firebase/services/assetLoader";
 import { CyberTitle, CyberText } from "../customs/CustomTexts";
 import AnimatedTypewriterText from "../animations/AnimatedTypewriterText";
@@ -19,6 +19,7 @@ import { useCampaignWikiEntities } from "../../hooks/useCampaignWikiEntities";
 import { WIKI_ENTITY_TYPES } from "../../constants/wikiEntityTypes";
 import WikiMentionRenderer from "../wiki/WikiMentionRenderer";
 import { openWikiOverlay } from "../../store/uiSlice";
+import { ROLES } from "../../constants/roles";
 
 function ArchiveImage({ imageUrl }) {
     const [url, setUrl] = useState(() => (imageUrl?.startsWith("http") ? imageUrl : getCachedUrl(imageUrl)) || null);
@@ -116,6 +117,7 @@ function TimelineSection({ historyEvents }) {
 
 export default function LocationHistoryDescriptionTab({ location, campaignId }) {
     const dispatch = useDispatch();
+    const isDM = useSelector((s) => s.player.profile?.role) === ROLES.DM;
     const wikiEntities = useCampaignWikiEntities(campaignId);
 
     const wikiEntity = useMemo(() => {
@@ -129,6 +131,7 @@ export default function LocationHistoryDescriptionTab({ location, campaignId }) 
     const hasArchive = !!wikiEntity;
 
     const handleEntityClick = (entityId) => {
+        if (!isDM || !entityId) return;
         dispatch(openWikiOverlay({ mode: "detail", entityId }));
     };
 

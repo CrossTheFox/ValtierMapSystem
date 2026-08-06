@@ -12,28 +12,61 @@ import {
     setSelectedWorldPosition,
     openContextMenu,
     closeContextMenu,
-    setRulerDraftA,
+    pushRulerDraftPoint,
+    setRulerDraftPoints,
     clearRulerDraft,
+    setDrawDraftPoint,
+    pushDrawDraftPart,
+    setDrawDraftPath,
+    clearDrawDraft,
 } from "../store/uiSlice";
 import { DIALOG_IDS } from "../constants/dialogIds";
 import locationIconPath from "../assets/LocationNode.svg";
 import { UI_COLORS } from "../constants/uiColors";
 import {
-    buildRulerMeasure,
+    buildPolylineMeasure,
     resolveGridDimensions,
     snapWorldToGridPoint,
 } from "../utils/gridMath";
-import { addMapRuler } from "../../firebase/services/gameService";
+import {
+    CIRCLE_MODES,
+    DRAW_SHAPES,
+    circleRadiusCells,
+    sameGridCell,
+} from "../utils/mapDrawings";
+import { addMapRuler, addMapDrawing } from "../../firebase/services/gameService";
 import { EMPTY_TABLE_FILL, isEmptyTableMap } from "../constants/emptyTableMap";
 
 const RIGHT_CLICK_DRAG_THRESHOLD = 5; // px — below this → treat as click, not drag
+
+function eventCtrlKey(e) {
+    return Boolean(e?.ctrlKey || e?.metaKey || e?.originalEvent?.ctrlKey || e?.originalEvent?.metaKey);
+}
+
+function persistRulerFromPoints(campaignId, mapId, points, profile, map) {
+    if (!campaignId || !mapId || !points || points.length < 2) return;
+    const measure = buildPolylineMeasure(points, map);
+    return addMapRuler(campaignId, {
+        mapId,
+        points,
+        a: points[0],
+        b: points[points.length - 1],
+        straight: measure.straight,
+        diagonal: measure.diagonal,
+        totalCells: measure.totalCells,
+        meters: measure.meters,
+        distanceLabel: measure.distanceLabel,
+        createdBy: profile?.uid ?? null,
+        createdByName: profile?.nickname ?? null,
+    });
+}
 
 export default function MapViewportProvider({ children, onViewportReady }) {
     const { app } = useApplication();
     const dispatch = useDispatch();
 
     const { map, assetsStatus, gridConfig, selectedCampaignId, activeMapId } = useSelector((state) => state.world);
-    const { isSelectingPosition, rulerTool } = useSelector((state) => state.ui);
+    const { isSelectingPosition, rulerTool, drawTool } = useSelector((state) => state.ui);
     const profile = useSelector((state) => state.player.profile);
     const gridConfigRef = useRef(gridConfig);
     const mapRef = useRef(map);
@@ -45,11 +78,13 @@ export default function MapViewportProvider({ children, onViewportReady }) {
     const ghostRef    = useRef(null);
 
     const rulerToolRef = useRef(rulerTool);
+    const drawToolRef = useRef(drawTool);
     const isSelectingRef = useRef(isSelectingPosition);
     const campaignIdRef = useRef(selectedCampaignId);
     const mapIdRef = useRef(activeMapId ?? map?.id);
     const profileRef = useRef(profile);
     useEffect(() => { rulerToolRef.current = rulerTool; }, [rulerTool]);
+    useEffect(() => { drawToolRef.current = drawTool; }, [drawTool]);
     useEffect(() => { isSelectingRef.current = isSelectingPosition; }, [isSelectingPosition]);
     useEffect(() => { campaignIdRef.current = selectedCampaignId; }, [selectedCampaignId]);
     useEffect(() => {
@@ -197,9 +232,23 @@ export default function MapViewportProvider({ children, onViewportReady }) {
                 t = t.parent;
             }
 
-            // Cancel in-progress ruler (node A set, waiting for B)
-            if (rulerToolRef.current?.active && rulerToolRef.current?.draftA) {
+            // Cancel in-progress ruler / drawing draft (RMB without pan)
+            const rt = rulerToolRef.current;
+            const dt = drawToolRef.current;
+            const hasRulerDraft = rt?.active && Array.isArray(rt.draftPoints) && rt.draftPoints.length > 0;
+            const hasDrawDraft = dt?.active && (
+                dt.draftPoint
+                || (Array.isArray(dt.draftParts) && dt.draftParts.length > 0)
+                || (Array.isArray(dt.draftPaths) && dt.draftPaths.length > 0)
+                || (Array.isArray(dt.draftPath) && dt.draftPath.length > 0)
+            );
+            if (hasRulerDraft) {
                 dispatch(clearRulerDraft());
+                dispatch(closeContextMenu());
+                return;
+            }
+            if (hasDrawDraft) {
+                dispatch(clearDrawDraft());
                 dispatch(closeContextMenu());
                 return;
             }
@@ -226,8 +275,9 @@ export default function MapViewportProvider({ children, onViewportReady }) {
         };
     }, [viewport, dispatch]);
 
-    // ── Ruler mode: 1st left-click = node A, 2nd = node B (persist) ─
+    // ── Ruler mode: LMB anchors; Ctrl+LMB continues polyline; plain LMB finalizes ─
     const isRulerMode = !!rulerTool?.active;
+    const isDrawMode = !!drawTool?.active;
 
     useEffect(() => {
         if (!viewport || !isRulerMode) return undefined;
@@ -235,6 +285,12 @@ export default function MapViewportProvider({ children, onViewportReady }) {
         const onDown = (e) => {
             if (e.button !== 0) return;
             if (isSelectingRef.current) return;
+            // Ignore clicks claimed by tokens / interactive marks (handles)
+            let t = e.target;
+            while (t && t !== viewport) {
+                if (t.__tokenId || t.__rulerId || t.__drawingId || t.__markHandle) return;
+                t = t.parent;
+            }
 
             const world = viewport.toWorld(e.global.x, e.global.y);
             const point = snapWorldToGridPoint(
@@ -243,31 +299,30 @@ export default function MapViewportProvider({ children, onViewportReady }) {
                 mapRef.current,
                 gridConfigRef.current,
             );
-            const draft = rulerToolRef.current?.draftA;
+            const draftPoints = rulerToolRef.current?.draftPoints || [];
+            const ctrl = eventCtrlKey(e);
 
-            if (!draft) {
-                dispatch(setRulerDraftA(point));
+            if (draftPoints.length === 0) {
+                dispatch(pushRulerDraftPoint(point));
+                return;
+            }
+
+            const nextPoints = [...draftPoints, point];
+
+            if (ctrl) {
+                dispatch(setRulerDraftPoints(nextPoints));
                 return;
             }
 
             const campaignId = campaignIdRef.current;
             const mapId = mapIdRef.current;
-            if (!campaignId || !mapId) return;
-
-            const measure = buildRulerMeasure(draft, point, mapRef.current);
-            const profile = profileRef.current;
-            addMapRuler(campaignId, {
+            persistRulerFromPoints(
+                campaignId,
                 mapId,
-                a: draft,
-                b: point,
-                straight: measure.straight,
-                diagonal: measure.diagonal,
-                totalCells: measure.totalCells,
-                meters: measure.meters,
-                distanceLabel: measure.distanceLabel,
-                createdBy: profile?.uid ?? null,
-                createdByName: profile?.nickname ?? null,
-            }).catch(console.error);
+                nextPoints,
+                profileRef.current,
+                mapRef.current,
+            )?.catch(console.error);
 
             dispatch(clearRulerDraft());
         };
@@ -275,6 +330,166 @@ export default function MapViewportProvider({ children, onViewportReady }) {
         viewport.on("pointerdown", onDown);
         return () => viewport.off("pointerdown", onDown);
     }, [viewport, isRulerMode, dispatch]);
+
+    // ── Draw mode: circle / rect (2-click) + polygon on grid (close on endpoint) ─
+    useEffect(() => {
+        if (!viewport || !isDrawMode) return undefined;
+
+        const persistDrawing = (payload) => {
+            const campaignId = campaignIdRef.current;
+            const mapId = mapIdRef.current;
+            if (!campaignId || !mapId) return;
+            const profile = profileRef.current;
+            const dt = drawToolRef.current;
+            addMapDrawing(campaignId, {
+                color: dt?.color || "#00f2ea",
+                ...payload,
+                mapId,
+                createdBy: profile?.uid ?? null,
+                createdByName: profile?.nickname ?? null,
+            }).catch(console.error);
+        };
+
+        const onDown = (e) => {
+            if (e.button !== 0) return;
+            if (isSelectingRef.current) return;
+            let t = e.target;
+            while (t && t !== viewport) {
+                if (t.__tokenId || t.__rulerId || t.__drawingId || t.__markHandle) return;
+                t = t.parent;
+            }
+
+            const dt = drawToolRef.current;
+            const shape = dt?.shape || DRAW_SHAPES.CIRCLE;
+            const world = viewport.toWorld(e.global.x, e.global.y);
+            const point = snapWorldToGridPoint(
+                world.x,
+                world.y,
+                mapRef.current,
+                gridConfigRef.current,
+            );
+            const ctrl = eventCtrlKey(e);
+            const color = dt?.color || "#00f2ea";
+
+            // Polygon-on-grid: LMB vertices; click first/last endpoint (≥3 verts) to close.
+            if (shape === DRAW_SHAPES.FREEHAND) {
+                const draft = Array.isArray(dt.draftPath) ? dt.draftPath : [];
+                if (draft.length === 0) {
+                    dispatch(setDrawDraftPath([point]));
+                    return;
+                }
+
+                const first = draft[0];
+                const last = draft[draft.length - 1];
+                const hitsFirst = sameGridCell(point, first);
+                const hitsLast = sameGridCell(point, last);
+                const canClose = draft.length >= 3 && (hitsFirst || hitsLast);
+
+                if (canClose) {
+                    const closedPts = hitsFirst
+                        ? draft
+                        : [...draft];
+                    const part = {
+                        shape: DRAW_SHAPES.FREEHAND,
+                        points: closedPts,
+                        closed: true,
+                        a: closedPts[0],
+                        b: closedPts[closedPts.length - 1],
+                        color,
+                    };
+                    const existingParts = Array.isArray(dt.draftParts) ? dt.draftParts : [];
+                    const existingPaths = Array.isArray(dt.draftPaths) ? dt.draftPaths : [];
+
+                    if (ctrl) {
+                        dispatch(pushDrawDraftPart(part));
+                        if (existingPaths.length || draft.length) {
+                            // keep parts-only compound; clear path draft
+                        }
+                        dispatch(setDrawDraftPath(null));
+                        return;
+                    }
+
+                    const parts = [...existingParts, part];
+                    if (parts.length === 1 && existingPaths.length === 0) {
+                        persistDrawing({
+                            shape: DRAW_SHAPES.FREEHAND,
+                            points: closedPts,
+                            closed: true,
+                            a: closedPts[0],
+                            b: closedPts[closedPts.length - 1],
+                            color,
+                        });
+                    } else {
+                        persistDrawing({
+                            shape: "compound",
+                            parts,
+                            color,
+                            a: parts[0].a,
+                            b: parts[0].b,
+                        });
+                    }
+                    dispatch(clearDrawDraft());
+                    return;
+                }
+
+                if (hitsLast) return; // ignore duplicate last vertex
+                dispatch(setDrawDraftPath([...draft, point]));
+                return;
+            }
+
+            const draftPoint = dt?.draftPoint;
+
+            if (!draftPoint) {
+                dispatch(setDrawDraftPoint(point));
+                return;
+            }
+
+            const circleMode = dt?.circleMode === CIRCLE_MODES.SQUARE
+                ? CIRCLE_MODES.SQUARE
+                : CIRCLE_MODES.ROUND;
+            const part = shape === DRAW_SHAPES.CIRCLE
+                ? {
+                    shape,
+                    a: draftPoint,
+                    b: point,
+                    circleMode,
+                    radiusCells: circleRadiusCells(draftPoint, point),
+                    color,
+                }
+                : { shape, a: draftPoint, b: point, color };
+            const existingParts = Array.isArray(dt.draftParts) ? dt.draftParts : [];
+
+            if (ctrl) {
+                dispatch(pushDrawDraftPart(part));
+                dispatch(setDrawDraftPoint(null));
+                return;
+            }
+
+            const parts = [...existingParts, part];
+            if (parts.length === 1) {
+                persistDrawing({
+                    shape,
+                    a: part.a,
+                    b: part.b,
+                    circleMode: part.circleMode,
+                    radiusCells: part.radiusCells ?? null,
+                    color,
+                });
+            } else {
+                persistDrawing({
+                    shape: "compound",
+                    a: parts[0].a,
+                    b: parts[0].b,
+                    parts,
+                    color,
+                });
+            }
+            dispatch(clearDrawDraft());
+        };
+
+        viewport.on("pointerdown", onDown);
+        return () => viewport.off("pointerdown", onDown);
+    }, [viewport, isDrawMode, dispatch]);
 
     // ── Position-selection mode (left-click places location) ─────
     useEffect(() => {
