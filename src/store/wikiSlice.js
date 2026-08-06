@@ -70,39 +70,57 @@ export const startWikiSync = createAsyncThunk(
                 ? query(entitiesRef, where("visibility", "==", "players"), orderBy("title"))
                 : query(entitiesRef, orderBy("title"));
 
-        const unsubEntities = onSnapshot(entitiesQuery, (snap) => {
-            const entities = snap.docs.map(serializeDoc);
-            dispatch(setEntities({ entities, campaignId }));
-        });
+        const unsubEntities = onSnapshot(
+            entitiesQuery,
+            (snap) => {
+                const entities = snap.docs.map(serializeDoc);
+                dispatch(setEntities({ entities, campaignId }));
+            },
+            (err) => {
+                console.warn("[wiki/entities]", err?.code || err?.message || err);
+            },
+        );
 
-        const unsubRelations = onSnapshot(relationsRef, (snap) => {
-            const relations = snap.docs.map(serializeDoc);
-            dispatch(setRelations(relations));
-        });
+        const unsubRelations = onSnapshot(
+            relationsRef,
+            (snap) => {
+                const relations = snap.docs.map(serializeDoc);
+                dispatch(setRelations(relations));
+            },
+            (err) => {
+                console.warn("[wiki/relations]", err?.code || err?.message || err);
+            },
+        );
 
         const campaignDocRef = doc(db, "campaigns", campaignId);
-        const unsubCampaign = onSnapshot(campaignDocRef, (snap) => {
-            if (!snap.exists()) {
+        const unsubCampaign = onSnapshot(
+            campaignDocRef,
+            (snap) => {
+                if (!snap.exists()) {
+                    dispatch(setNarrativeSettings({
+                        narrativeDate: null,
+                        narrativeCalendar: null,
+                        aiRules: null,
+                        aiGeneration: null,
+                        narrativeArcs: [],
+                        activeNarrativeArcId: null,
+                    }));
+                    return;
+                }
+                const data = snap.data();
                 dispatch(setNarrativeSettings({
-                    narrativeDate: null,
-                    narrativeCalendar: null,
-                    aiRules: null,
-                    aiGeneration: null,
-                    narrativeArcs: [],
-                    activeNarrativeArcId: null,
+                    narrativeDate: data.narrativeDate ?? null,
+                    narrativeCalendar: data.narrativeCalendar ?? null,
+                    aiRules: data.aiRules ?? null,
+                    aiGeneration: data.aiGeneration ?? null,
+                    narrativeArcs: normalizeNarrativeArcs(data.narrativeArcs),
+                    activeNarrativeArcId: data.activeNarrativeArcId ?? null,
                 }));
-                return;
-            }
-            const data = snap.data();
-            dispatch(setNarrativeSettings({
-                narrativeDate: data.narrativeDate ?? null,
-                narrativeCalendar: data.narrativeCalendar ?? null,
-                aiRules: data.aiRules ?? null,
-                aiGeneration: data.aiGeneration ?? null,
-                narrativeArcs: normalizeNarrativeArcs(data.narrativeArcs),
-                activeNarrativeArcId: data.activeNarrativeArcId ?? null,
-            }));
-        });
+            },
+            (err) => {
+                console.warn("[wiki/campaign]", err?.code || err?.message || err);
+            },
+        );
 
         _unsubscribers[campaignId] = [unsubEntities, unsubRelations, unsubCampaign];
 

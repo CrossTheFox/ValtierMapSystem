@@ -7,7 +7,6 @@ import { useDispatch, useSelector } from "react-redux";
 import BoltIcon from "@mui/icons-material/Bolt";
 import SearchIcon from "@mui/icons-material/Search";
 import BadgeIcon from "@mui/icons-material/Badge";
-import AccountTreeIcon from "@mui/icons-material/AccountTree";
 import PushPinIcon from "@mui/icons-material/PushPin";
 import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
 import QueryStatsIcon from "@mui/icons-material/QueryStats";
@@ -25,6 +24,7 @@ import ShieldIcon from "@mui/icons-material/Shield";
 import PersonOffIcon from "@mui/icons-material/PersonOff";
 import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
 import CheckIcon from "@mui/icons-material/Check";
+import HealingIcon from "@mui/icons-material/Healing";
 import { CyberText, CyberTitle } from "../customs/CustomTexts";
 import CyberTooltip from "../customs/CyberTooltip";
 import { UI_COLORS } from "../../constants/uiColors";
@@ -37,7 +37,7 @@ import { usePinnedCharacters } from "../../hooks/usePinnedCharacters";
 import { useAssetUrl } from "../../hooks/useAssetUrl";
 import { useResolvedCombatStats } from "../../hooks/useResolvedCombatStats";
 import { setActiveCharacterId, persistActiveCharacter } from "../../store/playerSlice";
-import { openCharacterSheet, showSnackbar } from "../../store/uiSlice";
+import { showSnackbar } from "../../store/uiSlice";
 import { canControlToken, isDmRole } from "../../utils/tokenControl";
 import {
     DEFAULT_VIT,
@@ -121,7 +121,7 @@ function segToVit(segIndex, vitMax) {
 /**
  * Segmented VIT ring only — portrait is display-only (no activate).
  * Always 4 quarters. Filled = proportion of current VIT (bright).
- * Lost quarters stay crimson (damaged).
+ * Lost quarters stay crimson (damaged). Hover brightens a segment (clickable cue).
  */
 function VitRingAvatar({
     char,
@@ -134,6 +134,7 @@ function VitRingAvatar({
     const vmax = Math.max(1, Math.floor(Number(vitMax) || DEFAULT_VIT));
     const cur = Math.min(Math.max(Math.floor(Number(vitCur) || 0), 0), vmax);
     const filled = vitToFilledSegs(cur, vmax);
+    const [hoverSeg, setHoverSeg] = useState(null);
     const ringPad = 7;
     const outer = size + ringPad * 2;
     const cx = outer / 2;
@@ -184,9 +185,7 @@ function VitRingAvatar({
 
     return (
         <CyberTooltip
-            title={dead
-                ? "CAÍDO · VIT 0"
-                : `VIT ${cur}/${vmax} · clic en un tramo del anillo`}
+            title={dead ? "BREAK · VIT 0" : "Clic en un tramo del anillo"}
             placement="top"
         >
             <Box
@@ -216,34 +215,46 @@ function VitRingAvatar({
                         overflow: "visible",
                     }}
                 >
-                    {segs.map((s) => (
-                        <g key={s.i}>
-                            <path
-                                d={arcPath(s.start, s.end)}
-                                fill="none"
-                                stroke="transparent"
-                                strokeWidth={stroke + 10}
-                                strokeLinecap="butt"
-                                style={{ pointerEvents: "stroke", cursor: onVitChange ? "pointer" : "default" }}
-                                onClick={(e) => handleSegClick(e, s.i)}
-                            />
-                            <path
-                                d={arcPath(s.start, s.end)}
-                                fill="none"
-                                stroke={s.state === "alive" ? VIT_RED : VIT_RED_LOST}
-                                strokeWidth={stroke}
-                                strokeLinecap="butt"
-                                style={{
-                                    transition: "stroke 0.18s, opacity 0.18s",
-                                    opacity: s.state === "alive" ? 1 : 0.95,
-                                    filter: s.state === "lost"
-                                        ? `drop-shadow(0 0 3px ${VIT_RED_LOST_GLOW})`
-                                        : undefined,
-                                    pointerEvents: "none",
-                                }}
-                            />
-                        </g>
-                    ))}
+                    {segs.map((s) => {
+                        const hovered = hoverSeg === s.i && Boolean(onVitChange) && !dead;
+                        const baseStroke = s.state === "alive" ? VIT_RED : VIT_RED_LOST;
+                        const hoverStroke = s.state === "alive" ? "#ff6b8a" : "#ff4d6a";
+                        return (
+                            <g key={s.i}>
+                                <path
+                                    d={arcPath(s.start, s.end)}
+                                    fill="none"
+                                    stroke="transparent"
+                                    strokeWidth={stroke + 10}
+                                    strokeLinecap="butt"
+                                    style={{
+                                        pointerEvents: "stroke",
+                                        cursor: onVitChange && !dead ? "pointer" : "default",
+                                    }}
+                                    onClick={(e) => handleSegClick(e, s.i)}
+                                    onMouseEnter={() => setHoverSeg(s.i)}
+                                    onMouseLeave={() => setHoverSeg((h) => (h === s.i ? null : h))}
+                                />
+                                <path
+                                    d={arcPath(s.start, s.end)}
+                                    fill="none"
+                                    stroke={hovered ? hoverStroke : baseStroke}
+                                    strokeWidth={hovered ? stroke + 1.25 : stroke}
+                                    strokeLinecap="butt"
+                                    style={{
+                                        transition: "stroke 0.15s, stroke-width 0.15s, opacity 0.15s, filter 0.15s",
+                                        opacity: hovered ? 1 : s.state === "alive" ? 1 : 0.95,
+                                        filter: hovered
+                                            ? `drop-shadow(0 0 6px ${VIT_RED_GLOW})`
+                                            : s.state === "lost"
+                                                ? `drop-shadow(0 0 3px ${VIT_RED_LOST_GLOW})`
+                                                : undefined,
+                                        pointerEvents: "none",
+                                    }}
+                                />
+                            </g>
+                        );
+                    })}
                 </Box>
                 <Box
                     sx={{
@@ -773,11 +784,13 @@ function CharHudContextMenu({
     char,
     isActive,
     isPinned,
+    isBroken = false,
     onClose,
     onActivate,
     onDeactivate,
     onTogglePin,
     onChangeCharacter,
+    onCureBreak,
 }) {
     const open = Boolean(anchorEl && char);
     const name = (char?.name || "PERSONAJE").toUpperCase();
@@ -856,6 +869,25 @@ function CharHudContextMenu({
                     </ListItemIcon>
                     <ListItemText
                         primary="Cambiar personaje"
+                        primaryTypographyProps={{
+                            sx: { color: UI_COLORS.textPrimary, fontFamily: "'Fira Code', monospace", fontSize: "0.72rem" },
+                        }}
+                    />
+                </MenuItem>
+            )}
+            {isActive && isBroken && (
+                <MenuItem
+                    onClick={() => {
+                        onCureBreak?.();
+                        onClose();
+                    }}
+                    sx={{ ...cyberMenuItemSx, fontSize: "0.72rem", gap: 1, py: 0.85 }}
+                >
+                    <ListItemIcon sx={{ minWidth: 28, color: UI_COLORS.anomaly }}>
+                        <HealingIcon sx={{ fontSize: "1rem" }} />
+                    </ListItemIcon>
+                    <ListItemText
+                        primary="Curar Break"
                         primaryTypographyProps={{
                             sx: { color: UI_COLORS.textPrimary, fontFamily: "'Fira Code', monospace", fontSize: "0.72rem" },
                         }}
@@ -1034,7 +1066,12 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         ? profile.activeCharacterId
         : null;
 
-    const selected = roster.find((c) => c.id === selectedId) || null;
+    const selected = useMemo(() => {
+        const base = roster.find((c) => c.id === selectedId) || null;
+        if (!base) return null;
+        const sheet = (sheetCharacters || []).find((c) => c.id === base.id);
+        return sheet ? { ...base, ...sheet } : base;
+    }, [roster, selectedId, sheetCharacters]);
 
     const activeInitEntry = useMemo(() => {
         if (!initiative?.started || !initiative?.open) return null;
@@ -1085,23 +1122,18 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
     const { combatStats } = useResolvedCombatStats(selected);
     const vitMax = selected ? combatStats.vit : 4;
     const sheetHpMax = selected ? combatStats.hpMax : 16;
-    const vigorMax = Math.max(0, Number(combatStats?.vigorMax) || 0);
 
     const combatTracks = useMemo(() => {
         if (!selected) return [];
         const effortBase = (resourceTracks || []).find((t) => t.key === "effort")
-            || { key: "effort", label: "Effort", maxDefault: 3 };
+            || { key: "effort", label: "Effort", maxDefault: 3, stateKey: "exhausted", stateLabel: "Exhausted" };
         const effortMaxDefault = Math.max(1, Math.floor(Number(effortBase.maxDefault) || 3));
-        const tracks = [
-            { ...effortBase, key: "effort", maxDefault: effortMaxDefault },
+        return [
+            { ...effortBase, key: "effort", maxDefault: effortMaxDefault, stateKey: "exhausted", stateLabel: "Exhausted" },
             { key: "vit", label: "VIT", maxDefault: vitMax, defaultFull: true },
-            { key: "hp", label: "HP", maxDefault: sheetHpMax, defaultFull: true },
+            { key: "hp", label: "HP", maxDefault: sheetHpMax, defaultFull: true, stateKey: "broken", stateLabel: "Break" },
         ];
-        if (vigorMax > 0) {
-            tracks.push({ key: "vigor", label: "Vigor", maxDefault: vigorMax, defaultFull: true });
-        }
-        return tracks;
-    }, [resourceTracks, vitMax, sheetHpMax, selected, vigorMax]);
+    }, [resourceTracks, vitMax, sheetHpMax, selected]);
 
     const effortMax = useMemo(() => {
         const t = combatTracks.find((x) => x.key === "effort");
@@ -1121,9 +1153,8 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
     const effortCur = selected
         ? Math.min(Math.max(pools.effort?.current ?? 0, 0), effortMax)
         : 0;
-    const vigorCur = selected && vigorMax > 0
-        ? Math.min(Math.max(pools.vigor?.current ?? vigorMax, 0), vigorMax)
-        : 0;
+    const isBroken = Boolean(selected && pools.hp?.broken);
+    const isExhausted = Boolean(selected && (effortCur >= effortMax || pools.effort?.exhausted));
     const isDead = Boolean(selected && vitCur <= 0);
 
     const resolvePinHp = (char) => {
@@ -1160,17 +1191,17 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
 
     const handleVitChange = (nextVit) => {
         if (!selected) return;
-        const prevVit = vitCur;
+        const prevHp = hpCur;
         const result = applyVitChange(pools, vitMax, nextVit);
-        persist({ ...pools, vit: result.vit, hp: result.hp });
-        if (result.died) {
-            dispatch(showSnackbar({ message: `${selected.name || "Personaje"} ha caído`, severity: "warning" }));
-        } else if (result.vit.current < prevVit) {
-            dispatch(showSnackbar({
-                message: `VIT ${result.vit.current}/${vitMax} · HP máx. ${resolveSessionHpMax(result.vit.current)}`,
-                severity: "info",
-            }));
-        }
+        // Break only when current HP crosses to 0 — not merely from losing VIT.
+        const broken = prevHp > 0 && result.hp.current <= 0
+            ? true
+            : Boolean(pools.hp?.broken);
+        persist({
+            ...pools,
+            vit: result.vit,
+            hp: { ...result.hp, broken },
+        });
     };
 
     const handleHpBarClick = (e) => {
@@ -1178,17 +1209,31 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         const rect = e.currentTarget.getBoundingClientRect();
         const ratio = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
         const nextHp = Math.round(ratio * sessionHpMax);
-        const prevVit = vitCur;
+        // Break arms when HP is driven to 0 (once), even if ICON VIT-cascade refills the bar.
+        const hitZero = nextHp <= 0;
         const result = applyHpWithVitCascade(pools, vitMax, nextHp);
-        persist({ ...pools, vit: result.vit, hp: result.hp });
-        if (result.died) {
-            dispatch(showSnackbar({ message: `${selected.name || "Personaje"} ha caído (VIT 0)`, severity: "warning" }));
-        } else if (nextHp <= 0 && result.vit.current < prevVit) {
-            dispatch(showSnackbar({
-                message: `VIT −1 → HP máx. ${resolveSessionHpMax(result.vit.current)}`,
-                severity: "info",
-            }));
-        }
+        const broken = hitZero || result.hp.current <= 0
+            ? true
+            : Boolean(pools.hp?.broken);
+        persist({
+            ...pools,
+            vit: result.vit,
+            hp: { ...result.hp, broken },
+        });
+    };
+
+    const handleCureBreak = () => {
+        if (!selected) return;
+        // Clear Break only — do not require / imply full VIT recovery.
+        persist({
+            ...pools,
+            hp: { ...(pools.hp || {}), current: hpCur, broken: false },
+        });
+    };
+
+    const handleEffortSet = (v) => {
+        const next = Math.min(Math.max(Math.floor(Number(v) || 0), 0), effortMax);
+        setTrack("effort", { current: next, exhausted: next >= effortMax });
     };
 
     const handleStatRoll = async (statDef) => {
@@ -1348,10 +1393,10 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                         maxWidth: 320,
                         p: "10px 12px",
                         borderRadius: `${VTT_HUD.borderRadius}px`,
-                        border: `1px solid ${isDead ? VIT_RED : vitCur <= 1 ? UI_COLORS.accentStrong : VTT_HUD.glassBorder}`,
+                        border: `1px solid ${isBroken ? VIT_RED : vitCur <= 1 ? UI_COLORS.accentStrong : VTT_HUD.glassBorder}`,
                         bgcolor: VTT_HUD.glassBg,
                         backdropFilter: "blur(14px)",
-                        boxShadow: isDead
+                        boxShadow: isBroken
                             ? `0 0 22px ${VIT_RED}44`
                             : vitCur <= 2
                                 ? `0 0 20px ${UI_COLORS.accent}33`
@@ -1378,7 +1423,7 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                                 sx={{
                                     fontSize: "0.72rem",
                                     letterSpacing: "0.08em",
-                                    color: isDead ? VIT_RED : "#fff",
+                                    color: isBroken ? VIT_RED : "#fff",
                                     lineHeight: 1.2,
                                     overflow: "hidden",
                                     textOverflow: "ellipsis",
@@ -1387,24 +1432,48 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                             >
                                 {selected.name || "—"}
                             </CyberTitle>
-                            <CyberText sx={{ fontFamily: "monospace", fontSize: "0.5rem", color: UI_COLORS.textSecondary }}>
-                                {isDead
-                                    ? "CAÍDO · VIT 0"
-                                    : `VIT ${vitCur}/${vitMax} · HP máx. ${sessionHpMax}`}
-                            </CyberText>
+                            {(isBroken || isExhausted) && (
+                                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.45, mt: 0.25 }}>
+                                    {isBroken && (
+                                        <CyberText
+                                            sx={{
+                                                fontFamily: "Orbitron, sans-serif",
+                                                fontSize: "0.42rem",
+                                                letterSpacing: "0.12em",
+                                                color: VIT_RED,
+                                                border: `1px solid ${VIT_RED}88`,
+                                                bgcolor: `${VIT_RED}18`,
+                                                px: 0.55,
+                                                py: "1px",
+                                                borderRadius: 0.5,
+                                            }}
+                                        >
+                                            BREAK
+                                        </CyberText>
+                                    )}
+                                    {isExhausted && (
+                                        <CyberText
+                                            sx={{
+                                                fontFamily: "Orbitron, sans-serif",
+                                                fontSize: "0.42rem",
+                                                letterSpacing: "0.12em",
+                                                color: "#f97316",
+                                                border: "1px solid rgba(249,115,22,0.7)",
+                                                bgcolor: "rgba(249,115,22,0.14)",
+                                                px: 0.55,
+                                                py: "1px",
+                                                borderRadius: 0.5,
+                                            }}
+                                        >
+                                            EXHAUSTED
+                                        </CyberText>
+                                    )}
+                                </Box>
+                            )}
                         </Box>
                     </Box>
 
                     <Box sx={{ position: "relative", zIndex: 1 }}>
-                    {vigorMax > 0 && (
-                        <TrackRow label="VIGOR" valueLabel={`${vigorCur}/${vigorMax}`}>
-                            <EffortBar
-                                current={vigorCur}
-                                max={vigorMax}
-                                onSet={(v) => setTrack("vigor", { current: v })}
-                            />
-                        </TrackRow>
-                    )}
                     <TrackRow label="HP" valueLabel={`${hpCur}/${sessionHpMax}`}>
                         <Box
                             sx={{
@@ -1413,10 +1482,10 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                                 borderRadius: 0.5,
                                 bgcolor: "rgba(255,255,255,0.06)",
                                 overflow: "hidden",
-                                cursor: isDead ? "default" : "pointer",
+                                cursor: "pointer",
                                 border: `1px solid ${UI_COLORS.border}`,
                             }}
-                            onClick={isDead ? undefined : handleHpBarClick}
+                            onClick={handleHpBarClick}
                         >
                             <Box
                                 sx={{
@@ -1434,53 +1503,9 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                         <EffortBar
                             current={effortCur}
                             max={effortMax}
-                            onSet={(v) => setTrack("effort", { current: v })}
+                            onSet={handleEffortSet}
                         />
                     </TrackRow>
-
-                    <Box
-                        sx={{
-                            display: "grid",
-                            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                            gap: "4px 8px",
-                            mt: 0.35,
-                            pt: 0.5,
-                            borderTop: `1px solid ${UI_COLORS.border}`,
-                        }}
-                    >
-                        {[
-                            { k: "DEF", v: combatStats.defense },
-                            { k: "SPD", v: `${combatStats.speed}/${combatStats.dash}` },
-                            { k: "FRAY", v: combatStats.fray },
-                            { k: "DIE", v: `d${combatStats.damageDie}` },
-                            { k: "ARM", v: combatStats.armor },
-                            { k: "VIG", v: combatStats.vigorMax },
-                        ].map((row) => (
-                            <Box key={row.k} sx={{ minWidth: 0 }}>
-                                <CyberText
-                                    sx={{
-                                        fontFamily: "monospace",
-                                        fontSize: "0.42rem",
-                                        letterSpacing: "0.08em",
-                                        color: UI_COLORS.textSecondary,
-                                        display: "block",
-                                    }}
-                                >
-                                    {row.k}
-                                </CyberText>
-                                <CyberText
-                                    sx={{
-                                        fontFamily: "Orbitron, sans-serif",
-                                        fontSize: "0.58rem",
-                                        color: "#ffffff",
-                                        lineHeight: 1.1,
-                                    }}
-                                >
-                                    {row.v}
-                                </CyberText>
-                            </Box>
-                        ))}
-                    </Box>
                     </Box>
                 </Box>
                 )}
@@ -1490,11 +1515,13 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                     char={charMenu?.char}
                     isActive={charMenu?.char?.id === selectedId}
                     isPinned={charMenu?.char ? pinnedIds.includes(charMenu.char.id) : false}
+                    isBroken={charMenu?.char?.id === selectedId ? isBroken : false}
                     onClose={closeCharMenu}
                     onActivate={handleSelect}
                     onDeactivate={handleDeactivate}
                     onTogglePin={togglePin}
                     onChangeCharacter={() => openActivatePicker(surfaceRef.current)}
+                    onCureBreak={handleCureBreak}
                 />
             </Box>
 
@@ -1587,26 +1614,6 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                         </CyberTooltip>
                     </Box>
                 )}
-                <CyberTooltip title="Abrir dossier (identidad)" placement="top">
-                    <IconButton
-                        size="small"
-                        onClick={() => dispatch(openCharacterSheet({ tab: "IDENTIDAD" }))}
-                        aria-label="Abrir dossier"
-                        sx={glassBtnSx(false)}
-                    >
-                        <BadgeIcon sx={{ fontSize: "1.1rem" }} />
-                    </IconButton>
-                </CyberTooltip>
-                <CyberTooltip title="Abrir Neural Mesh" placement="top">
-                    <IconButton
-                        size="small"
-                        onClick={() => dispatch(openCharacterSheet({ tab: "KIT", kitView: "tree" }))}
-                        aria-label="Abrir Neural Mesh"
-                        sx={glassBtnSx(false)}
-                    >
-                        <AccountTreeIcon sx={{ fontSize: "1.1rem" }} />
-                    </IconButton>
-                </CyberTooltip>
                 {canToggleAbilities && (
                     <>
                         <CyberTooltip

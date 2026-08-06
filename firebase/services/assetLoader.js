@@ -199,11 +199,16 @@ export async function loadTexture(path) {
 }
 
 export const uploadCharacterImage = async (characterId, file) => {
-    const storageRef = ref(storage, `characters/${characterId}_${file.name}`);
+    // Unique path: overwriting the same object invalidates prior download-URL tokens
+    // still stored on other fields (e.g. banner vs token), causing 403s in HUD/Dossier.
+    const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+    const safeName = file.name.replace(/[^a-z0-9._-]/gi, "_").slice(0, 48) || `img.${ext}`;
+    const path = `characters/${characterId || "shared"}/${Date.now()}_${safeName}`;
+    const storageRef = ref(storage, path);
     const snapshot = await uploadBytes(storageRef, file);
     const downloadURL = await getDownloadURL(snapshot.ref);
-    rememberUrl(snapshot.ref.fullPath, downloadURL);
-    await preloadImage(downloadURL, snapshot.ref.fullPath).catch(() => null);
+    rememberUrl(path, downloadURL);
+    await preloadImage(downloadURL, path).catch(() => null);
     return { url: downloadURL, path: snapshot.ref.fullPath };
 };
 

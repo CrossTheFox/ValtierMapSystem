@@ -53,6 +53,10 @@ export function normalizeCharacterDoc(char) {
 
     const vitRaw = Number(char.vit);
     const vit = Number.isFinite(vitRaw) && vitRaw > 0 ? Math.floor(vitRaw) : 4;
+    const levelRaw = Number(char.level ?? char.stats?.level);
+    const level = Number.isFinite(levelRaw) ? Math.max(0, Math.min(12, Math.floor(levelRaw))) : 0;
+    const apRaw = Number(char.ap ?? char.abilityPoints ?? char.stats?.ap);
+    const ap = Number.isFinite(apRaw) ? Math.max(0, Math.floor(apRaw)) : 0;
     const combatOverrides =
         char.combatOverrides && typeof char.combatOverrides === "object"
             ? { ...char.combatOverrides }
@@ -63,6 +67,8 @@ export function normalizeCharacterDoc(char) {
         assignedClassIds,
         activeClassId,
         vit,
+        level,
+        ap,
         combatOverrides,
         tokenCrop: normalizeTokenCrop(char.tokenCrop),
         stats: {

@@ -143,6 +143,8 @@ export default function TokenDeployPanel({ open, onClose }) {
         const q = query(collection(db, "characters"), where("campaignId", "==", campaignId));
         return onSnapshot(q, (snap) => {
             setCampaignChars(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        }, (err) => {
+            console.warn("[TokenDeployPanel/characters]", err?.code || err?.message || err);
         });
     }, [campaignId]);
 

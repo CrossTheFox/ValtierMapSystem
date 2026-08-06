@@ -1,17 +1,17 @@
 import { useState, useEffect, useMemo, useRef, useCallback, createContext, useContext } from "react";
 import { useSelector, useDispatch } from "react-redux";
-import { Dialog, DialogContent, Box, CircularProgress, IconButton, Tooltip } from "@mui/material";
+import { Dialog, DialogContent, Box, CircularProgress } from "@mui/material";
 import MinimizeIcon from "@mui/icons-material/Remove";
 import CloseIcon from "@mui/icons-material/Close";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
-import EditIcon from "@mui/icons-material/Edit";
-import EditOffIcon from "@mui/icons-material/EditOff";
 
-import { fetchPlayerCharacters } from "../store/characterSlice";
+import { fetchPlayerCharacters, updateCharacterInList } from "../store/characterSlice";
+import { updateCharacterInState } from "../store/worldSlice";
 import { UI_COLORS } from "../constants/uiColors";
 import { DIALOG_IDS } from "../constants/dialogIds";
 import { VTT_DIALOG_SIZE } from "../constants/vttHudTokens";
 import { CHARACTER_SHEET_TOKENS } from "../constants/characterSheetTokens";
+import { resolveCharacterAp, resolveCharacterLevel } from "../constants/skillTreeProgression";
 import useDialogActions from "../hooks/useDialogActions";
 import { useStatSystem } from "../hooks/useStatSystem";
 import { useCampaignWikiEntities } from "../hooks/useCampaignWikiEntities";
@@ -23,7 +23,7 @@ import { SHEET_TABS, normalizeSheetTab } from "./characters/CharacterSheetTabs";
 
 /* ── Dossier context (passed down to ID/KIT views) ────────────────── */
 export const DossierContext = createContext({
-    editMode: false,
+    editMode: true,
     dirty: false,
     draft: null,
     spawnPing: () => {},
@@ -43,7 +43,8 @@ const UNSAVED_MSG = "Hay cambios sin guardar. Si cierras ahora se perderán.";
 
 /**
  * Player dossier for the HUD-active character — Holodeck shell.
- * Chrome: tabs (ID / KIT / MESH) left, character name centred, edit toggle + controls right.
+ * Chrome: tabs (ID / KIT / MESH) left, character name + level centred, controls right.
+ * Always click-to-edit; GUARDAR FAB appears only when there are uncommitted changes.
  */
 export default function CharactersSettingsDialog({ open, onClose, popupMode = false }) {
     const dispatch = useDispatch();
@@ -56,12 +57,13 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
 
     const [activeTab, setActiveTab] = useState("IDENTIDAD");
     const [kitView, setKitView] = useState("tree");
-    const [editMode, setEditMode] = useState(false);
+    /** Always-on click-to-edit (no toggle). */
+    const editMode = true;
     const [draft, setDraft] = useState(null);
     const [dirty, setDirty] = useState(false);
     const [saving, setSaving] = useState(false);
     /** In-dialog leave guard — avoids unreliable window.confirm under MUI focus trap. */
-    const [leaveGuard, setLeaveGuard] = useState(null); // 'close' | 'exitEdit' | 'mesh' | 'popout' | 'backdrop'
+    const [leaveGuard, setLeaveGuard] = useState(null); // 'close' | 'mesh' | 'popout' | 'backdrop'
 
     const { isMinimized, toggleMinimize, forceMinimize } = useDialogActions(DIALOG_IDS.SHEET);
     const { isPopped, popout } = usePopout("characters");
@@ -94,7 +96,17 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
         const fromWorld = worldChars[activeCharacterId];
         if (fromList && fromWorld) {
             // Sheet doc is richer for bio/banner; world may have fresher placement/token.
-            return { ...fromWorld, ...fromList, id: activeCharacterId };
+            // Don't let a missing media key on one source wipe the other.
+            return {
+                ...fromWorld,
+                ...fromList,
+                id: activeCharacterId,
+                bannerUrl: fromList.bannerUrl ?? fromWorld.bannerUrl ?? null,
+                imageUrl: fromList.imageUrl ?? fromWorld.imageUrl ?? null,
+                tokenImageUrl: fromList.tokenImageUrl ?? fromWorld.tokenImageUrl ?? null,
+                ap: fromList.ap ?? fromWorld.ap ?? 0,
+                level: fromList.level ?? fromWorld.level ?? 0,
+            };
         }
         if (fromList) return fromList;
         if (fromWorld) return { id: activeCharacterId, ...fromWorld };
@@ -112,6 +124,11 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
             stats: { ...(selectedCharacter.stats || {}), ...(draft.stats || {}) },
             bondPowers: draft.bondPowers ?? selectedCharacter.bondPowers,
             narrativeShortcuts: draft.narrativeShortcuts ?? selectedCharacter.narrativeShortcuts,
+            bannerUrl: draft.bannerUrl ?? selectedCharacter.bannerUrl ?? null,
+            imageUrl: draft.imageUrl ?? selectedCharacter.imageUrl ?? null,
+            tokenImageUrl: draft.tokenImageUrl ?? selectedCharacter.tokenImageUrl ?? null,
+            ap: draft.ap ?? selectedCharacter.ap ?? 0,
+            level: draft.level ?? selectedCharacter.level ?? 0,
         };
     }, [selectedCharacter, draft]);
 
@@ -130,18 +147,16 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
         setKitView(sheetFocus.kitView === "list" ? "list" : "tree");
     }, [open, popupMode, sheetFocus?.nonce, sheetFocus?.tab, sheetFocus?.kitView]);
 
-    /* Reset edit when character changes */
+    /* Reset draft when character changes */
     useEffect(() => {
-        setEditMode(false);
         setDraft(null);
         setDirty(false);
         setLeaveGuard(null);
     }, [activeCharacterId]);
 
-    /* Reset edit when sheet fully closes (keeps state while minimized). */
+    /* Reset draft when sheet fully closes (keeps state while minimized). */
     useEffect(() => {
         if (open || popupMode) return;
-        setEditMode(false);
         setDraft(null);
         setDirty(false);
         setLeaveGuard(null);
@@ -173,29 +188,79 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
         setSaving(true);
         try {
             const payload = {};
-            if (draft.name != null) payload.name = draft.name;
-            if (draft.bannerUrl !== undefined) payload.bannerUrl = draft.bannerUrl;
-            if (draft.imageUrl !== undefined) payload.imageUrl = draft.imageUrl;
+            const reduxPatch = {};
+            if (draft.name != null) {
+                payload.name = draft.name;
+                reduxPatch.name = draft.name;
+            }
+            if (draft.bannerUrl !== undefined) {
+                payload.bannerUrl = draft.bannerUrl;
+                reduxPatch.bannerUrl = draft.bannerUrl;
+            }
+            if (draft.imageUrl !== undefined) {
+                payload.imageUrl = draft.imageUrl;
+                reduxPatch.imageUrl = draft.imageUrl;
+            }
+            if (draft.tokenImageUrl !== undefined) {
+                payload.tokenImageUrl = draft.tokenImageUrl;
+                reduxPatch.tokenImageUrl = draft.tokenImageUrl;
+            }
             if (draft.stats) {
                 Object.entries(draft.stats).forEach(([k, v]) => {
                     payload[`stats.${k}`] = v;
                 });
+                reduxPatch.stats = { ...(selectedCharacter.stats || {}), ...draft.stats };
             }
             if (draft.bond) {
                 Object.entries(draft.bond).forEach(([k, v]) => {
                     payload[`bond.${k}`] = v;
                 });
+                reduxPatch.bond = { ...(selectedCharacter.bond || {}), ...draft.bond };
             }
-            if (draft.bondPowers !== undefined) payload.bondPowers = draft.bondPowers;
+            if (draft.bondPowers !== undefined) {
+                payload.bondPowers = draft.bondPowers;
+                reduxPatch.bondPowers = draft.bondPowers;
+            }
             if (draft.narrativeShortcuts !== undefined) {
                 payload.narrativeShortcuts = draft.narrativeShortcuts;
+                reduxPatch.narrativeShortcuts = draft.narrativeShortcuts;
             }
-            if (draft.assignedClassIds !== undefined) payload.assignedClassIds = draft.assignedClassIds;
-            if (draft.activeClassId !== undefined) payload.activeClassId = draft.activeClassId;
-            if (draft.combatOverrides !== undefined) payload.combatOverrides = draft.combatOverrides;
-            if (draft.vit !== undefined) payload.vit = draft.vit;
+            if (draft.assignedClassIds !== undefined) {
+                payload.assignedClassIds = draft.assignedClassIds;
+                reduxPatch.assignedClassIds = draft.assignedClassIds;
+            }
+            if (draft.activeClassId !== undefined) {
+                payload.activeClassId = draft.activeClassId;
+                reduxPatch.activeClassId = draft.activeClassId;
+            }
+            if (draft.combatOverrides !== undefined) {
+                payload.combatOverrides = draft.combatOverrides;
+                reduxPatch.combatOverrides = draft.combatOverrides;
+            }
+            if (draft.vit !== undefined) {
+                payload.vit = draft.vit;
+                reduxPatch.vit = draft.vit;
+            }
+            if (draft.level !== undefined) {
+                payload.level = draft.level;
+                reduxPatch.level = draft.level;
+            }
+            if (draft.ap !== undefined) {
+                payload.ap = draft.ap;
+                reduxPatch.ap = draft.ap;
+            }
+            if (draft.jobResources !== undefined) {
+                payload.jobResources = draft.jobResources;
+                reduxPatch.jobResources = draft.jobResources;
+            }
             if (Object.keys(payload).length) {
                 await updateCharacterFields(selectedCharacter.id, payload);
+                dispatch(updateCharacterInList({ id: selectedCharacter.id, data: reduxPatch }));
+                dispatch(updateCharacterInState({
+                    id: selectedCharacter.id,
+                    locationId: selectedCharacter.locationId,
+                    data: reduxPatch,
+                }));
             }
             setDraft(null);
             setDirty(false);
@@ -207,12 +272,10 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
         } finally {
             setSaving(false);
         }
-    }, [selectedCharacter?.id, draft, dirty]);
+    }, [selectedCharacter, draft, dirty, dispatch]);
 
     const runLeaveAction = useCallback((action) => {
         discardDraft();
-        setEditMode(false);
-        if (action === "exitEdit") return;
         if (action === "mesh") {
             setActiveTab("MESH");
             return;
@@ -243,19 +306,12 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
     }, [runLeaveAction]);
 
     const requestToggleEdit = useCallback(() => {
-        if (editMode) {
-            requestLeave("exitEdit");
-            return;
-        }
-        setDraft(null);
-        setDirty(false);
-        setLeaveGuard(null);
-        setEditMode(true);
-    }, [editMode, requestLeave]);
+        /* no-op: dossier is always editable; GUARDAR appears when dirty */
+    }, []);
 
     const handleTabChange = (tabId) => {
         const next = normalizeSheetTab(tabId);
-        if (next === "MESH" && editMode) {
+        if (next === "MESH" && dirtyRef.current) {
             requestLeave("mesh");
             return;
         }
@@ -350,39 +406,117 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                 })}
             </Box>
 
-            {/* CENTER — character name (editable in edit mode) */}
-            {editMode && activeTab !== "MESH" ? (
+            {/* CENTER — character name + LV + AP (always editable) */}
+            {activeTab !== "MESH" ? (
                 <Box
-                    component="input"
-                    className="dialog-no-drag"
-                    value={viewCharacter?.name ?? ""}
-                    onChange={(e) => patchDraft({ name: e.target.value })}
-                    onClick={(e) => e.stopPropagation()}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    placeholder="NOMBRE"
                     sx={{
                         position: "absolute",
                         left: "50%",
                         top: "50%",
                         transform: "translate(-50%, -50%)",
                         zIndex: 2,
-                        fontFamily: "Orbitron, sans-serif",
-                        fontSize: "0.78rem",
-                        letterSpacing: "0.16em",
-                        color: "#ffffff",
-                        textAlign: "center",
-                        textTransform: "uppercase",
-                        bgcolor: "rgba(0,0,0,0.45)",
-                        border: `1px solid ${UI_COLORS.accent}`,
-                        borderRadius: "4px",
-                        outline: "none",
-                        px: 1.5,
-                        py: 0.4,
-                        maxWidth: "min(42vw, 360px)",
-                        width: "min(42vw, 320px)",
-                        "&::placeholder": { color: "rgba(255,255,255,0.35)" },
+                        display: "flex",
+                        alignItems: "flex-end",
+                        gap: 0.85,
+                        maxWidth: "min(56vw, 480px)",
                     }}
-                />
+                    className="dialog-no-drag"
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                >
+                    <Box
+                        component="input"
+                        value={viewCharacter?.name ?? ""}
+                        onChange={(e) => patchDraft({ name: e.target.value })}
+                        placeholder="NOMBRE"
+                        sx={{
+                            fontFamily: "Orbitron, sans-serif",
+                            fontSize: "0.78rem",
+                            letterSpacing: "0.16em",
+                            color: "#ffffff",
+                            textAlign: "center",
+                            textTransform: "uppercase",
+                            bgcolor: "rgba(0,0,0,0.45)",
+                            border: `1px solid ${dirty ? UI_COLORS.accent : UI_COLORS.border}`,
+                            borderRadius: "4px",
+                            outline: "none",
+                            px: 1.5,
+                            py: 0.45,
+                            minWidth: 120,
+                            maxWidth: "min(34vw, 260px)",
+                            flex: 1,
+                            "&:focus": { borderColor: UI_COLORS.accent },
+                            "&::placeholder": { color: "rgba(255,255,255,0.35)" },
+                        }}
+                    />
+                    <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.2 }}>
+                        <Box sx={{ fontFamily: "Orbitron, sans-serif", fontSize: "0.38rem", letterSpacing: "0.14em", color: UI_COLORS.anomaly }}>
+                            LV
+                        </Box>
+                        <Box
+                            component="input"
+                            type="number"
+                            min={0}
+                            max={12}
+                            title="Nivel"
+                            value={resolveCharacterLevel(viewCharacter)}
+                            onChange={(e) => {
+                                const n = Math.max(0, Math.min(12, Math.floor(Number(e.target.value) || 0)));
+                                patchDraft({ level: n });
+                            }}
+                            sx={{
+                                width: 44,
+                                fontFamily: "Orbitron, sans-serif",
+                                fontSize: "0.62rem",
+                                color: UI_COLORS.anomaly,
+                                textAlign: "center",
+                                bgcolor: "rgba(0,242,234,0.1)",
+                                border: `1px solid ${UI_COLORS.anomaly}88`,
+                                borderRadius: "4px",
+                                outline: "none",
+                                px: 0.4,
+                                py: 0.4,
+                                boxShadow: `0 0 12px ${UI_COLORS.anomaly}28`,
+                                "&::-webkit-outer-spin-button, &::-webkit-inner-spin-button": { WebkitAppearance: "none", margin: 0 },
+                                MozAppearance: "textfield",
+                                "&:focus": { borderColor: UI_COLORS.anomaly },
+                            }}
+                        />
+                    </Box>
+                    <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.2 }}>
+                        <Box sx={{ fontFamily: "Orbitron, sans-serif", fontSize: "0.38rem", letterSpacing: "0.14em", color: UI_COLORS.accent }}>
+                            AP
+                        </Box>
+                        <Box
+                            component="input"
+                            type="number"
+                            min={0}
+                            title="Ability Points"
+                            value={resolveCharacterAp(viewCharacter)}
+                            onChange={(e) => {
+                                const n = Math.max(0, Math.floor(Number(e.target.value) || 0));
+                                patchDraft({ ap: n });
+                            }}
+                            sx={{
+                                width: 44,
+                                fontFamily: "Orbitron, sans-serif",
+                                fontSize: "0.62rem",
+                                color: UI_COLORS.accentStrong,
+                                textAlign: "center",
+                                bgcolor: "rgba(255,102,255,0.12)",
+                                border: `1px solid ${UI_COLORS.accent}99`,
+                                borderRadius: "4px",
+                                outline: "none",
+                                px: 0.4,
+                                py: 0.4,
+                                boxShadow: `0 0 12px ${UI_COLORS.accent}33`,
+                                "&::-webkit-outer-spin-button, &::-webkit-inner-spin-button": { WebkitAppearance: "none", margin: 0 },
+                                MozAppearance: "textfield",
+                                "&:focus": { borderColor: UI_COLORS.accent },
+                            }}
+                        />
+                    </Box>
+                </Box>
             ) : (
                 <Box
                     sx={{
@@ -407,36 +541,8 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                 </Box>
             )}
 
-            {/* RIGHT — edit toggle + window controls */}
+            {/* RIGHT — window controls */}
             <Box sx={{ display: "flex", alignItems: "center", gap: "6px", zIndex: 1 }} className="dialog-no-drag">
-                {activeTab !== "MESH" && (
-                    <Tooltip title={editMode ? "Desactivar edición" : "Editar dossier"}>
-                        <IconButton
-                            size="small"
-                            aria-label={editMode ? "Desactivar edición" : "Editar"}
-                            onClick={requestToggleEdit}
-                            sx={{
-                                width: 30,
-                                height: 30,
-                                color: editMode ? "#ffffff" : "rgba(255,255,255,0.75)",
-                                border: `1px solid ${editMode ? UI_COLORS.accent : UI_COLORS.border}`,
-                                bgcolor: editMode ? `${UI_COLORS.accent}22` : "transparent",
-                                borderRadius: "4px",
-                                mr: "2px",
-                                "&:hover": {
-                                    bgcolor: `${UI_COLORS.accent}28`,
-                                    borderColor: UI_COLORS.accent,
-                                    color: "#ffffff",
-                                },
-                            }}
-                        >
-                            {editMode
-                                ? <EditOffIcon sx={{ fontSize: "1rem" }} />
-                                : <EditIcon sx={{ fontSize: "1rem" }} />}
-                        </IconButton>
-                    </Tooltip>
-                )}
-
                 {!popupMode && (
                     <>
                         <Box
@@ -558,7 +664,7 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
         </DossierContext.Provider>
     );
 
-    const saveFab = dirty && editMode && activeTab !== "MESH" ? (
+    const saveFab = dirty && activeTab !== "MESH" ? (
         <Box
             component="button"
             type="button"

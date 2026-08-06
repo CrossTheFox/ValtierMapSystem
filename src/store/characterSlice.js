@@ -43,8 +43,20 @@ const characterSlice = createSlice({
     },
     reducers: {
         updateCharacterInList: (state, action) => {
-            const index = state.list.findIndex(c => c.id === action.payload.id);
-            if (index !== -1) state.list[index] = { ...state.list[index], ...action.payload.data };
+            const { id, data } = action.payload || {};
+            if (!id || !data) return;
+            const index = state.list.findIndex((c) => c.id === id);
+            if (index !== -1) {
+                const prev = state.list[index];
+                state.list[index] = {
+                    ...prev,
+                    ...data,
+                    stats: data.stats ? { ...(prev.stats || {}), ...data.stats } : prev.stats,
+                    bond: data.bond ? { ...(prev.bond || {}), ...data.bond } : prev.bond,
+                };
+            } else {
+                state.list.push({ id, ...data });
+            }
         }
     },
     extraReducers: (builder) => {

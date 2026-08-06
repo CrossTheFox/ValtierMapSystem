@@ -1,41 +1,17 @@
-import { useState, useEffect, useMemo, useRef } from "react";
 import { Badge, Box, IconButton, Tooltip } from "@mui/material";
 import PersonPinCircleIcon from "@mui/icons-material/PersonPinCircle";
 import ChatIcon from "@mui/icons-material/Chat";
-import { useDispatch, useSelector } from "react-redux";
+import BadgeIcon from "@mui/icons-material/Badge";
+import LogoutIcon from "@mui/icons-material/Logout";
+import { useDispatch } from "react-redux";
 
 import { openCharacterSheet } from "../../store/uiSlice";
 import { resetWorldState } from "../../store/worldSlice";
-import { fetchPlayerCharacters } from "../../store/characterSlice";
 import { logoutPlayer } from "../../../firebase/playersAuth";
 import { UI_COLORS } from "../../constants/uiColors";
 import { VTT_HUD } from "../../constants/vttHudTokens";
-import { useAssetUrl } from "../../hooks/useAssetUrl";
-import { listCampaignCharacters } from "../../utils/characterCombat";
 
-const menuItemSx = {
-    display: "block",
-    width: "100%",
-    textAlign: "left",
-    background: "none",
-    border: "none",
-    borderLeft: "2px solid transparent",
-    color: "#fff",
-    fontFamily: "'Fira Code', monospace",
-    fontSize: "0.7rem",
-    letterSpacing: "0.1em",
-    textTransform: "uppercase",
-    px: 1.25,
-    py: 1.25,
-    cursor: "pointer",
-    transition: "background-color 0.15s, border-color 0.15s, color 0.15s, padding-left 0.15s",
-    "&:hover": {
-        bgcolor: "rgba(255,102,255,0.1)",
-        borderLeftColor: UI_COLORS.accent,
-        color: UI_COLORS.accent,
-        pl: 2,
-    },
-};
+const DISCONNECT_RED = "#ff4d4d";
 
 const hudIconBtnSx = (active, accent = UI_COLORS.anomaly) => ({
     width: VTT_HUD.hudBtnSize,
@@ -52,7 +28,6 @@ const hudIconBtnSx = (active, accent = UI_COLORS.anomaly) => ({
 });
 
 export default function TopRightHUD({
-    profile,
     tokenPanelOpen = false,
     onToggleTokenPanel,
     showTokenToggle = false,
@@ -62,69 +37,8 @@ export default function TopRightHUD({
     onToggleChatPanel,
 }) {
     const dispatch = useDispatch();
-    const [menuOpen, setMenuOpen] = useState(false);
-    const menuRef = useRef(null);
-
-    const { list: sheetCharacters } = useSelector((s) => s.characters);
-    const charactersById = useSelector((s) => s.world.charactersById ?? {});
-    const locations = useSelector((s) => s.world.locations);
-
-    /** Prefer activeCharacterId from full campaign roster (DM can select any PC). */
-    const activeCharacter = useMemo(() => {
-        const byId = new Map(
-            listCampaignCharacters(charactersById, locations).map((c) => [c.id, c]),
-        );
-        (sheetCharacters || []).forEach((c) => {
-            if (!c?.id) return;
-            byId.set(c.id, { ...(byId.get(c.id) || {}), ...c });
-        });
-
-        const id = profile?.activeCharacterId;
-        let base = (id && byId.get(id)) || null;
-        if (!base) {
-            // Owned sheet first, then any roster entry.
-            base = (id && sheetCharacters.find((c) => c.id === id))
-                || sheetCharacters[0]
-                || [...byId.values()][0]
-                || null;
-        }
-        if (!base) return null;
-
-        for (const loc of Object.values(locations || {})) {
-            const live = loc.characters?.find((c) => c.id === base.id);
-            if (live) return { ...base, ...live };
-        }
-        return base;
-    }, [profile?.activeCharacterId, sheetCharacters, charactersById, locations]);
-
-    const avatarPath = activeCharacter?.tokenImageUrl || activeCharacter?.imageUrl || null;
-    const avatarUrl = useAssetUrl(avatarPath);
-
-    /* Fetch player characters */
-    useEffect(() => {
-        if (profile?.uid) {
-            dispatch(
-                fetchPlayerCharacters({
-                    uid: profile.uid,
-                    characterIds: profile.characterIds || [],
-                })
-            );
-        }
-    }, [profile?.uid, profile?.characterIds, dispatch]);
-
-    /* Close menu on outside click */
-    useEffect(() => {
-        const handler = (e) => {
-            if (menuRef.current && !menuRef.current.contains(e.target)) {
-                setMenuOpen(false);
-            }
-        };
-        document.addEventListener("mousedown", handler);
-        return () => document.removeEventListener("mousedown", handler);
-    }, []);
 
     const handleLogout = async () => {
-        setMenuOpen(false);
         try {
             await logoutPlayer();
             dispatch(resetWorldState());
@@ -133,11 +47,8 @@ export default function TopRightHUD({
         }
     };
 
-    const avatarInitial = (profile?.nickname || "?")[0].toUpperCase();
-
     return (
         <Box
-            ref={menuRef}
             data-no-token-drop
             sx={{
                 position: "fixed",
@@ -193,167 +104,39 @@ export default function TopRightHUD({
                 </Tooltip>
             )}
 
-            {/* Profile avatar pill */}
-            <Box
-                component="button"
-                onClick={() => setMenuOpen((v) => !v)}
-                aria-label="Profile menu"
-                aria-expanded={menuOpen}
-                sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 1,
-                    px: 1.5,
-                    pl: 0.75,
-                    height: VTT_HUD.profilePillHeight,
-                    borderRadius: "20px",
-                    border: `1px solid ${menuOpen ? UI_COLORS.accent : "rgba(255,102,255,0.22)"}`,
-                    bgcolor: "rgba(10,10,15,0.9)",
-                    backdropFilter: "blur(8px)",
-                    cursor: "pointer",
-                    transition: "border-color 0.2s, box-shadow 0.2s",
-                    boxShadow: menuOpen ? `0 0 16px rgba(255,102,255,0.25)` : "none",
-                    "&:hover": {
-                        borderColor: UI_COLORS.accent,
-                    },
-                }}
-            >
-                {/* Avatar circle */}
-                <Box
-                    sx={{
-                        width: VTT_HUD.profileAvatarSize,
-                        height: VTT_HUD.profileAvatarSize,
-                        borderRadius: "50%",
-                        border: `1px solid rgba(255,102,255,0.5)`,
-                        bgcolor: "#050508",
-                        overflow: "hidden",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
-                    }}
+            <Tooltip title="Abrir dossier" placement="bottom">
+                <IconButton
+                    size="small"
+                    onClick={() => dispatch(openCharacterSheet({ tab: "IDENTIDAD" }))}
+                    aria-label="Abrir dossier"
+                    sx={hudIconBtnSx(false, UI_COLORS.anomaly)}
                 >
-                    {avatarUrl ? (
-                        <Box
-                            component="img"
-                            src={avatarUrl}
-                            alt={activeCharacter?.name || "character"}
-                            decoding="sync"
-                            loading="eager"
-                            sx={{ width: "100%", height: "100%", objectFit: "cover" }}
-                        />
-                    ) : (
-                        <Box
-                            sx={{
-                                fontFamily: "'Fira Code', monospace",
-                                fontSize: "0.8rem",
-                                fontWeight: 700,
-                                color: UI_COLORS.accent,
-                            }}
-                        >
-                            {avatarInitial}
-                        </Box>
-                    )}
-                </Box>
+                    <BadgeIcon sx={{ fontSize: "1.1rem" }} />
+                </IconButton>
+            </Tooltip>
 
-                {/* Name info */}
-                <Box sx={{ display: { xs: "none", sm: "flex" }, flexDirection: "column", gap: 0 }}>
-                    {activeCharacter && (
-                        <Box
-                            sx={{
-                                fontFamily: "'Fira Code', monospace",
-                                fontSize: "0.7rem",
-                                fontWeight: 700,
-                                color: "#fff",
-                                letterSpacing: "0.06em",
-                                lineHeight: 1.2,
-                                textTransform: "uppercase",
-                            }}
-                        >
-                            {activeCharacter.name}
-                        </Box>
-                    )}
-                    <Box
-                        sx={{
-                            fontFamily: "'Fira Code', monospace",
-                            fontSize: "0.6rem",
-                            color: `${UI_COLORS.accent}bb`,
-                            letterSpacing: "0.06em",
-                            lineHeight: 1.2,
-                            textTransform: "uppercase",
-                        }}
-                    >
-                        {profile?.nickname}
-                    </Box>
-                </Box>
-            </Box>
-
-            {/* Dropdown menu */}
-            {menuOpen && (
-                <Box
+            <Tooltip title="Desconectarse" placement="bottom">
+                <IconButton
+                    size="small"
+                    onClick={handleLogout}
+                    aria-label="Desconectarse"
                     sx={{
-                        position: "absolute",
-                        top: "calc(100% + 8px)",
-                        right: 0,
-                        minWidth: 220,
-                        bgcolor: "rgba(5,5,8,0.97)",
-                        border: `1px solid ${UI_COLORS.accent}`,
-                        backdropFilter: "blur(12px)",
-                        clipPath:
-                            "polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%)",
-                        py: 1.5,
-                        boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
-                        animation: "fadeDown 0.18s ease-out",
-                        "@keyframes fadeDown": {
-                            from: { opacity: 0, transform: "translateY(-8px)" },
-                            to: { opacity: 1, transform: "translateY(0)" },
+                        width: VTT_HUD.hudBtnSize,
+                        height: VTT_HUD.hudBtnSize,
+                        color: DISCONNECT_RED,
+                        border: `1px solid ${DISCONNECT_RED}88`,
+                        bgcolor: "rgba(10,10,15,0.9)",
+                        backdropFilter: "blur(8px)",
+                        "&:hover": {
+                            borderColor: DISCONNECT_RED,
+                            bgcolor: "rgba(255,77,77,0.14)",
+                            boxShadow: `0 0 12px ${DISCONNECT_RED}44`,
                         },
                     }}
                 >
-                    <Box
-                        sx={{
-                            fontFamily: "'Fira Code', monospace",
-                            fontSize: "0.55rem",
-                            color: `${UI_COLORS.accent}88`,
-                            letterSpacing: "0.18em",
-                            textTransform: "uppercase",
-                            px: 1.5,
-                            mb: 1,
-                        }}
-                    >
-                        SYSTEM_SESSIONS
-                    </Box>
-
-                    <Box
-                        component="button"
-                        onClick={() => {
-                            setMenuOpen(false);
-                            dispatch(openCharacterSheet({ tab: "IDENTIDAD" }));
-                        }}
-                        sx={menuItemSx}
-                    >
-                        ⚔ DOSSIER
-                    </Box>
-
-                    <Box
-                        component="button"
-                        onClick={handleLogout}
-                        sx={{
-                            ...menuItemSx,
-                            color: "#ff4d4d",
-                            mt: 0.5,
-                            "&:hover": {
-                                bgcolor: "rgba(255,77,77,0.1)",
-                                borderLeftColor: "#ff4d4d",
-                                color: "#ff4d4d",
-                                pl: 2,
-                            },
-                        }}
-                    >
-                        TERMINATE_CONNECTION
-                    </Box>
-                </Box>
-            )}
+                    <LogoutIcon sx={{ fontSize: "1.1rem" }} />
+                </IconButton>
+            </Tooltip>
         </Box>
     );
 }

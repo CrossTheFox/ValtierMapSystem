@@ -13,6 +13,7 @@ export function canControlToken(char, profile) {
     if (isDmRole(profile.role)) return true;
     const uid = profile.uid;
     if (char.ownerPlayerId === uid) return true;
+    if (profile.activeCharacterId === char.id) return true;
     if (Array.isArray(profile.characterIds) && profile.characterIds.includes(char.id)) {
         return true;
     }

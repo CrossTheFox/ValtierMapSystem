@@ -22,6 +22,7 @@ export function useGameSync() {
                 tokenPositions: data.tokenPositions ?? {},
                 activeMapId: data.activeMapId ?? null,
                 rulers: data.rulers ?? {},
+                drawings: data.drawings ?? {},
                 pings: data.pings ?? {},
                 sessionPools: data.sessionPools ?? {},
                 initiative: normalizeInitiative(data.initiative),

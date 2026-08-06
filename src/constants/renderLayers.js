@@ -3,8 +3,9 @@ export const RENDER_LAYERS = {
     MAP: 0,
     GRID: 10,
     PARTY: 15,
-    TOKENS: 16,
-    LOCATIONS: 20,
+    /** Pins below tokens so PCs near a location remain draggable. */
+    LOCATIONS: 18,
+    TOKENS: 22,
     ROUTES: 30,
     LABELS: 40,
     UI: 100,

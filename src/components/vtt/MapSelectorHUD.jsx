@@ -181,18 +181,20 @@ export default function MapSelectorHUD({ children = null }) {
                             <AutoStoriesIcon sx={{ fontSize: "1.05rem" }} />
                         </IconButton>
                     </Tooltip>
-                    <Tooltip title="Narrative Archive" placement="bottom">
-                        <IconButton
-                            size="small"
-                            onClick={() => {
-                                dispatch(restoreDialog(DIALOG_IDS.WIKI));
-                                dispatch(openWikiOverlay({ mode: "list" }));
-                            }}
-                            sx={navIconSx(wikiOverlay.open)}
-                        >
-                            <HubIcon sx={{ fontSize: "1.05rem" }} />
-                        </IconButton>
-                    </Tooltip>
+                    {isDM && (
+                        <Tooltip title="Narrative Archive" placement="bottom">
+                            <IconButton
+                                size="small"
+                                onClick={() => {
+                                    dispatch(restoreDialog(DIALOG_IDS.WIKI));
+                                    dispatch(openWikiOverlay({ mode: "list" }));
+                                }}
+                                sx={navIconSx(wikiOverlay.open)}
+                            >
+                                <HubIcon sx={{ fontSize: "1.05rem" }} />
+                            </IconButton>
+                        </Tooltip>
+                    )}
                     {isDM && (
                         <Tooltip title={initiative?.open ? "Cerrar iniciativa" : "Abrir iniciativa"} placement="bottom">
                             <IconButton
@@ -226,6 +228,10 @@ export default function MapSelectorHUD({ children = null }) {
 
             <Box sx={{ display: "flex", alignItems: "center", gap: 0.65 }}>
                 <Tooltip title={mapLocked ? "Mapa fijado por el DM" : "Cambiar mapa"}>
+                    <Box
+                        component="span"
+                        sx={{ flex: 1, minWidth: 0, display: "flex" }}
+                    >
                     <Box
                         component="button"
                         type="button"
@@ -288,6 +294,7 @@ export default function MapSelectorHUD({ children = null }) {
                         {!mapLocked && maps?.length > 0 && (
                             <KeyboardArrowDownIcon sx={{ fontSize: "1rem", color: UI_COLORS.textSecondary, flexShrink: 0 }} />
                         )}
+                    </Box>
                     </Box>
                 </Tooltip>
 

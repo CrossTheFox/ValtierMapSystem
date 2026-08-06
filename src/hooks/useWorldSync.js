@@ -36,6 +36,10 @@ export function useWorldSync() {
 
         console.log("Iniciando sync en tiempo real para mapa:", mapId);
 
+        const onListenError = (label) => (err) => {
+            console.warn(`[useWorldSync:${label}]`, err?.code || err?.message || err);
+        };
+
         // 1. Escuchar LOCATIONS
         const locationsQuery = query(collection(db, "locations"), where("mapId", "==", mapId));
         const unsubscribeLocations = onSnapshot(locationsQuery, (snapshot) => {
@@ -49,7 +53,7 @@ export function useWorldSync() {
                     dispatch(removeLocationRealtime(data.id));
                 }
             });
-        });
+        }, onListenError("locations"));
 
         // 2. Escuchar CHARACTERS
         const charactersQuery = query(collection(db, "characters"), where("campaignId", "==", campaignId));
@@ -70,7 +74,7 @@ export function useWorldSync() {
                     dispatch(removeCharacterRealtime({ id: charData.id, locationId: charData.locationId }));
                 }
             });
-        });
+        }, onListenError("characters"));
 
         // Cleanup: Desconectarse cuando el mapa cambie o el componente se desmonte
         return () => {

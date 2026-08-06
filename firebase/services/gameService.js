@@ -16,6 +16,7 @@ export async function getOrCreateGameSession(campaignId) {
             tokenPositions: {},
             activeMapId: null,
             rulers: {},
+            drawings: {},
             pings: {},
             sessionPools: {},
             initiative: {
@@ -149,27 +150,32 @@ export async function updateTokenVisibility(campaignId, mapId, tokenId, visible,
 
 export function subscribeToGameSession(campaignId, callback) {
     const docRef = gameRef(campaignId);
-    return onSnapshot(docRef, (snap) => {
-        if (snap.exists()) callback(snap.data());
-    });
+    return onSnapshot(
+        docRef,
+        (snap) => {
+            if (snap.exists()) callback(snap.data());
+        },
+        (err) => {
+            console.warn("[subscribeToGameSession]", err?.code || err?.message || err);
+        },
+    );
 }
 
 function newId(prefix) {
     return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/**
- * Persist a finished ruler so the whole table can see it.
- * @param {object} ruler — omit `id`; server/client assigns one
- */
-export async function addMapRuler(campaignId, ruler) {
-    const id = ruler?.id || newId("ruler");
-    const docRef = gameRef(campaignId);
-    const payload = {
-        id,
+function normalizeRulerPayload(ruler) {
+    const points = Array.isArray(ruler?.points) && ruler.points.length >= 2
+        ? ruler.points
+        : (ruler?.a && ruler?.b ? [ruler.a, ruler.b] : []);
+    const a = points[0] || ruler?.a || null;
+    const b = points[points.length - 1] || ruler?.b || null;
+    return {
         mapId: ruler.mapId,
-        a: ruler.a,
-        b: ruler.b,
+        points,
+        a,
+        b,
         straight: ruler.straight ?? 0,
         diagonal: ruler.diagonal ?? 0,
         totalCells: ruler.totalCells ?? 0,
@@ -179,7 +185,32 @@ export async function addMapRuler(campaignId, ruler) {
         createdByName: ruler.createdByName ?? null,
         createdAt: ruler.createdAt ?? Date.now(),
     };
+}
+
+/**
+ * Persist a finished ruler so the whole table can see it.
+ * Supports polylines via `points[]` (legacy `a`/`b` mirrored).
+ * @param {object} ruler — omit `id`; server/client assigns one
+ */
+export async function addMapRuler(campaignId, ruler) {
+    const id = ruler?.id || newId("ruler");
+    const docRef = gameRef(campaignId);
+    const payload = { id, ...normalizeRulerPayload(ruler) };
     await setDoc(docRef, { rulers: { [id]: payload } }, { merge: true });
+    return payload;
+}
+
+/** Update an existing ruler (move / remeasure). */
+export async function updateMapRuler(campaignId, rulerId, patch) {
+    if (!campaignId || !rulerId || !patch) return;
+    const docRef = gameRef(campaignId);
+    const normalized = normalizeRulerPayload({ ...patch, mapId: patch.mapId });
+    const payload = { id: rulerId, ...normalized };
+    // Preserve created* if caller omitted them
+    if (patch.createdBy !== undefined) payload.createdBy = patch.createdBy;
+    if (patch.createdByName !== undefined) payload.createdByName = patch.createdByName;
+    if (patch.createdAt !== undefined) payload.createdAt = patch.createdAt;
+    await setDoc(docRef, { rulers: { [rulerId]: payload } }, { merge: true });
     return payload;
 }
 
@@ -188,6 +219,62 @@ export async function removeMapRuler(campaignId, rulerId) {
     const docRef = gameRef(campaignId);
     await updateDoc(docRef, {
         [`rulers.${rulerId}`]: deleteField(),
+    });
+}
+
+function normalizeDrawingPayload(drawing) {
+    let paths = null;
+    if (Array.isArray(drawing.paths)) {
+        // Firestore forbids nested arrays — store [{ points: [...] }, ...]
+        paths = drawing.paths.map((path) => {
+            if (Array.isArray(path)) return { points: path };
+            if (path && Array.isArray(path.points)) return { points: path.points };
+            return { points: [] };
+        });
+    }
+    return {
+        mapId: drawing.mapId,
+        shape: drawing.shape || "rect",
+        a: drawing.a ?? null,
+        b: drawing.b ?? null,
+        parts: Array.isArray(drawing.parts) ? drawing.parts : null,
+        paths,
+        points: Array.isArray(drawing.points) ? drawing.points : null,
+        closed: drawing.closed === true,
+        circleMode: drawing.circleMode === "square" ? "square" : "round",
+        radiusCells: Number.isFinite(drawing.radiusCells) ? drawing.radiusCells : null,
+        color: typeof drawing.color === "string" ? drawing.color : (drawing.color ?? null),
+        createdBy: drawing.createdBy ?? null,
+        createdByName: drawing.createdByName ?? null,
+        createdAt: drawing.createdAt ?? Date.now(),
+    };
+}
+
+/** Persist a map drawing (circle / rect / freehand / compound parts). */
+export async function addMapDrawing(campaignId, drawing) {
+    const id = drawing?.id || newId("draw");
+    const docRef = gameRef(campaignId);
+    const payload = { id, ...normalizeDrawingPayload(drawing) };
+    await setDoc(docRef, { drawings: { [id]: payload } }, { merge: true });
+    return payload;
+}
+
+export async function updateMapDrawing(campaignId, drawingId, patch) {
+    if (!campaignId || !drawingId || !patch) return;
+    const docRef = gameRef(campaignId);
+    const payload = { id: drawingId, ...normalizeDrawingPayload(patch) };
+    if (patch.createdBy !== undefined) payload.createdBy = patch.createdBy;
+    if (patch.createdByName !== undefined) payload.createdByName = patch.createdByName;
+    if (patch.createdAt !== undefined) payload.createdAt = patch.createdAt;
+    await setDoc(docRef, { drawings: { [drawingId]: payload } }, { merge: true });
+    return payload;
+}
+
+export async function removeMapDrawing(campaignId, drawingId) {
+    if (!campaignId || !drawingId) return;
+    const docRef = gameRef(campaignId);
+    await updateDoc(docRef, {
+        [`drawings.${drawingId}`]: deleteField(),
     });
 }
 

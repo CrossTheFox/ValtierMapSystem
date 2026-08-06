@@ -41,6 +41,8 @@ const gameSlice = createSlice({
         activeMapId: null,
         /** Shared map rulers: id → ruler */
         rulers: {},
+        /** Shared map drawings: id → drawing */
+        drawings: {},
         /** Shared map pings: id → ping (short-lived) */
         pings: {},
         /** Shared session pools: characterId → { hp, effort, ..., updatedAt } */
@@ -70,6 +72,7 @@ const gameSlice = createSlice({
             if (data.tokenPositions) assignMap(state, "tokenPositions", data.tokenPositions);
             if (data.activeMapId !== undefined) state.activeMapId = data.activeMapId;
             if ("rulers" in data) assignMap(state, "rulers", data.rulers);
+            if ("drawings" in data) assignMap(state, "drawings", data.drawings);
             if ("pings" in data) assignMap(state, "pings", data.pings);
             if ("sessionPools" in data) assignMap(state, "sessionPools", data.sessionPools);
             if ("initiative" in data) {
@@ -85,6 +88,9 @@ const gameSlice = createSlice({
         },
         setRulers(state, action) {
             assignMap(state, "rulers", action.payload);
+        },
+        setDrawings(state, action) {
+            assignMap(state, "drawings", action.payload);
         },
         setPings(state, action) {
             assignMap(state, "pings", action.payload);
@@ -111,6 +117,7 @@ export const {
     setActiveMapId,
     setGameSession,
     setRulers,
+    setDrawings,
     setPings,
     setSessionPools,
     setInitiative,

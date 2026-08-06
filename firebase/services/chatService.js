@@ -7,6 +7,9 @@ import {
     limitToLast,
     onSnapshot,
     serverTimestamp,
+    getDocs,
+    writeBatch,
+    doc,
 } from "firebase/firestore";
 import { resolveAbilityContentInline } from "../../src/utils/abilityRollCommands.js";
 import { resolveCombatStats } from "../../src/utils/resolveCombatStats.js";
@@ -97,6 +100,102 @@ export function subscribeToChatMessages(campaignId, callback, max = 200) {
         }
         callback(messages);
     });
+}
+
+const BATCH_LIMIT = 450;
+
+function serializeChatTimestamp(value) {
+    if (!value) return null;
+    if (typeof value?.toDate === "function") {
+        try { return value.toDate().toISOString(); } catch { /* fall through */ }
+    }
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === "number") return new Date(value).toISOString();
+    if (typeof value?.seconds === "number") {
+        return new Date(value.seconds * 1000).toISOString();
+    }
+    return value;
+}
+
+/** Normalize a message doc for JSON backup (Timestamps → ISO). */
+export function serializeChatMessageForBackup(msg) {
+    if (!msg || typeof msg !== "object") return msg;
+    const out = { ...msg };
+    out.createdAt = serializeChatTimestamp(msg.createdAt);
+    return out;
+}
+
+/**
+ * Fetch every message in the campaign chat (ordered oldest → newest).
+ * @returns {Promise<Array<object>>}
+ */
+export async function fetchAllChatMessages(campaignId) {
+    if (!campaignId) return [];
+    const q = query(messagesCol(campaignId), orderBy("createdAt", "asc"));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+/**
+ * Delete every document in campaigns/{id}/messages (DM-only via rules).
+ * Batches in chunks of {@link BATCH_LIMIT}.
+ * @returns {Promise<number>} deleted count
+ */
+export async function clearAllChatMessages(campaignId) {
+    if (!campaignId) return 0;
+    const snap = await getDocs(messagesCol(campaignId));
+    if (snap.empty) return 0;
+
+    let deleted = 0;
+    let batch = writeBatch(db);
+    let ops = 0;
+
+    for (const d of snap.docs) {
+        batch.delete(doc(db, "campaigns", campaignId, "messages", d.id));
+        ops += 1;
+        deleted += 1;
+        if (ops >= BATCH_LIMIT) {
+            await batch.commit();
+            batch = writeBatch(db);
+            ops = 0;
+        }
+    }
+    if (ops > 0) await batch.commit();
+    return deleted;
+}
+
+/**
+ * Download a JSON backup of chat messages, then wipe the collection.
+ * @param {string} campaignId
+ * @param {{ withBackup?: boolean, campaignName?: string }} [opts]
+ * @returns {Promise<{ deleted: number, backedUp: boolean }>}
+ */
+export async function clearCampaignChat(campaignId, opts = {}) {
+    const withBackup = opts.withBackup !== false;
+    const messages = await fetchAllChatMessages(campaignId);
+
+    if (withBackup && messages.length > 0) {
+        const payload = {
+            exportedAt: new Date().toISOString(),
+            campaignId,
+            campaignName: opts.campaignName || null,
+            messageCount: messages.length,
+            messages: messages.map(serializeChatMessageForBackup),
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+        a.href = url;
+        a.download = `chat-backup-${campaignId}-${stamp}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    }
+
+    const deleted = await clearAllChatMessages(campaignId);
+    return { deleted, backedUp: withBackup && messages.length > 0 };
 }
 
 /** Roll dice formula like "2d6+3" or "d20" */
@@ -297,6 +396,73 @@ export async function callAbilityInChat(campaignId, profile, ability, options = 
         abilityTags: tagKeys.length ? tagKeys : null,
         abilityKind,
         abilityCost: ability.cost || null,
+        abilityInlineRolls: inlineRolls.length ? inlineRolls : null,
+        isOOC: false,
+    });
+}
+
+/**
+ * Post a Kit dossier card to chat (Job / Special Mechanic / Trait / etc.).
+ * Never forces an attack d20. Inline dice only if the content already has roll cues.
+ */
+export async function callKitCardInChat(campaignId, profile, card, options = {}) {
+    const content = String(card?.content ?? card?.text ?? card?.blurb ?? "");
+    const label = String(card?.label || card?.name || "KIT").trim() || "KIT";
+    const abilityKind = normalizeAbilityKind(card?.abilityKind || ABILITY_KINDS.STANDARD);
+    const tagKeys = sanitizeTagKeys(card?.tagKeys);
+    const hasInlineCue = /\[[^\]]*(?:d|@\{)/i.test(content);
+
+    let character = options.character || null;
+    let claseDoc = options.claseDoc || null;
+    let combatStats = options.combatStats || null;
+
+    let displayText = content;
+    let inlineRolls = [];
+
+    if (hasInlineCue) {
+        if (!combatStats) {
+            if (!character && card.characterId) {
+                try {
+                    character = await getCharacterById(card.characterId);
+                } catch (err) {
+                    console.warn("[callKitCardInChat] character fetch failed", err);
+                }
+            }
+            if (!claseDoc && character) {
+                const classId = character.activeClassId || character.assignedClassIds?.[0];
+                if (classId) {
+                    try {
+                        claseDoc = await getClaseDoc(classId);
+                    } catch (err) {
+                        console.warn("[callKitCardInChat] clase fetch failed", err);
+                    }
+                }
+            }
+            combatStats = resolveCombatStats(character, claseDoc);
+        }
+        const resolved = resolveAbilityContentInline(content, combatStats || {}, {
+            skipD20: true,
+        });
+        displayText = resolved.displayText || content;
+        inlineRolls = resolved.inlineRolls || [];
+    }
+
+    await sendChatMessage(campaignId, {
+        type: CHAT_MESSAGE_TYPES.ABILITY,
+        text: displayText || content || label,
+        senderId: profile?.uid,
+        senderName: profile?.nickname ?? "Jugador",
+        characterId: card.characterId ?? character?.id ?? null,
+        characterName: card.characterName ?? character?.name ?? null,
+        characterAvatarUrl: card.characterAvatarUrl
+            || character?.tokenImageUrl
+            || character?.imageUrl
+            || null,
+        abilityId: card.id ?? null,
+        abilityLabel: label,
+        abilityTags: tagKeys.length ? tagKeys : null,
+        abilityKind,
+        abilityCost: card.cost || null,
         abilityInlineRolls: inlineRolls.length ? inlineRolls : null,
         isOOC: false,
     });

@@ -224,18 +224,21 @@ const worldSlice = createSlice({
         },
         updateCharacterInState: (state, action) => {
             const { id, locationId, data } = action.payload;
+            if (!id || !data) return;
             if (state.charactersById[id]) {
                 state.charactersById[id] = { ...state.charactersById[id], ...data };
+            } else {
+                state.charactersById[id] = { id, ...data };
             }
-            const location = state.locations[locationId];
-            
+            const locId = locationId || state.charactersById[id]?.locationId;
+            const location = locId ? state.locations[locId] : null;
+
             if (location && location.characters) {
-                const charIndex = location.characters.findIndex(c => c.id === id);
+                const charIndex = location.characters.findIndex((c) => c.id === id);
                 if (charIndex !== -1) {
-                    // Actualización inmutable del array de personajes
                     location.characters[charIndex] = {
                         ...location.characters[charIndex],
-                        ...data
+                        ...data,
                     };
                 }
             }

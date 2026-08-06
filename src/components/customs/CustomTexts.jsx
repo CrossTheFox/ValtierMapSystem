@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import { Typography } from "@mui/material";
 import { useDialogFontSize } from "../../contexts/DialogFontSizeContext";
 import { UI_COLORS } from "../../constants/uiColors";
@@ -9,26 +10,30 @@ const FONT_SIZE_STEP_REM = 0.18;   // added rem per step
 const FONT_TITLE = "'Orbitron', sans-serif";
 const FONT_BODY = "'Fira Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif";
 
-export const CyberTitle = ({ children, sx = {}, ...props }) => (
-    <Typography
-        {...props}
-        sx={{
-            fontFamily: FONT_TITLE,
-            textTransform: "uppercase",
-            letterSpacing: "2px",
-            color: UI_COLORS.textPrimary,
-            ...sx,
-        }}
-    >
-        {children}
-    </Typography>
-);
+export const CyberTitle = forwardRef(function CyberTitle({ children, sx = {}, ...props }, ref) {
+    return (
+        <Typography
+            ref={ref}
+            {...props}
+            sx={{
+                fontFamily: FONT_TITLE,
+                textTransform: "uppercase",
+                letterSpacing: "2px",
+                color: UI_COLORS.textPrimary,
+                ...sx,
+            }}
+        >
+            {children}
+        </Typography>
+    );
+});
 
-export const CyberText = ({ children, sx = {}, ...props }) => {
+export const CyberText = forwardRef(function CyberText({ children, sx = {}, ...props }, ref) {
     const step = useDialogFontSize();
     const scaledSize = `${(BASE_CYBER_TEXT_SIZE + step * FONT_SIZE_STEP_REM).toFixed(2)}rem`;
     return (
         <Typography
+            ref={ref}
             {...props}
             sx={{
                 fontFamily: FONT_BODY,
@@ -42,4 +47,4 @@ export const CyberText = ({ children, sx = {}, ...props }) => {
             {children}
         </Typography>
     );
-};
+});

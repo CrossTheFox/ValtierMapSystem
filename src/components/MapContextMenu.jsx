@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import styled from "@emotion/styled";
+import { Box } from "@mui/material";
 import {
     closeContextMenu,
     openLocation,
@@ -13,10 +14,16 @@ import {
     updateTokenVisibility,
 } from "../../firebase/services/gameService";
 import { UI_COLORS } from "../constants/uiColors";
-import { TOKEN_CONDITIONS, normalizeTokenConditions } from "../constants/tokenConditions";
+import { CYBER_SCROLL_STYLE } from "../constants/cyberScrollStyle";
+import {
+    filterTokenConditions,
+    normalizeTokenConditions,
+} from "../constants/tokenConditions";
 import { canControlToken, isDmRole } from "../utils/tokenControl";
 
 const CYAN = UI_COLORS.anomaly || "#00f2ea";
+/** ~8 condition rows at current .cond padding */
+const COND_LIST_MAX_H = 8 * 34;
 
 export default function MapContextMenu() {
     const dispatch = useDispatch();
@@ -29,9 +36,13 @@ export default function MapContextMenu() {
     const tokenPositions = useSelector((s) => s.game.tokenPositions ?? {});
     const charactersById = useSelector((s) => s.world.charactersById ?? {});
     const menuRef = useRef(null);
+    const [condQuery, setCondQuery] = useState("");
 
     useEffect(() => {
-        if (!contextMenu.open) return;
+        if (!contextMenu.open) {
+            setCondQuery("");
+            return;
+        }
 
         const handler = (e) => {
             if (e.button === 2) return;
@@ -43,6 +54,11 @@ export default function MapContextMenu() {
         document.addEventListener("mousedown", handler);
         return () => document.removeEventListener("mousedown", handler);
     }, [contextMenu.open, dispatch]);
+
+    const filteredConditions = useMemo(
+        () => filterTokenConditions(condQuery),
+        [condQuery],
+    );
 
     if (!contextMenu.open) return null;
 
@@ -112,8 +128,8 @@ export default function MapContextMenu() {
         });
     };
 
-    const menuW = 240;
-    const menuH = isToken ? 280 : contextMenu.type === "location" ? 140 : 100;
+    const menuW = 260;
+    const menuH = isToken ? 420 : contextMenu.type === "location" ? 140 : 100;
     const x = Math.min(contextMenu.screenX, window.innerWidth - menuW - 8);
     const y = Math.min(contextMenu.screenY, window.innerHeight - menuH - 8);
 
@@ -145,20 +161,77 @@ export default function MapContextMenu() {
                 {isToken && canEdit && (
                     <>
                         <div className="menu-section">CONDICIONES</div>
-                        {TOKEN_CONDITIONS.map((c) => {
-                            const on = conditions.includes(c.key);
-                            return (
-                                <button
-                                    key={c.key}
-                                    type="button"
-                                    className={`menu-item cond ${on ? "active" : ""}`}
-                                    onClick={() => handleToggleCondition(c.key)}
+                        <Box
+                            component="input"
+                            type="search"
+                            value={condQuery}
+                            onChange={(e) => setCondQuery(e.target.value)}
+                            placeholder="BUSCAR STATUS…"
+                            aria-label="Buscar condiciones"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            sx={{
+                                display: "block",
+                                width: "calc(100% - 16px)",
+                                mx: "8px",
+                                mb: 0.5,
+                                px: 1,
+                                py: 0.6,
+                                bgcolor: "rgba(0,0,0,0.45)",
+                                border: `1px solid ${CYAN}55`,
+                                borderRadius: 0.5,
+                                color: UI_COLORS.textPrimary,
+                                fontFamily: "'Fira Code', monospace",
+                                fontSize: "0.62rem",
+                                letterSpacing: "0.08em",
+                                outline: "none",
+                                "&::placeholder": {
+                                    color: UI_COLORS.textSecondary,
+                                    opacity: 0.85,
+                                },
+                                "&:focus": {
+                                    borderColor: CYAN,
+                                    boxShadow: `0 0 8px ${CYAN}33`,
+                                },
+                            }}
+                        />
+                        <Box
+                            className="cond-list"
+                            sx={{
+                                maxHeight: COND_LIST_MAX_H,
+                                overflowY: "auto",
+                                ...CYBER_SCROLL_STYLE,
+                            }}
+                        >
+                            {filteredConditions.length === 0 ? (
+                                <Box
+                                    sx={{
+                                        px: 1.5,
+                                        py: 1,
+                                        fontFamily: "'Fira Code', monospace",
+                                        fontSize: "0.58rem",
+                                        color: UI_COLORS.textSecondary,
+                                        letterSpacing: "0.08em",
+                                    }}
                                 >
-                                    <span className="item-icon">{on ? "▣" : "□"}</span>
-                                    {c.label.toUpperCase()}
-                                </button>
-                            );
-                        })}
+                                    SIN RESULTADOS
+                                </Box>
+                            ) : (
+                                filteredConditions.map((c) => {
+                                    const on = conditions.includes(c.key);
+                                    return (
+                                        <button
+                                            key={c.key}
+                                            type="button"
+                                            className={`menu-item cond ${on ? "active" : ""}`}
+                                            onClick={() => handleToggleCondition(c.key)}
+                                        >
+                                            <span className="item-icon">{on ? "▣" : "□"}</span>
+                                            {c.label.toUpperCase()}
+                                        </button>
+                                    );
+                                })
+                            )}
+                        </Box>
                     </>
                 )}
 
@@ -177,9 +250,12 @@ const StyledMenu = styled.div`
   position: fixed;
   z-index: 2000;
   pointer-events: auto;
-  min-width: 220px;
-  max-height: min(420px, calc(100vh - 24px));
-  overflow-y: auto;
+  min-width: 240px;
+  max-width: 280px;
+  max-height: min(520px, calc(100vh - 24px));
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   background: rgba(4, 4, 8, 0.97);
   border: 1px solid ${CYAN};
   box-shadow: 0 0 24px ${CYAN}44, 0 0 6px ${CYAN}22, inset 0 0 20px ${CYAN}08;
@@ -199,6 +275,7 @@ const StyledMenu = styled.div`
     letter-spacing: 2px;
     border-bottom: 1px solid ${CYAN}33;
     text-transform: uppercase;
+    flex-shrink: 0;
   }
 
   .menu-label {
@@ -209,7 +286,7 @@ const StyledMenu = styled.div`
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 210px;
+    max-width: 240px;
   }
 
   .menu-section {
@@ -218,6 +295,13 @@ const StyledMenu = styled.div`
     font-size: 0.52rem;
     letter-spacing: 0.14em;
     color: ${UI_COLORS.textSecondary};
+    flex-shrink: 0;
+  }
+
+  .cond-list {
+    flex: 0 1 auto;
+    border-top: 1px solid ${CYAN}18;
+    border-bottom: 1px solid ${CYAN}18;
   }
 
   .menu-item {

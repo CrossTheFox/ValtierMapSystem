@@ -16,6 +16,8 @@ export function useMapGridSync() {
             if (!snap.exists()) return;
             const gridConfig = normalizeMapGridConfig(snap.data()?.gridConfig);
             dispatch(applyMapGridConfig(gridConfig));
+        }, (err) => {
+            console.warn("[useMapGridSync]", err?.code || err?.message || err);
         });
         return unsub;
     }, [mapId, dispatch]);

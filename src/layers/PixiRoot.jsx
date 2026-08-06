@@ -5,6 +5,7 @@ import { loadWorld, preloadWorldAssets } from "../store/worldSlice";
 import MapViewportProvider from "../pixi/MapViewport";
 import LocationsLayer from "../pixi/LocationsLayer";
 import RulersLayer from "../pixi/RulersLayer";
+import DrawingsLayer from "../pixi/DrawingsLayer";
 import PingLayer from "../pixi/PingLayer";
 import TurnFocusLayer from "../pixi/TurnFocusLayer";
 import GridLayer from "../pixi/GridLayer";
@@ -53,6 +54,7 @@ export default function PixiRoot({ onViewportReady }) {
                     <GridLayer />
                     <LocationsLayer />
                     <RulersLayer />
+                    <DrawingsLayer />
                     <PingLayer />
                     <TurnFocusLayer />
                     <TokenLayer />
