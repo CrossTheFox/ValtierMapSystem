@@ -21,6 +21,8 @@
     "seed:caelum:dry": "node scripts/seedCaelumWeaverOfOdds.mjs --dry-run",
     "seed:mixi": "node scripts/seedMixiPenitente.mjs",
     "seed:mixi:dry": "node scripts/seedMixiPenitente.mjs --dry-run",
+    "seed:krell": "node scripts/seedKrellDeathWeight.mjs",
+    "seed:krell:dry": "node scripts/seedKrellDeathWeight.mjs --dry-run",
     "seed-clases-test": "node scripts/seedClasesMultiJobTest.mjs",
     "seed:icon-tags": "node scripts/seedIconTags.mjs",
     "seed:icon-tags:dry": "node scripts/seedIconTags.mjs --dry-run",
