@@ -18,7 +18,14 @@ service cloud.firestore {
     // ── Campaigns ─────────────────────────────────────────────────────────────
 
     match /campaigns/{campaignId} {
-      allow read, write: if isAuthenticated();
+      // Membership-only: eval/test missions stay off other players' radar.
+      allow read: if isAuthenticated() && (
+        resource.data.ownerId == request.auth.uid ||
+        request.auth.uid in resource.data.playerIds
+      );
+      allow write: if isDM() || (
+        isAuthenticated() && resource.data.ownerId == request.auth.uid
+      );
 
       // wikiEntities: players can only read "players" visibility; DMs read all + write all
       match /wikiEntities/{entityId} {
