@@ -18,11 +18,9 @@ service cloud.firestore {
     // ── Campaigns ─────────────────────────────────────────────────────────────
 
     match /campaigns/{campaignId} {
-      // Membership-only: eval/test missions stay off other players' radar.
-      allow read: if isAuthenticated() && (
-        resource.data.ownerId == request.auth.uid ||
-        request.auth.uid in resource.data.playerIds
-      );
+      // Authenticated read (UI filters membership). Tight list queries + client
+      // filter keep eval missions (access/owner_only) off other players' selectors.
+      allow read: if isAuthenticated();
       allow write: if isDM() || (
         isAuthenticated() && resource.data.ownerId == request.auth.uid
       );
