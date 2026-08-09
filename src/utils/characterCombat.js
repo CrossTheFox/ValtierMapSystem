@@ -110,15 +110,14 @@ export function applyVitChange(pools, vitMax, nextVit) {
     };
 }
 
+import { isPlayerCharacter } from "./characterRosterKind";
+
 /**
  * True for player characters (PCs).
  * @param {Record<string, unknown>|null|undefined} char
  */
 export function isPlayerFacingCharacter(char) {
-    if (!char) return false;
-    if (char.isNpc || char.isEnemy || char.type === "npc") return false;
-    const t = String(char.type || "").toLowerCase();
-    return Boolean(t === "player" || t === "pc" || char.ownerPlayerId);
+    return isPlayerCharacter(char);
 }
 
 /**
@@ -138,6 +137,41 @@ export function listCampaignCharacters(charactersById, locations) {
         });
     });
     return [...byId.values()];
+}
+
+/**
+ * True when the character belongs to the active campaign (or has no campaignId set).
+ * @param {{ campaignId?: string|null }|null|undefined} char
+ * @param {string|null|undefined} campaignId
+ */
+export function characterBelongsToCampaign(char, campaignId) {
+    if (!char) return false;
+    if (!campaignId) return true;
+    if (!char.campaignId) return true;
+    return char.campaignId === campaignId;
+}
+
+/**
+ * World roster + player sheet list, scoped to the active campaign.
+ * Prevents Valtia (or other) owned/legacy characters leaking into eval/pilot campaigns.
+ *
+ * @param {Record<string, object>|null|undefined} charactersById
+ * @param {Record<string, { characters?: object[] }>|null|undefined} locations
+ * @param {object[]|null|undefined} sheetCharacters
+ * @param {string|null|undefined} campaignId
+ * @returns {Map<string, object>}
+ */
+export function buildCampaignCharacterMap(charactersById, locations, sheetCharacters, campaignId) {
+    const byId = new Map();
+    (sheetCharacters || []).forEach((c) => {
+        if (!c?.id || !characterBelongsToCampaign(c, campaignId)) return;
+        byId.set(c.id, c);
+    });
+    listCampaignCharacters(charactersById, locations).forEach((c) => {
+        if (!c?.id || !characterBelongsToCampaign(c, campaignId)) return;
+        byId.set(c.id, c);
+    });
+    return byId;
 }
 
 /**

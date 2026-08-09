@@ -13,7 +13,7 @@ import { UI_COLORS } from "../../constants/uiColors";
 import { VTT_HUD } from "../../constants/vttHudTokens";
 import { setRulerMode, setDrawMode, setDrawShape, setDrawCircleMode, setDrawColor, showSnackbar } from "../../store/uiSlice";
 import { canControlToken, isDmRole } from "../../utils/tokenControl";
-import { listCampaignCharacters } from "../../utils/characterCombat";
+import { buildCampaignCharacterMap } from "../../utils/characterCombat";
 import { removeMapRuler, removeMapDrawing, updateMapDrawing } from "../../../firebase/services/gameService";
 import {
     CIRCLE_MODES,
@@ -124,16 +124,16 @@ export default function LeftToolsRail() {
     const isDM = isDmRole(profile?.role);
 
     const roster = useMemo(() => {
-        const byId = new Map(
-            listCampaignCharacters(charactersById, locations).map((c) => [c.id, c]),
+        const byId = buildCampaignCharacterMap(
+            charactersById,
+            locations,
+            sheetCharacters,
+            campaignId,
         );
-        (sheetCharacters || []).forEach((c) => {
-            if (c?.id && !byId.has(c.id)) byId.set(c.id, c);
-        });
         const all = [...byId.values()];
         const visible = isDM ? all : all.filter((c) => canControlToken(c, profile));
         return visible.sort((a, b) => (a.name || "").localeCompare(b.name || "", "es"));
-    }, [charactersById, locations, sheetCharacters, isDM, profile]);
+    }, [charactersById, locations, sheetCharacters, campaignId, isDM, profile]);
 
     const selectedId = profile?.activeCharacterId && roster.some((c) => c.id === profile.activeCharacterId)
         ? profile.activeCharacterId

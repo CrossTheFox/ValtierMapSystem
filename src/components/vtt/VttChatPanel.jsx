@@ -18,7 +18,7 @@ import {
     CHAT_MESSAGE_TYPES,
 } from "../../../firebase/services/chatService";
 import { useAssetUrl } from "../../hooks/useAssetUrl";
-import { listCampaignCharacters } from "../../utils/characterCombat";
+import { buildCampaignCharacterMap } from "../../utils/characterCombat";
 import { setActiveCharacterId, persistActiveCharacter } from "../../store/playerSlice";
 import { INLINE_ROLL_MARKER_RE } from "../../utils/abilityRollCommands";
 import { isDmRole } from "../../utils/tokenControl";
@@ -866,15 +866,10 @@ export default function VttChatPanel({
     const sheetCharacters = useSelector((s) => s.characters.list);
     const isDM = isDmRole(profile?.role);
 
-    const allCharactersById = useMemo(() => {
-        const byId = new Map();
-        // Sheet first; world roster overwrites (fresher imageUrl / placement).
-        (sheetCharacters || []).forEach((c) => { if (c?.id) byId.set(c.id, c); });
-        listCampaignCharacters(charactersById, locations).forEach((c) => {
-            if (c?.id) byId.set(c.id, c);
-        });
-        return byId;
-    }, [charactersById, locations, sheetCharacters]);
+    const allCharactersById = useMemo(
+        () => buildCampaignCharacterMap(charactersById, locations, sheetCharacters, campaignId),
+        [charactersById, locations, sheetCharacters, campaignId],
+    );
 
     const avatarByCharacterId = useMemo(() => {
         const map = new Map();

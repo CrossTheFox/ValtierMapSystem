@@ -32,6 +32,27 @@ function serializeFirestore(doc) {
     return clean;
 }
 
+/** Campaign-wide roster (includes characters with null locationId). */
+async function loadCampaignCharacters(campaignId) {
+    /** @type {Record<string, object>} */
+    const charactersById = {};
+    if (!campaignId) return charactersById;
+
+    const charactersSnapshot = await getDocs(
+        query(collection(db, "characters"), where("campaignId", "==", campaignId))
+    );
+
+    charactersSnapshot.forEach((charDoc) => {
+        const character = { id: charDoc.id, ...serializeFirestore(charDoc) };
+        character.stats = character.stats || {};
+        character.bondPowers = Array.isArray(character.bondPowers) ? character.bondPowers : [];
+        character.bond = character.bond ?? null;
+        charactersById[character.id] = character;
+    });
+
+    return charactersById;
+}
+
 async function loadLocationsForMap(mapId, campaignId) {
     const locationsSnapshot = await getDocs(
         query(collection(db, "locations"), where("mapId", "==", mapId))
@@ -46,20 +67,9 @@ async function loadLocationsForMap(mapId, campaignId) {
         };
     });
 
-    const charactersSnapshot = await getDocs(
-        query(collection(db, "characters"), where("campaignId", "==", campaignId))
-    );
+    const charactersById = await loadCampaignCharacters(campaignId);
 
-    /** @type {Record<string, object>} */
-    const charactersById = {};
-
-    charactersSnapshot.forEach((charDoc) => {
-        const character = { id: charDoc.id, ...serializeFirestore(charDoc) };
-        character.stats = character.stats || {};
-        character.bondPowers = Array.isArray(character.bondPowers) ? character.bondPowers : [];
-        character.bond = character.bond ?? null;
-        charactersById[character.id] = character;
-
+    Object.values(charactersById).forEach((character) => {
         if (locations[character.locationId]) {
             locations[character.locationId].characters.push(character);
         }
@@ -104,12 +114,15 @@ export const loadWorld = createAsyncThunk(
 
         if (!maps.length) {
             const placeholder = createEmptyTableMap(campaignId);
+            // Still load the campaign roster — eval / empty-table campaigns have no maps
+            // but characters (and dossier / RED) must remain available.
+            const charactersById = await loadCampaignCharacters(campaignId);
             return {
                 maps: [],
                 map: placeholder,
                 activeMapId: null,
                 locations: {},
-                charactersById: {},
+                charactersById,
                 campaignName,
                 rulesSystem,
             };
@@ -225,21 +238,31 @@ const worldSlice = createSlice({
         updateCharacterInState: (state, action) => {
             const { id, locationId, data } = action.payload;
             if (!id || !data) return;
-            if (state.charactersById[id]) {
-                state.charactersById[id] = { ...state.charactersById[id], ...data };
-            } else {
-                state.charactersById[id] = { id, ...data };
-            }
+
+            const mergeChar = (prev) => {
+                const base = prev || { id };
+                const next = { ...base, ...data };
+                if (data.stats) {
+                    next.stats = { ...(base.stats || {}), ...data.stats };
+                } else if (base.stats) {
+                    next.stats = base.stats;
+                }
+                if (data.bond) {
+                    next.bond = { ...(base.bond || {}), ...data.bond };
+                } else if (base.bond) {
+                    next.bond = base.bond;
+                }
+                return next;
+            };
+
+            state.charactersById[id] = mergeChar(state.charactersById[id]);
             const locId = locationId || state.charactersById[id]?.locationId;
             const location = locId ? state.locations[locId] : null;
 
             if (location && location.characters) {
                 const charIndex = location.characters.findIndex((c) => c.id === id);
                 if (charIndex !== -1) {
-                    location.characters[charIndex] = {
-                        ...location.characters[charIndex],
-                        ...data,
-                    };
+                    location.characters[charIndex] = mergeChar(location.characters[charIndex]);
                 }
             }
         },
