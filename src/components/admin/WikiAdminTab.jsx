@@ -13,7 +13,7 @@ import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
 import { WIKI_ENTITY_TYPES } from "../../constants/wikiEntityTypes";
 import { WIKI_AREA_IDS } from "../../constants/wiki";
 import { useCampaignWikiEntities } from "../../hooks/useCampaignWikiEntities";
-import { openWikiOverlay, restoreDialog, setWikiOverlayAreaFilter } from "../../store/uiSlice";
+import { openWikiOverlay, openNeuralLabOverlay, restoreDialog } from "../../store/uiSlice";
 import { DIALOG_IDS } from "../../constants/dialogIds";
 import AdminSectionShell from "./AdminSectionShell";
 
@@ -101,8 +101,11 @@ export default function WikiAdminTab({ campaignId, onOpenAiConfig }) {
 
     const openArchive = (areaId) => {
         dispatch(restoreDialog(DIALOG_IDS.WIKI));
-        dispatch(setWikiOverlayAreaFilter(areaId));
-        dispatch(openWikiOverlay({ mode: "list" }));
+        dispatch(openWikiOverlay({ mode: "list", areaFilter: areaId }));
+    };
+
+    const openNeuralLab = () => {
+        dispatch(openNeuralLabOverlay());
     };
 
     return (
@@ -152,7 +155,7 @@ export default function WikiAdminTab({ campaignId, onOpenAiConfig }) {
                     <Button
                         size="small"
                         startIcon={<HubIcon />}
-                        onClick={() => openArchive(WIKI_AREA_IDS.NEURAL_LAB)}
+                        onClick={openNeuralLab}
                         sx={{
                             fontFamily: "'Orbitron', sans-serif",
                             fontSize: "0.62rem",

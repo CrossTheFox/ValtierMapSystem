@@ -8,6 +8,7 @@ import LoreDialog from "../components/LoreDialog";
 import CharactersSettingsDialog from "../components/CharactersSettingsDialog";
 import AdminSettingsDialog from "../components/AdminSettingsDialog";
 import NarrativeWikiOverlay from "../components/wiki/NarrativeWikiOverlay";
+import CampaignNeuralLabOverlay from "../components/wiki/CampaignNeuralLabOverlay";
 import CyberSnackbar from "../components/customs/CyberSnackbar";
 import MapContextMenu from "../components/MapContextMenu";
 import MeasuringHUD from "../components/MeasuringHUD";
@@ -35,6 +36,7 @@ const EMPTY_CHAT = Object.freeze({ campaignId: null, messages: Object.freeze([])
 const MemoLocationInfoCard = memo(LocationInfoCard);
 const MemoLoreDialog = memo(LoreDialog);
 const MemoNarrativeWikiOverlay = memo(NarrativeWikiOverlay);
+const MemoCampaignNeuralLabOverlay = memo(CampaignNeuralLabOverlay);
 const MemoCyberSnackbar = memo(CyberSnackbar);
 const MemoCharactersSettingsDialog = memo(CharactersSettingsDialog);
 const MemoAdminSettingsDialog = memo(AdminSettingsDialog);
@@ -65,6 +67,7 @@ export default function UIOverlay() {
 
     const [tokenPanelOpen, setTokenPanelOpen] = useState(false);
     const [chatPanelOpen, setChatPanelOpen] = useState(false);
+    const [rosterPanelOpen, setRosterPanelOpen] = useState(false);
     const abilityBarOpen = useSelector((s) => !!s.ui.abilityBarOpen);
     const [chat, setChat] = useState(EMPTY_CHAT);
     // Everything already in Firestore when the HUD mounts counts as read.
@@ -136,11 +139,13 @@ export default function UIOverlay() {
         setLastReadMs(Date.now());
     }, []);
     const closeToken = useCallback(() => setTokenPanelOpen(false), []);
+    const closeRoster = useCallback(() => setRosterPanelOpen(false), []);
     const toggleChat = useCallback(() => {
         setChatPanelOpen((v) => !v);
         setLastReadMs(Date.now());
     }, []);
     const toggleToken = useCallback(() => setTokenPanelOpen((v) => !v), []);
+    const toggleRoster = useCallback(() => setRosterPanelOpen((v) => !v), []);
     const onToggleAbilityBar = useCallback(() => dispatch(toggleAbilityBar()), [dispatch]);
 
     const leftRail = useMemo(
@@ -156,6 +161,7 @@ export default function UIOverlay() {
             <MemoLocationInfoCard />
             <MemoLoreDialog />
             {isAuthenticated && isDM && <MemoNarrativeWikiOverlay />}
+            {isAuthenticated && isDM && <MemoCampaignNeuralLabOverlay />}
 
             <MemoCharactersSettingsDialog
                 open={!!openDialogs.sheet}
@@ -179,8 +185,10 @@ export default function UIOverlay() {
                     localUid={profile?.uid}
                     chatPanelOpen={chatPanelOpen}
                     tokenPanelOpen={tokenPanelOpen}
+                    rosterPanelOpen={rosterPanelOpen}
                     onCloseChat={closeChat}
                     onCloseToken={closeToken}
+                    onCloseRoster={closeRoster}
                 />
             )}
 
@@ -195,6 +203,9 @@ export default function UIOverlay() {
                     chatPanelOpen={chatPanelOpen}
                     chatUnread={chatUnread}
                     onToggleChatPanel={toggleChat}
+                    showRosterToggle={isAuthenticated && isDM}
+                    rosterPanelOpen={rosterPanelOpen}
+                    onToggleRosterPanel={toggleRoster}
                 />
                 {isAuthenticated && (
                     <MemoCharacterCombatHud

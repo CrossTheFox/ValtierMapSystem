@@ -87,7 +87,7 @@ export const SYSTEM_GLOSSARY_SECTIONS = [
             {
                 term: "Narrative Archive",
                 definition:
-                    "Panel principal del lore de campaña. Agrupa crónica desbloqueable, códice de entidades, línea temporal, grafo NEURAL_LAB y diario de sesiones.",
+                    "Panel principal del lore de campaña. Agrupa crónica desbloqueable, códice de entidades, línea temporal y diario de sesiones. El circuito NEURAL_LAB vive como botón aparte en el VTT.",
             },
             {
                 term: "CODEX",
@@ -102,7 +102,7 @@ export const SYSTEM_GLOSSARY_SECTIONS = [
             {
                 term: "NEURAL_LAB",
                 definition: WIKI_AREAS.find((a) => a.id === "neural_lab")?.description
-                    ?? "Grafo interactivo de entidades conectadas por relaciones, con laboratorio de IA integrado.",
+                    ?? "Circuito Sync-Axis de campaña (overview de personajes + foco) y laboratorio de IA del DJ, fuera del Archive.",
             },
             {
                 term: "SESSIONS",

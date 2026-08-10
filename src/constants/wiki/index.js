@@ -50,14 +50,14 @@ export const WIKI_AREAS = [
             "Línea temporal: eventos históricos y arcos narrativos definidos por el DM, ordenados en el tiempo. Útil para ver qué pasó antes de la campaña o en qué momento encaja un suceso.",
         phase: "live",
     },
-    {
-        id: WIKI_AREA_IDS.NEURAL_LAB,
-        label: "NEURAL_LAB",
-        hint: "Grafo de relaciones + laboratorio IA",
-        description:
-            "Red neuronal de entidades conectadas por relaciones, junto al laboratorio de IA. Selecciona un nodo para ver su ficha y generar narrativa anclada.",
-        phase: "live",
-    },
+        {
+            id: WIKI_AREA_IDS.NEURAL_LAB,
+            label: "NEURAL_LAB",
+            hint: "Circuito de relaciones + laboratorio IA (VTT)",
+            description:
+                "Superficie aparte del Archive: overview de todos los personajes en circuito Sync-Axis, foco al hacer click, y laboratorio de IA para el DJ.",
+            phase: "live",
+        },
     {
         id: WIKI_AREA_IDS.SESSIONS,
         label: "SESSIONS",
@@ -68,8 +68,10 @@ export const WIKI_AREAS = [
     },
 ];
 
-/** Areas shown in the narrative archive tab nav (excludes Chronicle drawer-only area). */
-export const WIKI_ARCHIVE_AREAS = WIKI_AREAS.filter((a) => a.id !== WIKI_AREA_IDS.LORE);
+/** Areas shown in the narrative archive tab nav (excludes Chronicle drawer-only + Neural Lab). */
+export const WIKI_ARCHIVE_AREAS = WIKI_AREAS.filter(
+    (a) => a.id !== WIKI_AREA_IDS.LORE && a.id !== WIKI_AREA_IDS.NEURAL_LAB,
+);
 
 /** Intro shown when browsing the codex surface. */
 export const WIKI_ARCHIVE_INTRO =
@@ -110,8 +112,10 @@ export const WIKI_AREA_ENTITY_TYPES = {
  */
 export function normalizeWikiAreaFilter(areaId) {
     if (!areaId) return WIKI_AREA_IDS.CODEX;
-    if (areaId === "glossary" || areaId === "network") {
-        return areaId === "network" ? WIKI_AREA_IDS.NEURAL_LAB : WIKI_AREA_IDS.CODEX;
+    // Legacy Neural Lab lived in Archive; now a separate VTT overlay.
+    if (areaId === "glossary") return WIKI_AREA_IDS.CODEX;
+    if (areaId === "network" || areaId === WIKI_AREA_IDS.NEURAL_LAB) {
+        return WIKI_AREA_IDS.CODEX;
     }
     return areaId;
 }
