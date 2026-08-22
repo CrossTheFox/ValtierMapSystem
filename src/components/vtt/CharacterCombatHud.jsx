@@ -37,7 +37,7 @@ import { useAssetUrl } from "../../hooks/useAssetUrl";
 import { useResolvedCombatStats } from "../../hooks/useResolvedCombatStats";
 import { setActiveCharacterId, persistActiveCharacter } from "../../store/playerSlice";
 import { showSnackbar, openCharacterSheet } from "../../store/uiSlice";
-import { usePersistedCharacterVitals } from "../../hooks/usePersistedCharacterVitals";
+import { usePersistedCharacterVitals, mergeHudCharacter } from "../../hooks/usePersistedCharacterVitals";
 import { canControlToken, isDmRole } from "../../utils/tokenControl";
 import {
     DEFAULT_VIT,
@@ -1445,16 +1445,10 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         if (!base) return null;
         const sheet = (sheetCharacters || []).find((c) => c.id === base.id);
         if (!sheet) return { ...base, burdens: normalizeBurdens(base.burdens) };
-        return {
-            ...base,
-            ...sheet,
-            // Don't let a sparse sheet stub wipe map/HUD token media.
-            imageUrl: sheet.imageUrl || base.imageUrl || null,
-            tokenImageUrl: sheet.tokenImageUrl || base.tokenImageUrl || null,
-            tokenCrop: sheet.tokenCrop || base.tokenCrop || null,
+        return mergeHudCharacter(base, sheet, {
             burdens: mergeBurdensPreferFilled(sheet.burdens, base.burdens),
             macroBar: mergeMacroBarPreferFilled(sheet.macroBar, base.macroBar),
-        };
+        });
     }, [roster, selectedId, sheetCharacters]);
 
     const activeInitEntry = useMemo(() => {
@@ -1570,7 +1564,12 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
     const handleVitChange = (nextVit) => {
         if (!selected || !vitals) return;
         const prevHp = hpCur;
-        const result = applyVitChangeOnCharacter(selected, nextVit, null, hpCur);
+        const result = applyVitChangeOnCharacter(
+            { ...selected, hpCur, vit: vitCur, hpBroken: vitals.hpBroken },
+            nextVit,
+            null,
+            hpCur,
+        );
         persistVitals({
             vit: result.vit,
             hpCur: result.hpCur,
@@ -1584,7 +1583,12 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         const ratio = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
         const nextHp = Math.round(ratio * sheetHpMax);
         const prevHp = hpCur;
-        const result = applyHpWithVitCascadeOnCharacter(selected, nextHp, null, hpCur);
+        const result = applyHpWithVitCascadeOnCharacter(
+            { ...selected, hpCur, vit: vitCur, hpBroken: vitals.hpBroken },
+            nextHp,
+            null,
+            hpCur,
+        );
         persistVitals({
             vit: result.vit,
             hpCur: result.hpCur,

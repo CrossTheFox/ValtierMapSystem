@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { updateCharacterFields } from "../../firebase/services/characterService";
 import { updateCharacterInList } from "../store/characterSlice";
@@ -10,8 +10,41 @@ import {
     normalizeCharacterVitals,
 } from "../utils/characterVitals";
 
+/** Debounce window for batched Firestore vitals writes (HUD scrub / rapid clicks). */
+const FIRESTORE_DEBOUNCE_MS = 350;
+
+function mergeVitalsPatch(prev, partial) {
+    if (!partial || typeof partial !== "object") return prev;
+    const next = { ...(prev || {}) };
+    for (const [key, value] of Object.entries(partial)) {
+        if (key === "effort" && value && typeof value === "object") {
+            next.effort = { ...(prev?.effort || {}), ...value };
+        } else {
+            next[key] = value;
+        }
+    }
+    return next;
+}
+
+function mergeVitalsDisplay(base, overlay) {
+    if (!overlay) return base;
+    return {
+        ...base,
+        ...overlay,
+        effort: overlay.effort
+            ? { ...base.effort, ...overlay.effort }
+            : base.effort,
+    };
+}
+
 /**
  * Read + persist vitals on `characters/{id}`.
+ *
+ * **Pattern (canonical for HUD combat vitals):**
+ * 1. Optimistic local overlay → instant UI
+ * 2. Redux patch immediately → roster/world stay in sync
+ * 3. Debounced Firestore write → durability without blocking scrubbing
+ *
  * Falls back to legacy `game.sessionPools.{characterId}` until migrated.
  */
 export function usePersistedCharacterVitals(character, options = {}) {
@@ -21,45 +54,131 @@ export function usePersistedCharacterVitals(character, options = {}) {
         character?.id ? s.game?.sessionPools?.[character.id] ?? null : null
     ));
     const migratedRef = useRef(new Set());
+    const characterId = character?.id ?? null;
 
-    const vitals = useMemo(() => {
-        if (!character) {
-            return null;
+    const [localPatch, setLocalPatch] = useState(null);
+    const pendingFirestoreRef = useRef(null);
+    const firestoreTimerRef = useRef(null);
+    const characterRef = useRef(character);
+    characterRef.current = character;
+
+    useEffect(() => {
+        setLocalPatch(null);
+        pendingFirestoreRef.current = null;
+        if (firestoreTimerRef.current) {
+            clearTimeout(firestoreTimerRef.current);
+            firestoreTimerRef.current = null;
         }
+    }, [characterId]);
+
+    const baseVitals = useMemo(() => {
+        if (!character) return null;
         return normalizeCharacterVitals(character, { effortMax, sessionPoolEntry });
     }, [character, effortMax, sessionPoolEntry]);
 
-    const persistVitals = useCallback(async (partial) => {
-        if (!character?.id || !partial || typeof partial !== "object") return false;
+    const vitals = useMemo(
+        () => (baseVitals ? mergeVitalsDisplay(baseVitals, localPatch) : null),
+        [baseVitals, localPatch],
+    );
+
+    const applyOptimisticRedux = useCallback((partial) => {
+        const char = characterRef.current;
+        if (!char?.id || !partial) return;
+        dispatch(updateCharacterInList({ id: char.id, data: partial }));
+        dispatch(updateCharacterInState({
+            id: char.id,
+            locationId: char.locationId,
+            data: partial,
+        }));
+    }, [dispatch]);
+
+    const flushFirestore = useCallback(async () => {
+        firestoreTimerRef.current = null;
+        const char = characterRef.current;
+        const patch = pendingFirestoreRef.current;
+        pendingFirestoreRef.current = null;
+        if (!char?.id || !patch || !Object.keys(patch).length) return;
+
         try {
-            await updateCharacterFields(character.id, partial);
-            dispatch(updateCharacterInList({ id: character.id, data: partial }));
-            dispatch(updateCharacterInState({
-                id: character.id,
-                locationId: character.locationId,
-                data: partial,
-            }));
-            return true;
+            await updateCharacterFields(char.id, patch);
         } catch (err) {
             console.error("[usePersistedCharacterVitals] persist failed", err);
             dispatch(showSnackbar({ message: "No se pudieron guardar los vitals", severity: "error" }));
-            return false;
         }
-    }, [character, dispatch]);
+    }, [dispatch]);
+
+    const scheduleFirestore = useCallback((partial) => {
+        pendingFirestoreRef.current = mergeVitalsPatch(pendingFirestoreRef.current, partial);
+        if (firestoreTimerRef.current) clearTimeout(firestoreTimerRef.current);
+        firestoreTimerRef.current = setTimeout(flushFirestore, FIRESTORE_DEBOUNCE_MS);
+    }, [flushFirestore]);
+
+    /** Instant UI + Redux; Firestore debounced in background. */
+    const persistVitals = useCallback((partial) => {
+        if (!characterId || !partial || typeof partial !== "object") return;
+        setLocalPatch((prev) => mergeVitalsPatch(prev, partial));
+        applyOptimisticRedux(partial);
+        scheduleFirestore(partial);
+    }, [characterId, applyOptimisticRedux, scheduleFirestore]);
+
+    /** Await Firestore immediately (flush pending + leave guard). */
+    const flushSave = useCallback(async () => {
+        if (firestoreTimerRef.current) {
+            clearTimeout(firestoreTimerRef.current);
+            firestoreTimerRef.current = null;
+        }
+        await flushFirestore();
+    }, [flushFirestore]);
+
+    useEffect(() => () => {
+        if (firestoreTimerRef.current) clearTimeout(firestoreTimerRef.current);
+    }, []);
 
     /** One-shot: copy legacy sessionPools → character doc (Zymthe-style chars). */
     useEffect(() => {
-        if (!autoMigrate || !character?.id || characterHasPersistedVitals(character)) return;
-        if (!sessionPoolEntry || migratedRef.current.has(character.id)) return;
+        if (!autoMigrate || !characterId || characterHasPersistedVitals(character)) return;
+        if (!sessionPoolEntry || migratedRef.current.has(characterId)) return;
 
         const patch = buildVitalsMigrationPatch(character, sessionPoolEntry, effortMax);
         if (!patch) return;
 
-        migratedRef.current.add(character.id);
-        persistVitals(patch).catch(() => {
-            migratedRef.current.delete(character.id);
-        });
-    }, [autoMigrate, character, sessionPoolEntry, effortMax, persistVitals]);
+        migratedRef.current.add(characterId);
+        persistVitals(patch);
+    }, [autoMigrate, character, characterId, sessionPoolEntry, effortMax, persistVitals]);
 
-    return { vitals, sessionPoolEntry, persistVitals, hasPersistedVitals: characterHasPersistedVitals(character) };
+    return {
+        vitals,
+        sessionPoolEntry,
+        persistVitals,
+        flushSave,
+        hasPersistedVitals: characterHasPersistedVitals(character),
+    };
+}
+
+/**
+ * Merge player sheet stub over world character without clobbering live vitals.
+ * World (charactersById) receives HUD writes; sheet list can lag behind fetch.
+ */
+export function mergeHudCharacter(base, sheet, extras = {}) {
+    if (!base) return null;
+    if (!sheet) return { ...base, ...extras, burdens: extras.burdens ?? base.burdens };
+
+    const merged = {
+        ...base,
+        ...sheet,
+        ...extras,
+        imageUrl: sheet.imageUrl || base.imageUrl || null,
+        tokenImageUrl: sheet.tokenImageUrl || base.tokenImageUrl || null,
+        tokenCrop: sheet.tokenCrop || base.tokenCrop || null,
+    };
+
+    if (Number.isFinite(Number(base.hpCur))) merged.hpCur = base.hpCur;
+    if (Number.isFinite(Number(base.vigor))) merged.vigor = base.vigor;
+    if (Number.isFinite(Number(base.vit))) merged.vit = base.vit;
+    if (typeof base.hpBroken === "boolean") merged.hpBroken = base.hpBroken;
+    if (base.effort != null && typeof base.effort === "object") merged.effort = base.effort;
+    if (base.turn != null && typeof base.turn === "object") merged.turn = base.turn;
+    if (Array.isArray(base.conditions)) merged.conditions = base.conditions;
+
+    return merged;
 }
