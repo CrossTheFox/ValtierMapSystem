@@ -20,7 +20,11 @@
  */
 
 import { WIKI_ENTITY_TYPE_LABELS, WIKI_ENTITY_TYPES } from "../constants/wikiEntityTypes.js";
-import { WIKI_RELATION_TYPE_LABELS, WIKI_RELATION_TYPES as R } from "../constants/wikiRelationTypes.js";
+import {
+    WIKI_RELATION_TYPE_LABELS,
+    WIKI_RELATION_TYPES as R,
+    isAffinityRelation,
+} from "../constants/wikiRelationTypes.js";
 import { parseMentions, parseSlugMentions } from "./wikiSlug.js";
 import { resolvedEntitiesFromText } from "./resolveWikiMentions.js";
 import {
@@ -152,11 +156,22 @@ function entityToTextForAi(entity, wave = 0, compact = false, ctx = {}) {
         lines.push(`Etiquetas: ${entity.tags.join(", ")}`);
     }
 
-    // Vínculos directos con entidades del evento (inner ring, wave >= 1)
+    // Affinity bonds with entities in the event (inner ring, wave >= 1)
     if (ctx.relationsForEntity?.length) {
         const entityMap = ctx.entityMap ?? new Map();
         const bondLines = ctx.relationsForEntity
-            .filter((r) => r.strength && Math.abs(r.strength) >= 3)
+            .filter((r) => {
+                const other = entityMap.get(
+                    r.fromEntityId === entity.id ? r.toEntityId : r.fromEntityId
+                );
+                if (!other) return false;
+                if (!isAffinityRelation({
+                    relationType: r.relationType,
+                    fromEntityType: entityMap.get(r.fromEntityId)?.entityType,
+                    toEntityType: entityMap.get(r.toEntityId)?.entityType,
+                })) return false;
+                return r.strength && Math.abs(r.strength) >= 3;
+            })
             .map((r) => {
                 const other = entityMap.get(
                     r.fromEntityId === entity.id ? r.toEntityId : r.fromEntityId
@@ -184,11 +199,20 @@ function entityToTextCascade(entity, wave, compact = false) {
 function relationsToText(relations, entityMap) {
     if (!relations.length) return "";
     const lines = relations.map((r) => {
-        const fromTitle = entityMap.get(r.fromEntityId)?.title ?? r.fromEntityId;
-        const toTitle   = entityMap.get(r.toEntityId)?.title   ?? r.toEntityId;
+        const fromEnt = entityMap.get(r.fromEntityId);
+        const toEnt = entityMap.get(r.toEntityId);
+        const fromTitle = fromEnt?.title ?? r.fromEntityId;
+        const toTitle   = toEnt?.title   ?? r.toEntityId;
         const relLabel  = WIKI_RELATION_TYPE_LABELS[r.relationType] ?? r.relationType;
         const note      = r.label ? ` (${r.label})` : "";
-        const strength  = r.strength && r.strength !== 0 ? ` [fuerza: ${r.strength}]` : "";
+        const affinity = isAffinityRelation({
+            relationType: r.relationType,
+            fromEntityType: fromEnt?.entityType,
+            toEntityType: toEnt?.entityType,
+        });
+        const strength = affinity && r.strength && r.strength !== 0
+            ? ` [fuerza: ${r.strength}]`
+            : "";
         return `- ${fromTitle} → [${relLabel}] → ${toTitle}${note}${strength}`;
     });
     return `## Relaciones en el subgrafo\n\n${lines.join("\n")}`;
@@ -495,6 +519,15 @@ function computeWaveMap(anchorEntityId, entities, relations, maxWaves, { aiRules
             const neighborId = r.fromEntityId === id ? r.toEntityId : r.fromEntityId;
             if (waveMap.has(neighborId)) continue;
             if (!entityById.has(neighborId)) continue;
+
+            const fromEnt = entityById.get(r.fromEntityId);
+            const toEnt = entityById.get(r.toEntityId);
+            // Structural facts never deepen cascade waves / impact rings
+            if (!isAffinityRelation({
+                relationType: r.relationType,
+                fromEntityType: fromEnt?.entityType,
+                toEntityType: toEnt?.entityType,
+            })) continue;
 
             const weight = CASCADE_WAVE_RELATION_WEIGHTS[r.relationType];
             if (!weight) continue;
@@ -995,12 +1028,20 @@ export function buildScoutContext(cascadeCtxMeta, anchorEntityId, entities, rela
         .slice(0, 40);
 
     if (coreRels.length > 0) {
-        lines.push("\n## Vínculos principales (from|to|tipo|fuerza)");
+        lines.push("\n## Vínculos principales (from|to|tipo|fuerza|kind)");
         for (const r of coreRels) {
-            const fromTitle = entityById.get(r.fromEntityId)?.title ?? r.fromEntityId;
-            const toTitle   = entityById.get(r.toEntityId)?.title   ?? r.toEntityId;
-            const strength  = r.strength ?? 0;
-            lines.push(`${fromTitle}|${toTitle}|${r.relationType}|${strength}`);
+            const fromEnt = entityById.get(r.fromEntityId);
+            const toEnt = entityById.get(r.toEntityId);
+            const fromTitle = fromEnt?.title ?? r.fromEntityId;
+            const toTitle   = toEnt?.title   ?? r.toEntityId;
+            const affinity = isAffinityRelation({
+                relationType: r.relationType,
+                fromEntityType: fromEnt?.entityType,
+                toEntityType: toEnt?.entityType,
+            });
+            const strength = affinity ? (r.strength ?? 0) : "—";
+            const kind = affinity ? "afinidad" : "hecho";
+            lines.push(`${fromTitle}|${toTitle}|${r.relationType}|${strength}|${kind}`);
         }
     }
 

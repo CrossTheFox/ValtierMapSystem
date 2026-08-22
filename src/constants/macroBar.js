@@ -108,24 +108,104 @@ export function setMacroSlot(bar, page, slot, entry) {
 }
 
 /**
- * Accent color for slot type chips.
+ * Place entry in page/slot, removing any other copies of the same id (move, don't duplicate).
+ */
+export function placeMacroEntry(bar, page, slot, entry) {
+    const clean = sanitizeMacroSlot(entry);
+    const next = normalizeMacroBar(bar);
+    const p = Math.max(0, Math.min(MACRO_PAGE_COUNT - 1, Math.floor(Number(page) || 0)));
+    const s = Math.max(0, Math.min(MACRO_SLOT_COUNT - 1, Math.floor(Number(slot) || 0)));
+    if (clean?.id) {
+        for (let pi = 0; pi < MACRO_PAGE_COUNT; pi += 1) {
+            for (let si = 0; si < MACRO_SLOT_COUNT; si += 1) {
+                if (next.pages[pi][si]?.id === clean.id) next.pages[pi][si] = null;
+            }
+        }
+    }
+    next.pages[p][s] = clean;
+    return next;
+}
+
+/** @returns {{ page: number, slot: number }|null} */
+export function findMacroPin(bar, entryId) {
+    const id = String(entryId || "").trim();
+    if (!id) return null;
+    const normalized = normalizeMacroBar(bar);
+    for (let p = 0; p < MACRO_PAGE_COUNT; p += 1) {
+        for (let s = 0; s < MACRO_SLOT_COUNT; s += 1) {
+            if (normalized.pages[p][s]?.id === id) return { page: p, slot: s };
+        }
+    }
+    return null;
+}
+
+export function countMacroSlotsFilled(bar) {
+    const normalized = normalizeMacroBar(bar);
+    let n = 0;
+    for (let p = 0; p < MACRO_PAGE_COUNT; p += 1) {
+        for (let s = 0; s < MACRO_SLOT_COUNT; s += 1) {
+            if (normalized.pages[p][s]) n += 1;
+        }
+    }
+    return n;
+}
+
+/** Prefer the bar with more filled slots (avoids empty sheet stubs wiping live HUD). */
+export function mergeMacroBarPreferFilled(primary, fallback) {
+    const a = normalizeMacroBar(primary);
+    const b = normalizeMacroBar(fallback);
+    return countMacroSlotsFilled(a) >= countMacroSlotsFilled(b) ? a : b;
+}
+
+/**
+ * Accent color for slot type chips / borders.
+ * Always `#RRGGBB` so `${accent}aa` alpha suffixes stay valid CSS.
+ * Trait=cyan · Ability=magenta · LB=danger red · Object=yellow · Shortcut/other=silver.
  * @param {string} type
  */
 export function macroTypeAccent(type) {
     switch (type) {
         case MACRO_SLOT_TYPES.TRAIT:
-            return "#7dd3fc";
-        case MACRO_SLOT_TYPES.ULTIMATE:
-            return "#ffcc33";
-        case MACRO_SLOT_TYPES.OBJECT:
-            return "#a78bfa";
-        case MACRO_SLOT_TYPES.SHORTCUT:
             return "#00f2ea";
-        case MACRO_SLOT_TYPES.CUSTOM:
-            return "#ff66ff";
         case MACRO_SLOT_TYPES.ABILITY:
-        default:
             return "#ff66ff";
+        case MACRO_SLOT_TYPES.ULTIMATE:
+            return "#ff3355";
+        case MACRO_SLOT_TYPES.OBJECT:
+            return "#f5c542";
+        case MACRO_SLOT_TYPES.SHORTCUT:
+            return "#c5cad6";
+        case MACRO_SLOT_TYPES.CUSTOM:
+            return "#d0a8ff";
+        default:
+            return "#c5cad6";
+    }
+}
+
+/** Append 2-digit hex alpha to `#RRGGBB`. Safe no-op for non-hex (e.g. rgba borders). */
+export function withHexAlpha(color, aa = "33") {
+    const c = String(color || "").trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(c)) return `${c}${aa}`;
+    return c;
+}
+
+/** Human label for hover meta (LB → Limit Break). */
+export function macroTypeLabel(type) {
+    switch (type) {
+        case MACRO_SLOT_TYPES.TRAIT:
+            return "TRAIT";
+        case MACRO_SLOT_TYPES.ABILITY:
+            return "ABILITY";
+        case MACRO_SLOT_TYPES.ULTIMATE:
+            return "LIMIT BREAK · LB";
+        case MACRO_SLOT_TYPES.OBJECT:
+            return "OBJECT";
+        case MACRO_SLOT_TYPES.SHORTCUT:
+            return "SHORTCUT";
+        case MACRO_SLOT_TYPES.CUSTOM:
+            return "CUSTOM";
+        default:
+            return String(type || "MACRO").toUpperCase();
     }
 }
 
@@ -135,6 +215,7 @@ export function macroTypeAccent(type) {
  */
 export function macroSlotShortLabel(slot) {
     if (!slot) return "";
+    if (slot.type === MACRO_SLOT_TYPES.ULTIMATE) return "LB";
     const raw = String(slot.label || slot.id || "?").trim();
     return raw.slice(0, 8).toUpperCase() || "?";
 }

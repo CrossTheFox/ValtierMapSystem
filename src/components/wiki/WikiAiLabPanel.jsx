@@ -450,6 +450,14 @@ export default function WikiAiLabPanel({
     narrativeSettings,
     onPropagationStart,
     onPropagationEnd,
+    onPropagationResult,
+    cascadePresentation = "inline",
+    onFocusImpact,
+    focusedImpactEntityId = null,
+    pendingReviewEntityId = null,
+    pendingReviewNonce = null,
+    propagationDepth: propagationDepthProp = null,
+    onPropagationDepthChange = null,
 }) {
     const dispatch   = useDispatch();
     const uid        = useSelector((s) => s.player.profile?.uid);
@@ -474,8 +482,16 @@ export default function WikiAiLabPanel({
     const [sessionRecaps, setSessionRecaps] = useState([]);
     const [estimatedTokens, setEstimatedTokens] = useState(null);
 
-    // Cascade propagation depth (slider 1–8)
-    const [propagationDepth, setPropagationDepth] = useState(3);
+    // Cascade propagation depth (slider 1–8) — optional controlled from Neural Lab
+    const [propagationDepthLocal, setPropagationDepthLocal] = useState(3);
+    const propagationDepth = Number.isFinite(propagationDepthProp)
+        ? propagationDepthProp
+        : propagationDepthLocal;
+    const setPropagationDepth = (v) => {
+        const next = Math.max(1, Math.min(8, Math.round(Number(v) || 3)));
+        if (!Number.isFinite(propagationDepthProp)) setPropagationDepthLocal(next);
+        onPropagationDepthChange?.(next);
+    };
 
     // Cascade: live mention preview from instruction text
     const [mentionPreview, setMentionPreview] = useState(null);
@@ -661,11 +677,14 @@ export default function WikiAiLabPanel({
                 ? [result.eventTitle]
                 : (result?.proposedEvent?.title ? [result.proposedEvent.title] : []);
         setResult(null);
+        onPropagationResult?.(null);
         setContextMeta(null);
         setLastContextText("");
         setShowContextText(false);
         setTokenUsage(null);
         setEstimatedTokens(null);
+
+        let cascadeSealed = false;
 
         const effectiveGenerationParams = variation
             ? {
@@ -925,6 +944,10 @@ export default function WikiAiLabPanel({
 
                 throwIfAborted();
                 setResult(validated);
+                if (onPropagationResult) {
+                    onPropagationResult(validated);
+                    cascadeSealed = true;
+                }
                 try {
                     await persistThread(instruction, validated.summary ?? "Evento cascada generado", usage);
                 } catch (persistErr) {
@@ -963,7 +986,14 @@ export default function WikiAiLabPanel({
                 setTokenUsage(usage);
 
                 const contextEntities = graphEntities.filter((e) => ctx.meta.entityIds.includes(e.id));
-                const validated = validateAiResponse(mode, raw, contextEntities, graphEntities);
+                const validated = validateAiResponse(mode, raw, contextEntities, graphEntities, {
+                    aiRules,
+                    explicitMentionIds: [...getExplicitlyMentionedEntityIds(
+                        instruction || intent || "",
+                        graphEntities
+                    )],
+                    relations,
+                });
                 setResult(validated);
 
                 const assistantSummary = mode === AI_MODES.SITUATION
@@ -990,7 +1020,7 @@ export default function WikiAiLabPanel({
             if (abortRef.current === ac) abortRef.current = null;
             setLoading(false);
             if (mode === AI_MODES.CASCADE) {
-                restoreCascadePreview();
+                if (!cascadeSealed) restoreCascadePreview();
             } else {
                 onPropagationEnd?.();
             }
@@ -998,7 +1028,7 @@ export default function WikiAiLabPanel({
     }, [
         mode, modelId, intent, instruction, selectedEntity, graphEntities, relations,
         aiRules, generationParams, propagationOpts, propagationDepth,
-        onPropagationStart, onPropagationEnd, restoreCascadePreview,
+        onPropagationStart, onPropagationEnd, onPropagationResult, restoreCascadePreview,
         canonSummary, sessionRecaps, threadMessages, extraAnchorIds,
         activeThreadId, campaignId, hasGeminiKey, result,
     ]);
@@ -1889,6 +1919,11 @@ export default function WikiAiLabPanel({
                         result={result}
                         campaignId={campaignId}
                         eventInstruction={instruction}
+                        presentation={cascadePresentation}
+                        onFocusImpact={onFocusImpact}
+                        focusedImpactEntityId={focusedImpactEntityId}
+                        pendingReviewEntityId={pendingReviewEntityId}
+                        pendingReviewNonce={pendingReviewNonce}
                     />
                 )}
             </Box>

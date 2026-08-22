@@ -9,7 +9,7 @@ import { placeTokenOnBoard, placeTokensOnBoard } from "../../firebase/services/g
 import { loadTexture } from "../../firebase/services/assetLoader";
 import {
     resolveCellSize,
-    snapToGridCenter,
+    snapTokenToGrid,
     snapWorldToGridPoint,
     buildRulerMeasure,
     resolveTokenDiameter,
@@ -168,6 +168,240 @@ function ringColorForChar(char) {
     return HOVER_CYAN;
 }
 
+/** Bump when token chrome textures change so markers rebuild. */
+const TOKEN_SMOOTH_VIS = "s3";
+
+function colorToCss(color) {
+    return `#${(color >>> 0).toString(16).padStart(6, "0")}`;
+}
+
+function tokenRimWidth(radius) {
+    return Math.max(2.25, Math.min(4, radius * 0.085));
+}
+
+function radiusBucket(radius) {
+    return Math.round(radius * 2) / 2;
+}
+
+/** Shared canvas→Texture cache (keys are size/color buckets). */
+const tokenCircleTexCache = new Map();
+
+function clearTokenCircleTexCache() {
+    tokenCircleTexCache.forEach((entry) => {
+        try {
+            entry.texture?.destroy(true);
+        } catch {
+            /* already destroyed */
+        }
+    });
+    tokenCircleTexCache.clear();
+}
+
+function canvasCircleSupersample() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    return Math.min(4, Math.max(2.5, dpr * 2.25));
+}
+
+/**
+ * @param {string} key
+ * @param {number} worldSize
+ * @param {(ctx: CanvasRenderingContext2D, px: number, worldSize: number) => void} draw
+ * @returns {{ texture: PIXI.Texture, worldSize: number }}
+ */
+function getCanvasTextureEntry(key, worldSize, draw) {
+    let entry = tokenCircleTexCache.get(key);
+    if (entry) return entry;
+
+    const scale = canvasCircleSupersample();
+    const px = Math.max(48, Math.ceil(Math.max(8, worldSize) * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = px;
+    canvas.height = px;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, px, px);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    draw(ctx, px, worldSize);
+
+    const texture = PIXI.Texture.from(canvas);
+    if (texture.source) texture.source.scaleMode = "linear";
+    entry = { texture, worldSize };
+    tokenCircleTexCache.set(key, entry);
+    return entry;
+}
+
+function spriteFromTexEntry(entry) {
+    const sprite = new PIXI.Sprite(entry.texture);
+    sprite.anchor.set(0.5);
+    sprite.width = entry.worldSize;
+    sprite.height = entry.worldSize;
+    sprite.eventMode = "none";
+    return sprite;
+}
+
+function applyTexEntryToSprite(sprite, entry) {
+    if (!sprite || !entry) return;
+    if (sprite.texture !== entry.texture) sprite.texture = entry.texture;
+    sprite.width = entry.worldSize;
+    sprite.height = entry.worldSize;
+}
+
+/** Soft circular alpha mask via canvas AA. */
+function createCircleMaskSprite(radius) {
+    const worldSize = Math.max(8, radius * 2);
+    const key = `mask|${radiusBucket(radius)}`;
+    const entry = getCanvasTextureEntry(key, worldSize, (ctx, px, ws) => {
+        ctx.beginPath();
+        ctx.arc(px / 2, px / 2, Math.max(1, (radius * px) / ws), 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+    });
+    return spriteFromTexEntry(entry);
+}
+
+/** Solid cyber rim (supersampled canvas). */
+function createTokenRimSprite(radius, color) {
+    const rimW = tokenRimWidth(radius);
+    const underW = rimW + 1.75;
+    const hairW = Math.max(0.9, rimW * 0.32);
+    const outerExtent = radius + underW * 0.5 + 1.5;
+    const worldSize = outerExtent * 2;
+    const key = `rim|${colorToCss(color)}|${radiusBucket(radius)}|${Math.round(rimW * 10)}`;
+
+    const entry = getCanvasTextureEntry(key, worldSize, (ctx, px, ws) => {
+        const cx = px / 2;
+        const cy = px / 2;
+        const s = px / ws;
+        const strokeAt = (rWorld, widthWorld, css, alpha) => {
+            ctx.beginPath();
+            ctx.arc(cx, cy, Math.max(0.5, rWorld * s), 0, Math.PI * 2);
+            ctx.strokeStyle = css;
+            ctx.globalAlpha = alpha;
+            ctx.lineWidth = Math.max(1, widthWorld * s);
+            ctx.lineJoin = "round";
+            ctx.lineCap = "round";
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+        };
+        strokeAt(radius, underW, colorToCss(DARK_BG), 0.98);
+        strokeAt(radius, rimW, colorToCss(color), 1);
+        strokeAt(Math.max(1, radius - rimW * 0.55), hairW, "#ffffff", 0.28);
+    });
+    return spriteFromTexEntry(entry);
+}
+
+/** Filled fallback disk (no portrait) — canvas AA. */
+function createFallbackFillSprite(radius, color) {
+    const worldSize = Math.max(8, radius * 2);
+    const key = `disk|${colorToCss(color)}|${radiusBucket(radius)}`;
+    const entry = getCanvasTextureEntry(key, worldSize, (ctx, px, ws) => {
+        const cx = px / 2;
+        const cy = px / 2;
+        const s = px / ws;
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.max(1, radius * 0.92 * s), 0, Math.PI * 2);
+        ctx.fillStyle = colorToCss(DARK_BG);
+        ctx.globalAlpha = 0.95;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.max(1, radius * 0.78 * s), 0, Math.PI * 2);
+        ctx.fillStyle = colorToCss(color);
+        ctx.globalAlpha = 0.88;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+    });
+    return spriteFromTexEntry(entry);
+}
+
+function getHoverRingEntry(radius) {
+    const r1 = radius + Math.max(2, radius * 0.06);
+    const r2 = radius + Math.max(4, radius * 0.12);
+    const w1 = Math.max(2.5, radius * 0.14);
+    const w2 = Math.max(1, radius * 0.05);
+    const outer = r2 + w2 * 0.5 + 2;
+    const worldSize = outer * 2;
+    const key = `hover|${radiusBucket(radius)}`;
+    return getCanvasTextureEntry(key, worldSize, (ctx, px, ws) => {
+        const cx = px / 2;
+        const cy = px / 2;
+        const s = px / ws;
+        const strokeAt = (rWorld, widthWorld, alpha) => {
+            ctx.beginPath();
+            ctx.arc(cx, cy, Math.max(0.5, rWorld * s), 0, Math.PI * 2);
+            ctx.strokeStyle = colorToCss(HOVER_CYAN);
+            ctx.globalAlpha = alpha;
+            ctx.lineWidth = Math.max(1, widthWorld * s);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+        };
+        strokeAt(r1, w1, 0.85);
+        strokeAt(r2, w2, 0.35);
+    });
+}
+
+function getSelectChromeEntry(radius) {
+    const pad = Math.max(1, radius * 0.04);
+    const half = radius - pad;
+    const lw = Math.max(1.1, radius * 0.05);
+    const arm = Math.max(3.5, radius * 0.2);
+    const inset = Math.max(2, radius * 0.08);
+    const outer = half + lw + 2;
+    const worldSize = outer * 2;
+    const key = `sel|${radiusBucket(radius)}`;
+
+    return getCanvasTextureEntry(key, worldSize, (ctx, px, ws) => {
+        const cx = px / 2;
+        const cy = px / 2;
+        const s = px / ws;
+        const toPx = (v) => v * s;
+
+        const strokeRect = (h, widthWorld, css, alpha) => {
+            const side = toPx(h * 2);
+            ctx.strokeStyle = css;
+            ctx.globalAlpha = alpha;
+            ctx.lineWidth = Math.max(1, toPx(widthWorld));
+            ctx.strokeRect(cx - side / 2, cy - side / 2, side, side);
+            ctx.globalAlpha = 1;
+        };
+
+        // Whisper fill
+        {
+            const side = toPx(half * 2);
+            ctx.fillStyle = colorToCss(SELECT_MAGENTA);
+            ctx.globalAlpha = 0.05;
+            ctx.fillRect(cx - side / 2, cy - side / 2, side, side);
+            ctx.globalAlpha = 1;
+        }
+
+        strokeRect(half, lw, colorToCss(SELECT_MAGENTA), 0.75);
+        strokeRect(half - inset, Math.max(0.9, lw * 0.65), colorToCss(SELECT_CYAN), 0.35);
+
+        // Corner tips
+        const x0 = cx - toPx(half);
+        const y0 = cy - toPx(half);
+        const x1 = cx + toPx(half);
+        const y1 = cy + toPx(half);
+        const a = toPx(arm);
+        ctx.strokeStyle = colorToCss(SELECT_MAGENTA);
+        ctx.globalAlpha = 0.95;
+        ctx.lineWidth = Math.max(1, toPx(lw * 1.15));
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        const corner = (ax, ay, bx, by, cx2, cy2) => {
+            ctx.beginPath();
+            ctx.moveTo(ax, ay);
+            ctx.lineTo(bx, by);
+            ctx.lineTo(cx2, cy2);
+            ctx.stroke();
+        };
+        corner(x0, y0 + a, x0, y0, x0 + a, y0);
+        corner(x1 - a, y0, x1, y0, x1, y0 + a);
+        corner(x1, y1 - a, x1, y1, x1 - a, y1);
+        corner(x0 + a, y1, x0, y1, x0, y1 - a);
+        ctx.globalAlpha = 1;
+    });
+}
+
 function createTokenNameLabel(name, radius) {
     const fontSize = Math.max(12, Math.round(radius * 0.38));
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
@@ -212,71 +446,16 @@ function syncTokenNameResolution(label, viewport) {
 }
 
 function createHoverRing(radius) {
-    const g = new PIXI.Graphics();
-    g.eventMode = "none";
-    g.visible = false;
-    g.lineStyle(Math.max(2.5, radius * 0.14), HOVER_CYAN, 0.85);
-    g.drawCircle(0, 0, radius + Math.max(2, radius * 0.06));
-    g.lineStyle(Math.max(1, radius * 0.05), HOVER_CYAN, 0.35);
-    g.drawCircle(0, 0, radius + Math.max(4, radius * 0.12));
-    return g;
-}
-
-/**
- * Selection chrome: thin grid-aligned square — soft cyber frame (Pixi v8).
- */
-function paintSelectSquare(g, radius) {
-    g.clear();
-    const pad = Math.max(1, radius * 0.04);
-    const half = radius - pad;
-    const side = half * 2;
-    const lw = Math.max(1.1, radius * 0.05);
-    const arm = Math.max(3.5, radius * 0.2);
-
-    // Whisper of fill
-    g.rect(-half, -half, side, side);
-    g.fill({ color: SELECT_MAGENTA, alpha: 0.05 });
-
-    // Single thin magenta square
-    g.rect(-half, -half, side, side);
-    g.stroke({ width: lw, color: SELECT_MAGENTA, alpha: 0.75 });
-
-    // Soft cyan hairline inset
-    const inset = Math.max(2, radius * 0.08);
-    g.rect(-half + inset, -half + inset, side - inset * 2, side - inset * 2);
-    g.stroke({ width: Math.max(0.9, lw * 0.65), color: SELECT_CYAN, alpha: 0.35 });
-
-    // Delicate corner tips (round caps — less blocky)
-    const x0 = -half;
-    const y0 = -half;
-    const x1 = half;
-    const y1 = half;
-    const corner = { width: lw * 1.15, color: SELECT_MAGENTA, alpha: 0.95, cap: "round", join: "round" };
-    g.moveTo(x0, y0 + arm);
-    g.lineTo(x0, y0);
-    g.lineTo(x0 + arm, y0);
-    g.stroke(corner);
-    g.moveTo(x1 - arm, y0);
-    g.lineTo(x1, y0);
-    g.lineTo(x1, y0 + arm);
-    g.stroke(corner);
-    g.moveTo(x1, y1 - arm);
-    g.lineTo(x1, y1);
-    g.lineTo(x1 - arm, y1);
-    g.stroke(corner);
-    g.moveTo(x0 + arm, y1);
-    g.lineTo(x0, y1);
-    g.lineTo(x0, y1 - arm);
-    g.stroke(corner);
+    const sprite = spriteFromTexEntry(getHoverRingEntry(radius));
+    sprite.visible = false;
+    return sprite;
 }
 
 function createSelectRing(radius) {
-    const g = new PIXI.Graphics();
-    g.eventMode = "none";
-    g.visible = false;
-    g.alpha = 1;
-    paintSelectSquare(g, radius);
-    return g;
+    const sprite = spriteFromTexEntry(getSelectChromeEntry(radius));
+    sprite.visible = false;
+    sprite.alpha = 1;
+    return sprite;
 }
 
 function prefersReducedMotion() {
@@ -315,7 +494,7 @@ function setSelectChrome(entry, on, radiusHint = 0) {
         || (entry.marker?.hitArea?.radius != null ? Math.max(4, entry.marker.hitArea.radius - 4) : 0);
     if (on && r > 0) {
         entry.radius = r;
-        paintSelectSquare(entry.selectRing, r);
+        applyTexEntryToSprite(entry.selectRing, getSelectChromeEntry(r));
         entry.selectRing.visible = true;
         if (entry.hoverRing) entry.hoverRing.visible = false;
         startSelectPulse(entry.selectRing);
@@ -399,21 +578,12 @@ function createHiddenBadge(radius) {
 
 function buildFallbackDisk(color, label, radius) {
     const container = new PIXI.Container();
-    const ring = new PIXI.Graphics();
-    ring.lineStyle(Math.max(2, radius * 0.08), color, 0.9);
-    ring.drawCircle(0, 0, radius);
-    container.addChild(ring);
-
-    const inner = new PIXI.Graphics();
-    inner.beginFill(color, 0.85);
-    inner.drawCircle(0, 0, radius * 0.78);
-    inner.endFill();
-    container.addChild(inner);
+    container.addChild(createFallbackFillSprite(radius, color));
 
     const text = new PIXI.Text({
         text: label?.slice(0, 2)?.toUpperCase() ?? "?",
         style: new PIXI.TextStyle({
-            fontFamily: "Arial",
+            fontFamily: "Fira Sans, Arial, sans-serif",
             fontSize: Math.max(9, Math.round(radius * 0.7)),
             fill: 0x000000,
             fontWeight: "bold",
@@ -421,6 +591,8 @@ function buildFallbackDisk(color, label, radius) {
     });
     text.anchor.set(0.5);
     container.addChild(text);
+
+    container.addChild(createTokenRimSprite(radius, color));
     return container;
 }
 
@@ -436,19 +608,14 @@ async function buildTokenVisual(char, diameter, color) {
             sprite.anchor.set(0.5);
             applyTokenImageFit(sprite, diameter, char?.tokenCrop);
 
-            const mask = new PIXI.Graphics();
-            mask.beginFill(0xffffff);
-            mask.drawCircle(0, 0, radius);
-            mask.endFill();
+            // Canvas AA mask (slightly inset so the rim owns the silhouette)
+            const mask = createCircleMaskSprite(Math.max(1, radius - 0.75));
 
             root.addChild(sprite);
             root.addChild(mask);
             sprite.mask = mask;
 
-            const ring = new PIXI.Graphics();
-            ring.lineStyle(Math.max(2, radius * 0.1), color, 0.95);
-            ring.drawCircle(0, 0, radius);
-            root.addChild(ring);
+            root.addChild(createTokenRimSprite(radius, color));
             return root;
         } catch (err) {
             console.warn("Token image failed, using fallback:", imagePath, err);
@@ -709,8 +876,10 @@ export default function TokenLayer() {
 
             for (const m of drag.members) {
                 m.marker.cursor = "grab";
+                const char = charByIdRef.current.get(m.tokenId);
+                const sizeKey = resolveTokenSizeKey(char, m.sizeOverride);
                 const snapped = snapOn
-                    ? snapToGridCenter(m.marker.x, m.marker.y, cell)
+                    ? snapTokenToGrid(m.marker.x, m.marker.y, cell, sizeKey)
                     : { x: m.marker.x, y: m.marker.y };
                 gsap.to(m.marker, { x: snapped.x, y: snapped.y, duration: 0.25, ease: "power2.out" });
                 const nearest = findNearestLocation(locationsRef.current, snapped.x, snapped.y);
@@ -791,6 +960,7 @@ export default function TokenLayer() {
             });
             markers.clear();
             safeDestroy(layer, { children: true });
+            clearTokenCircleTexCache();
             layerRef.current = null;
             marqueeRef.current = null;
         };
@@ -920,7 +1090,7 @@ export default function TokenLayer() {
             const condKey = conditions.join(",");
             const existing = markersRef.current.get(tokenId);
             const imageKey = tokenVisualKey(char);
-            const metaKey = `${sizeKey}|${imageKey}|${condKey}|${visible ? 1 : 0}`;
+            const metaKey = `${TOKEN_SMOOTH_VIS}|${sizeKey}|${imageKey}|${condKey}|${visible ? 1 : 0}|${color.toString(16)}`;
 
             if (existing && existing.metaKey === metaKey) {
                 const draggingIds = draggingRef.current?.members?.map((m) => m.tokenId) ?? [];

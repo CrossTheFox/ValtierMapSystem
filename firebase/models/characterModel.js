@@ -30,7 +30,8 @@ export function createCharacter({
         combatOverrides:
             combatOverrides && typeof combatOverrides === "object" ? combatOverrides : {},
         relations: {},
-        // Narrative wiki integration (optional)
+        // Narrative wiki integration
+        narrativeEntityId: null, // -> wikiEntities personaje (1:1)
         speciesEntityId: null, // -> wikiEntities especie
         organizationMemberships: [], // [{ organizationEntityId, status, role }]
         createdAt: serverTimestamp()

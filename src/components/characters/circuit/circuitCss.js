@@ -20,6 +20,50 @@ export const CIRCUIT_CSS = `
 .ckt-shell.wave-live .ckt-svg .trace-flow { animation-duration: 0.45s !important; stroke-width: 3; }
 .ckt-shell.wave-live .ckt-node.wave1 { animation: cktWaveHit 0.7s ease; }
 .ckt-shell.wave-live .ckt-node.wave2 { animation: cktWaveHit 0.7s ease 0.45s; }
+.ckt-shell.wave-preview .ckt-node.wave0 {
+  border-color: #00f2ea;
+  box-shadow: 0 0 0 1px rgba(0,242,234,0.55), 0 0 26px rgba(0,242,234,0.4);
+  animation: cktWaveHit 0.55s ease;
+}
+.ckt-shell.wave-preview .ckt-node.wave1 {
+  border-color: rgba(0,242,234,0.65);
+  box-shadow: 0 0 18px rgba(0,242,234,0.28), 0 8px 24px rgba(0,0,0,0.45);
+  animation: cktWaveHit 0.7s ease;
+}
+.ckt-shell.wave-preview .ckt-node.wave2 {
+  border-color: rgba(255,20,147,0.45);
+  box-shadow: 0 0 14px rgba(255,20,147,0.22), 0 8px 24px rgba(0,0,0,0.45);
+  animation: cktWaveHit 0.7s ease 0.12s;
+}
+/* Anyone not in the impact waves stays off — do not rely only on .dim (compositor / pkt-lit). */
+.ckt-shell.wave-preview .ckt-node:not(.wave0):not(.wave1):not(.wave2):not(.selected):not(.self) {
+  opacity: 0.18 !important;
+  filter: none;
+  box-shadow: none;
+  z-index: 1;
+  border-color: rgba(255,255,255,0.08);
+}
+.ckt-shell.wave-preview .ckt-node:not(.wave0):not(.wave1):not(.wave2):not(.selected):not(.self) .av,
+.ckt-shell.wave-preview .ckt-node:not(.wave0):not(.wave1):not(.wave2):not(.selected):not(.self) img {
+  filter: grayscale(1) brightness(0.55);
+  border-color: #445 !important;
+  box-shadow: none !important;
+}
+.ckt-shell.wave-preview .ckt-node:not(.wave0):not(.wave1):not(.wave2):not(.selected):not(.self) .ring {
+  display: none;
+}
+.ckt-shell.wave-preview .ckt-node:not(.wave0):not(.wave1):not(.wave2):not(.selected):not(.self) .rank,
+.ckt-shell.wave-preview .ckt-node:not(.wave0):not(.wave1):not(.wave2):not(.selected):not(.self) .nm,
+.ckt-shell.wave-preview .ckt-node:not(.wave0):not(.wave1):not(.wave2):not(.selected):not(.self) .sy {
+  color: #667788 !important;
+}
+.ckt-shell.wave-preview .ckt-node[data-ckt-wave="off"] {
+  opacity: 0.18 !important;
+}
+.ckt-shell.wave-preview .ckt-node:not(.wave0):not(.wave1):not(.wave2):not(.selected):not(.self):hover,
+.ckt-shell.wave-preview .ckt-node[data-ckt-wave="off"]:hover {
+  opacity: 0.48 !important;
+}
 @keyframes cktWaveHit {
   0%, 100% { box-shadow: 0 0 0 1px rgba(0,242,234,0.06), 0 8px 24px rgba(0,0,0,0.45); }
   40% { box-shadow: 0 0 30px rgba(0,242,234,0.55), 0 0 0 1px rgba(0,242,234,0.45); }
@@ -27,7 +71,7 @@ export const CIRCUIT_CSS = `
 /* Packet Cascade — Evento narrativo loading loop */
 .ckt-shell.ckt-cascade-live .ckt-node.self { animation: none; }
 .ckt-pkt-layer {
-  position: absolute; inset: 0; z-index: 7; pointer-events: none;
+  position: absolute; inset: 0; z-index: 9; pointer-events: none;
 }
 .ckt-pkt {
   position: absolute; left: 0; top: 0;
@@ -45,7 +89,9 @@ export const CIRCUIT_CSS = `
   stroke-width: 3.2; opacity: 1;
   filter: drop-shadow(0 0 8px currentColor);
 }
-.ckt-node.ckt-pkt-lit { opacity: 1 !important; }
+.ckt-node.ckt-pkt-lit { opacity: 1; }
+.ckt-shell.wave-preview .ckt-node.dim,
+.ckt-shell.wave-preview .ckt-node.ckt-pkt-lit.dim { opacity: 0.2 !important; }
 .ckt-node.ckt-pkt-hit {
   animation: cktPktHit 0.5s ease;
 }
@@ -250,7 +296,9 @@ export const CIRCUIT_CSS = `
   position: absolute; font-family: Orbitron, sans-serif; font-size: 0.5rem;
   letter-spacing: 0.2em; color: rgba(255,170,0,0.45); pointer-events: none; white-space: nowrap;
 }
-.ckt-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.ckt-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 1; }
+.ckt-svg.ckt-svg-back { z-index: 0; }
+.ckt-svg.ckt-svg-front { z-index: 3; }
 .ckt-svg .trace {
   fill: none; stroke-linecap: square; stroke-linejoin: miter; stroke-width: 2.2; opacity: 0.85;
   filter: drop-shadow(0 0 4px currentColor);
@@ -261,6 +309,10 @@ export const CIRCUIT_CSS = `
 .ckt-svg .trace.idle { stroke: #667788; color: #667788; opacity: 0.55; }
 .ckt-svg .trace.struct { stroke: #ffaa00; color: #ffaa00; opacity: 0.5; stroke-dasharray: 6 5; }
 .ckt-svg .trace.secondary { stroke: #667788; color: #667788; opacity: 0.28; stroke-dasharray: 4 6; }
+.ckt-svg .trace.impact {
+  stroke: #00f2ea; color: #00f2ea; stroke-width: 3.6; opacity: 1;
+  filter: drop-shadow(0 0 10px rgba(0,242,234,0.85));
+}
 .ckt-svg .trace-flow {
   fill: none; stroke-linecap: round; stroke-width: 2; stroke-dasharray: 10 18;
   animation: cktFlow 1.1s linear infinite; opacity: 0.95; pointer-events: none;
@@ -271,6 +323,9 @@ export const CIRCUIT_CSS = `
 .ckt-svg .trace-flow.idle { stroke: #99aacc; animation-duration: 2s; opacity: 0.45; }
 .ckt-svg .trace-flow.struct { stroke: #ffcc66; animation-duration: 2.2s; opacity: 0.4; }
 .ckt-svg .trace-flow.secondary { stroke: #99aacc; animation-duration: 2.4s; opacity: 0.25; }
+.ckt-svg .trace-flow.impact {
+  stroke: #ffffff; stroke-width: 2.6; animation-duration: 0.65s; opacity: 1;
+}
 @keyframes cktFlow { to { stroke-dashoffset: -28; } }
 .ckt-svg .pad { fill: #0a0a12; stroke-width: 2; }
 .ckt-svg .pad.ok { stroke: #3dd68c; filter: drop-shadow(0 0 5px #3dd68c); }
@@ -278,6 +333,7 @@ export const CIRCUIT_CSS = `
 .ckt-svg .pad.warn { stroke: #f5c542; filter: drop-shadow(0 0 5px #f5c542); }
 .ckt-svg .pad.idle { stroke: #778899; }
 .ckt-svg .pad.struct { stroke: #ffaa00; }
+.ckt-svg .pad.impact { stroke: #00f2ea; filter: drop-shadow(0 0 6px #00f2ea); }
 .ckt-node {
   position: absolute; transform: translate3d(-50%, -50%, 0); z-index: 2;
   padding: 10px 10px 12px;
@@ -287,8 +343,6 @@ export const CIRCUIT_CSS = `
   transition: transform .18s ease, border-color .18s, box-shadow .18s, opacity .18s;
   box-shadow: 0 0 0 1px rgba(0,242,234,0.06), 0 8px 24px rgba(0,0,0,0.45);
   color: #fff;
-  backface-visibility: hidden;
-  contain: layout style;
 }
 .ckt-node.has-drag-handle { padding-top: 22px; }
 .ckt-drag-handle {
@@ -327,13 +381,31 @@ export const CIRCUIT_CSS = `
   box-shadow: 0 0 22px rgba(255,20,147,0.28), 0 10px 28px rgba(0,0,0,0.5);
   z-index: 5;
 }
-.ckt-node.selected {
+.ckt-node.selected, .ckt-node.wave0 {
   border-color: #00f2ea;
   box-shadow: 0 0 0 1px rgba(0,242,234,0.45), 0 0 28px rgba(0,242,234,0.3);
   z-index: 6;
 }
-.ckt-node.selected::before, .ckt-node.selected::after { border-color: #00f2ea; width: 14px; height: 14px; }
-.ckt-node.dim { opacity: 0.38; }
+.ckt-node.selected::before, .ckt-node.selected::after,
+.ckt-node.wave0::before, .ckt-node.wave0::after { border-color: #00f2ea; width: 14px; height: 14px; }
+.ckt-node.wave1 { z-index: 5; }
+.ckt-node.wave2 { z-index: 4; }
+.ckt-node.dim {
+  opacity: 0.2;
+  z-index: 1;
+  box-shadow: none;
+}
+.ckt-node.dim .av, .ckt-node.dim img {
+  filter: grayscale(1) brightness(0.55);
+}
+.ckt-node.dim:hover {
+  opacity: 0.45;
+  z-index: 2;
+}
+.ckt-node.dim:hover .av, .ckt-node.dim:hover img {
+  filter: grayscale(0.35) brightness(0.8);
+}
+.ckt-shell.wave-preview .ckt-node.dim { pointer-events: auto; }
 .ckt-node.self {
   z-index: 4; border-color: rgba(0,242,234,0.55);
   box-shadow: 0 0 28px rgba(0,242,234,0.35), inset 0 0 24px rgba(0,242,234,0.06);
@@ -492,7 +564,7 @@ export const CIRCUIT_CSS = `
 let injected = false;
 export function ensureCircuitCss() {
     if (typeof document === "undefined") return;
-    const tag = "opt8-ux14";
+    const tag = "opt8-ux20";
     const existing = document.querySelector(`style[data-ckt="${tag}"]`);
     if (existing && injected) return;
     document.querySelectorAll("style[data-ckt]").forEach((n) => n.remove());

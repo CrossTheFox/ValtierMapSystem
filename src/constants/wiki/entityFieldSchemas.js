@@ -474,15 +474,15 @@ export const REACTION_ARCHETYPE_AI_DESCRIPTIONS = {
 
 export const REACTION_ARCHETYPE_TOOLTIPS = {
     [REACTION_ARCHETYPE.GUARDIAN]:
-        "Protege a sus aliados ante todo. Reacciona a amenazas con lealtad activa.",
+        "Guardián: Protege y salva primero a los suyos.",
     [REACTION_ARCHETYPE.POLITICO]:
-        "Calcula poder antes que sentir. Cada evento es una oportunidad o un riesgo.",
+        "Político: Pesa poder y ventaja antes que el sentimiento.",
     [REACTION_ARCHETYPE.INTIMO]:
-        "Los vínculos personales son su brújula. Exige verdad, confronta, se rompe.",
+        "Íntimo: Antepone vínculos y verdad emocional.",
     [REACTION_ARCHETYPE.RIVAL]:
-        "Ve la ventaja ajena como derrota propia. Busca contrarrestar o aprovechar.",
+        "Rival: Compite; el éxito ajeno le duele o lo motiva.",
     [REACTION_ARCHETYPE.PRAGMATICO]:
-        "Coste-beneficio sin apego. Puede cambiar de bando si la lógica lo justifica.",
+        "Pragmático: Elige por coste-beneficio, sin romance.",
 };
 
 export const REACTION_ARCHETYPE_OPTIONS = toOptions(
@@ -520,57 +520,46 @@ export const NARRATIVE_STATE_LABELS = {
 
 export const NARRATIVE_STATE_OPTIONS = toOptions(NARRATIVE_STATE, NARRATIVE_STATE_LABELS);
 
-/** UI: qué significa cada estado y cómo lo usa la IA. */
+/** UI: qué significa cada estado (corto, para jugadores). */
 export const NARRATIVE_STATE_TOOLTIPS = {
     [NARRATIVE_STATE.ESTABLE]:
-        "Emocionalmente equilibrado/a. Reacciona con proporción al evento, sin filtro de crisis activa.",
+        "Estable: En equilibrio; reacciona con proporción.",
     [NARRATIVE_STATE.DEPRIMIDA]:
-        "En duelo o apatía. Minimiza acciones, evita conflictos; la IA tenderá a reacciones contenidas o melancólicas.",
+        "Deprimida: Duelo o apatía; evita y pospone.",
     [NARRATIVE_STATE.FURIOSA]:
-        "Ira activa. Confronta, exige respuestas, puede escalar conflictos antes de reflexionar.",
+        "Furiosa: Ira activa; confronta y escala.",
     [NARRATIVE_STATE.QUEBRADA]:
-        "Disociación o colapso emocional. Respuestas erráticas, silencio prolongado o decisiones impulsivas.",
+        "Quebrada: Colapso o disociación; decisiones erráticas.",
     [NARRATIVE_STATE.OBSESIVA]:
-        "Fijación en una meta o persona. Filtra todo el evento a través de esa obsesión.",
+        "Obsesiva: Todo se filtra por una meta o persona.",
     [NARRATIVE_STATE.CORRUPTA_ZARKEN]:
-        "Influencia oscura / sangre Zarken. La IA puede proponer traiciones o poder prohibido como salida.",
+        "Corrupta (Zarken): Tentación de poder o caminos oscuros.",
     [NARRATIVE_STATE.PARANOICA]:
-        "Desconfianza extrema. Interpreta el evento como amenaza personal o conspiración.",
+        "Paranoica: Desconfianza extrema; ve amenazas en todo.",
     [NARRATIVE_STATE.INDIFERENTE]:
-        "Blindaje emocional. Impacto mínimo salvo que el evento toque anclas emocionales directas.",
+        "Indiferente: Blindaje emocional; poco le afecta.",
     [NARRATIVE_STATE.OTRO]:
-        "Estado no listado; describe el matiz en rasgos o anclas para que la IA lo respete.",
+        "Otro: Estado libre; detállalo en rasgos o anclas.",
 };
 
 export const NARRATIVE_PERSONALITY_SECTION_HELP =
-    "Opcional. Guía a la IA en modo Evento narrativo (PANGeA): define CÓMO reacciona el personaje "
-    + "ante impactos, no qué dice en la ficha. Combina arquetipo (tendencia estable) + estado actual "
-    + "(mutable tras eventos de campaña).";
+    "Cómo reacciona el personaje ante la historia: arquetipo (tendencia estable), "
+    + "estado (humor actual) y estrés (golpe grave).";
 
 export const REACTION_ARCHETYPE_FIELD_HELP =
-    "Tendencia estable de toma de decisiones. No cambia cada sesión; el estado narrativo sí. "
-    + "Pasa el cursor sobre cada opción para ver su comportamiento.";
+    "Personalidad base al decidir. Cambia poco. Pasa el cursor sobre cada opción.";
 
 export const NARRATIVE_STATE_FIELD_HELP =
-    "Estado emocional actual del personaje en la campaña. Actualízalo tras duelos, traiciones "
-    + "o victorias: la IA lo prioriza sobre el arquetipo al generar reacciones.";
+    "Estado emocional actual de la campaña. Actualízalo tras golpes o victorias.";
 
 export const STRESS_RESPONSE_FIELD_HELP =
-    "Patrón ante trauma o pérdida grave (no el día a día). La IA lo usa cuando el evento "
-    + "simula un golpe emocional fuerte: duelo, traición, muerte de un vínculo, etc.";
+    "Qué hace ante un trauma grave (pérdida, traición…), no el mal humor diario.";
 
 export const NARRATIVE_TRAITS_FIELD_HELP =
-    "Rasgos estables de «voz» y comportamiento (máx. 5). No son stats de combate. "
-    + "Ejemplos útiles: «lealtad filial extrema», «desconfía de la magia divina», "
-    + "«nunca miente a sus hijos», «habla en tercera persona bajo estrés», "
-    + "«obsesionado con cumplir el deber», «perdona enemigos pero no traidores». "
-    + "Evita repetir el arquetipo («es pragmático») o rasgos mecánicos («fuerza 18»).";
+    "Hasta 5 manías o códigos de conducta. Ej.: «nunca miente a sus hijos».";
 
 export const BOND_NOTES_FIELD_HELP =
-    "Anclas emocionales concretas: personas, lugares o promesas que DEBEN pesar en la reacción "
-    + "si el evento las toca. Ej.: «Felicia era su único pilar; sin ella sella el dolor con deber». "
-    + "«Protegerá a Oni aunque traicione la corona». «La ciudad de Mirage es sagrada: no negocia su caída». "
-    + "Útil para que la IA no ignore vínculos ya escritos en lore.";
+    "Personas, lugares o promesas que pesan si la historia las toca.";
 
 export const NARRATIVE_TRAITS_EXAMPLES = [
     "lealtad filial extrema",
@@ -606,22 +595,22 @@ export const STRESS_RESPONSE_LABELS = {
 
 export const STRESS_RESPONSE_OPTIONS = toOptions(STRESS_RESPONSE, STRESS_RESPONSE_LABELS);
 
-/** UI: tooltips para el editor (versión legible de las descripciones IA). */
+/** UI: tooltips cortos por opción. */
 export const STRESS_RESPONSE_TOOLTIPS = {
     [STRESS_RESPONSE.LUTO_CERRADO]:
-        "Se encierra y procesa en silencio. Puede actuar meses después, sin confrontar de inmediato.",
+        "Luto cerrado: Se encierra y procesa en silencio.",
     [STRESS_RESPONSE.LUTO_VOLCANICO]:
-        "Explota hacia afuera: confrontación, rupturas o acciones impulsivas antes de pensar.",
+        "Luto volcánico: Explota; gritos, rupturas, impulso.",
     [STRESS_RESPONSE.VENGANZA]:
-        "Convierte el dolor en misión de retribución; puede sacrificar otros vínculos para cumplirla.",
+        "Venganza: El dolor se vuelve misión de castigo.",
     [STRESS_RESPONSE.COLAPSO]:
-        "Se paraliza o cede el control; otros deciden por él/ella hasta recuperarse.",
+        "Colapso: Se paraliza o cede el control a otros.",
     [STRESS_RESPONSE.CORRUPCION]:
-        "El trauma abre la puerta a poder o valores oscuros que antes rechazaba.",
+        "Corrupción: Abre la puerta a poder o valores oscuros.",
     [STRESS_RESPONSE.PRAGMATICO]:
-        "Procesa y sigue; puede parecer frío pero sigue siendo funcional.",
+        "Pragmático: Procesa y sigue; sigue funcional.",
     [STRESS_RESPONSE.DISOCIACION]:
-        "Niega o minimiza el evento hasta que un detonador secundario lo rompe.",
+        "Disociación: Niega o minimiza hasta que algo lo rompe.",
 };
 
 /** IA: descripción breve del patrón de estrés, incluida en el prompt. */

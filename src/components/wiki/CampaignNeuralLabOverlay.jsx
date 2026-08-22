@@ -1,15 +1,16 @@
 /**
- * Campaign Neural Lab — circuit overview (all characters) + ego focus on click.
+ * Campaign Neural Lab — circuit overview (all characters) + ego focus on demand.
  * DM can drag overview cards from the top handle; positions persist on the campaign.
- * Reuses DossierCircuitMap / buildCircuitLayout / WikiAiLabPanel.
+ * Selection reveals affinity waves; search/filters narrow the overview.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-    Box, Dialog, DialogContent, IconButton, CircularProgress,
+    Box, Dialog, DialogContent, IconButton, CircularProgress, TextField, InputAdornment,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import HubIcon from "@mui/icons-material/Hub";
+import SearchIcon from "@mui/icons-material/Search";
 import { useDispatch, useSelector } from "react-redux";
 
 import { CyberText, CyberTitle } from "../customs/CustomTexts";
@@ -24,12 +25,15 @@ import {
 import { fetchWikiEntities, fetchWikiRelations } from "../../store/wikiSlice";
 import { isDmRole } from "../../utils/tokenControl";
 import { buildCircuitLayout } from "../../utils/circuitLayout";
-import { buildCampaignCharacterOverviewLayout } from "../../utils/campaignCircuitOverviewLayout";
+import {
+    buildCampaignCharacterOverviewLayout,
+} from "../../utils/campaignCircuitOverviewLayout";
 import {
     buildDirectCircuitNeighbors,
     buildSecondaryCircuitNodes,
 } from "../../utils/buildEgoCircuitInputs";
 import { resolveWikiEntityImagePath } from "../../utils/resolveWikiEntityImage";
+import { buildSealGradeFromCascadeResult } from "../../utils/impactSealGrade";
 import {
     subscribeNeuralLabLayout,
     updateNeuralLabNodePosition,
@@ -38,6 +42,25 @@ import DossierCircuitMap from "../characters/circuit/DossierCircuitMap";
 import WikiAiLabPanel from "./WikiAiLabPanel";
 
 const ACCENT = UI_COLORS.anomaly;
+const KIND_FILTERS = [
+    { id: "all", label: "TODOS" },
+    { id: "pj", label: "PJ" },
+    { id: "npc", label: "NPC" },
+];
+
+const filterChipSx = (active) => ({
+    border: `1px solid ${active ? ACCENT : UI_COLORS.border}`,
+    bgcolor: active ? `${ACCENT}18` : "transparent",
+    color: active ? ACCENT : UI_COLORS.textSecondary,
+    fontFamily: '"Orbitron", sans-serif',
+    fontSize: "0.48rem",
+    letterSpacing: "0.1em",
+    px: 1,
+    py: 0.4,
+    borderRadius: "4px",
+    cursor: "pointer",
+    "&:hover": { borderColor: ACCENT, color: ACCENT },
+});
 
 export default function CampaignNeuralLabOverlay() {
     const dispatch = useDispatch();
@@ -59,10 +82,13 @@ export default function CampaignNeuralLabOverlay() {
     const [relationMode, setRelationMode] = useState("affinity");
     const [layoutMode, setLayoutMode] = useState("affinity");
     const [scope, setScope] = useState("direct");
-    const [propagationState, setPropagationState] = useState(null);
+    const [labPropagationState, setLabPropagationState] = useState(null);
     const [travelTargetId, setTravelTargetId] = useState(null);
     const [focusTravelRequest, setFocusTravelRequest] = useState(null);
     const [savedPositions, setSavedPositions] = useState({});
+    const [searchQuery, setSearchQuery] = useState("");
+    const [kindFilter, setKindFilter] = useState("all");
+    const [labDepth, setLabDepth] = useState(3);
 
     useEffect(() => {
         if (!open || !campaignId) return;
@@ -83,12 +109,14 @@ export default function CampaignNeuralLabOverlay() {
     useEffect(() => {
         if (!open) {
             setSelectedId(null);
-            setPropagationState(null);
+            setLabPropagationState(null);
             setRelationMode("affinity");
             setLayoutMode("affinity");
             setScope("direct");
             setTravelTargetId(null);
             setFocusTravelRequest(null);
+            setSearchQuery("");
+            setKindFilter("all");
         }
     }, [open]);
 
@@ -119,8 +147,16 @@ export default function CampaignNeuralLabOverlay() {
             charactersById,
             imagePathFor,
             positions: savedPositions,
+            kindFilter,
+            searchQuery,
+            relations,
+            selectedId: focusEntityId ? null : selectedId,
+            labDepth,
         }),
-        [entities, charactersById, imagePathFor, savedPositions],
+        [
+            entities, charactersById, imagePathFor, savedPositions,
+            kindFilter, searchQuery, relations, selectedId, focusEntityId, labDepth,
+        ],
     );
 
     const directNeighbors = useMemo(
@@ -189,6 +225,23 @@ export default function CampaignNeuralLabOverlay() {
     const layout = focusEntityId ? focusedLayout : overviewLayout;
     const canDragNodes = Boolean(isDM && !focusEntityId);
 
+    const overviewPreview = useMemo(() => {
+        if (focusEntityId || !selectedId) return null;
+        const waves = overviewLayout.overviewWaves;
+        if (!waves?.length) return null;
+        return {
+            mode: "preview",
+            active: false,
+            waves,
+            maxWave: waves.length - 1,
+        };
+    }, [focusEntityId, selectedId, overviewLayout.overviewWaves]);
+
+    const labBusy = labPropagationState?.mode === "live" || labPropagationState?.mode === "result";
+    const mapPropagation = focusEntityId
+        ? labPropagationState
+        : (labBusy ? labPropagationState : overviewPreview);
+
     const handleClose = () => dispatch(closeNeuralLabOverlay());
 
     const handleSelectNode = useCallback((node) => {
@@ -199,14 +252,14 @@ export default function CampaignNeuralLabOverlay() {
         const id = node.entityId || node.id;
         setSelectedId(id);
         if (!focusEntityId) {
-            dispatch(setNeuralLabFocusEntity(id));
+            // Overview: select + wave highlight only (ego via focus button / double intent)
             return;
         }
         if (id !== focusEntityId && node.kind !== "hub") {
             setTravelTargetId(id);
             setFocusTravelRequest({ entityId: id, nonce: Date.now() });
         }
-    }, [dispatch, focusEntityId]);
+    }, [focusEntityId]);
 
     const handleFocusTravelComplete = useCallback(() => {
         if (travelTargetId) {
@@ -219,7 +272,7 @@ export default function CampaignNeuralLabOverlay() {
     const clearFocus = useCallback(() => {
         dispatch(setNeuralLabFocusEntity(null));
         setSelectedId(null);
-        setPropagationState(null);
+        setLabPropagationState(null);
         setScope("direct");
         setLayoutMode("affinity");
         setRelationMode("affinity");
@@ -253,6 +306,70 @@ export default function CampaignNeuralLabOverlay() {
         }
     }, [campaignId, uid]);
 
+    const handleLabPropagationStart = useCallback((waves, opts = {}) => {
+        if (!waves?.length) return;
+        const litNodeIds = [...new Set(waves[0]?.nodeIds ?? [])];
+        const wavesKey = waves
+            .map((w) => `${w.wave ?? ""}:${(w.nodeIds ?? []).join(",")}`)
+            .join("|");
+
+        if (opts?.preview) {
+            setLabPropagationState((prev) => {
+                if (prev?.mode === "result") return prev;
+                if (
+                    prev?.mode === "preview"
+                    && prev.maxWave === waves.length - 1
+                    && prev.waves
+                    && prev.waves.map((w) => `${w.wave ?? ""}:${(w.nodeIds ?? []).join(",")}`).join("|") === wavesKey
+                ) {
+                    return prev;
+                }
+                return {
+                    mode: "preview",
+                    active: false,
+                    currentWave: waves.length - 1,
+                    waves,
+                    litNodeIds: [],
+                    maxWave: waves.length - 1,
+                };
+            });
+            return;
+        }
+        setLabPropagationState({
+            mode: "live",
+            active: true,
+            currentWave: 0,
+            waves,
+            litNodeIds,
+        });
+    }, []);
+
+    const handleLabPropagationResult = useCallback((validated) => {
+        if (!validated) {
+            setLabPropagationState((prev) => (prev?.mode === "result" ? null : prev));
+            return;
+        }
+        const seal = buildSealGradeFromCascadeResult(validated);
+        setLabPropagationState((prev) => ({
+            mode: "result",
+            active: false,
+            waves: prev?.waves ?? [],
+            litNodeIds: [],
+            seal,
+            sealNonce: Date.now(),
+        }));
+    }, []);
+
+    const waveCaption = (() => {
+        if (focusEntityId) return null;
+        if (labPropagationState?.waves?.length) {
+            const hops = Math.max(0, labPropagationState.waves.length - 1);
+            return `LAB · ${hops} onda${hops === 1 ? "" : "s"}`;
+        }
+        if (!selectedId) return null;
+        return `profundidad ${labDepth}`;
+    })();
+
     if (!open) return null;
 
     return (
@@ -282,16 +399,70 @@ export default function CampaignNeuralLabOverlay() {
                     py: 0.85,
                     borderBottom: `1px solid ${UI_COLORS.border}`,
                     bgcolor: "rgba(10,10,16,0.95)",
+                    flexWrap: "wrap",
                 }}
             >
                 <HubIcon sx={{ fontSize: "1.1rem", color: ACCENT }} />
-                <CyberTitle sx={{ fontSize: "0.72rem", letterSpacing: "0.16em", color: ACCENT, flex: 1 }}>
+                <CyberTitle sx={{ fontSize: "0.72rem", letterSpacing: "0.16em", color: ACCENT }}>
                     NEURAL_LAB
                 </CyberTitle>
+
+                {!focusEntityId && (
+                    <>
+                        <TextField
+                            size="small"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="Buscar personaje…"
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <SearchIcon sx={{ fontSize: "1rem", color: UI_COLORS.textSecondary }} />
+                                    </InputAdornment>
+                                ),
+                            }}
+                            sx={{
+                                ml: 1,
+                                minWidth: 200,
+                                flex: "1 1 180px",
+                                maxWidth: 280,
+                                "& .MuiOutlinedInput-root": {
+                                    color: UI_COLORS.textPrimary,
+                                    fontFamily: '"Fira Sans", sans-serif',
+                                    fontSize: "0.78rem",
+                                    bgcolor: "rgba(8,8,14,0.85)",
+                                    "& fieldset": { borderColor: UI_COLORS.border },
+                                    "&:hover fieldset": { borderColor: `${ACCENT}66` },
+                                    "&.Mui-focused fieldset": { borderColor: ACCENT },
+                                },
+                                "& .MuiInputBase-input::placeholder": {
+                                    color: UI_COLORS.textSecondary,
+                                    opacity: 1,
+                                },
+                            }}
+                        />
+                        <Box sx={{ display: "flex", gap: 0.5 }}>
+                            {KIND_FILTERS.map((f) => (
+                                <Box
+                                    key={f.id}
+                                    component="button"
+                                    type="button"
+                                    onClick={() => setKindFilter(f.id)}
+                                    sx={filterChipSx(kindFilter === f.id)}
+                                >
+                                    {f.label}
+                                </Box>
+                            ))}
+                        </Box>
+                    </>
+                )}
+
+                <Box sx={{ flex: 1 }} />
+
                 <CyberText sx={{ fontSize: "0.58rem", color: UI_COLORS.textSecondary, mr: 1 }}>
                     {focusEntityId
                         ? `Foco · ${(hubEntity?.title || focusEntityId).toUpperCase()}`
-                        : `Overview · ${overviewLayout.nodes.length} personajes`}
+                        : `Overview · ${overviewLayout.nodes.length} personajes${waveCaption ? ` · ${waveCaption}` : ""}`}
                 </CyberText>
                 {focusEntityId && (
                     <CyberTooltip title="Volver al overview">
@@ -299,19 +470,7 @@ export default function CampaignNeuralLabOverlay() {
                             component="button"
                             type="button"
                             onClick={clearFocus}
-                            sx={{
-                                border: `1px solid ${UI_COLORS.border}`,
-                                bgcolor: "transparent",
-                                color: UI_COLORS.textSecondary,
-                                fontFamily: '"Orbitron", sans-serif',
-                                fontSize: "0.48rem",
-                                letterSpacing: "0.1em",
-                                px: 1,
-                                py: 0.45,
-                                borderRadius: "4px",
-                                cursor: "pointer",
-                                "&:hover": { borderColor: ACCENT, color: ACCENT },
-                            }}
+                            sx={filterChipSx(false)}
                         >
                             OVERVIEW
                         </Box>
@@ -322,18 +481,7 @@ export default function CampaignNeuralLabOverlay() {
                         component="button"
                         type="button"
                         onClick={() => setLabOpen((v) => !v)}
-                        sx={{
-                            border: `1px solid ${labOpen ? `${ACCENT}66` : UI_COLORS.border}`,
-                            bgcolor: labOpen ? `${ACCENT}14` : "transparent",
-                            color: labOpen ? ACCENT : UI_COLORS.textSecondary,
-                            fontFamily: '"Orbitron", sans-serif',
-                            fontSize: "0.48rem",
-                            letterSpacing: "0.1em",
-                            px: 1,
-                            py: 0.45,
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                        }}
+                        sx={filterChipSx(labOpen)}
                     >
                         LAB_IA
                     </Box>
@@ -363,15 +511,16 @@ export default function CampaignNeuralLabOverlay() {
                             layout={layout}
                             selectedId={selectedId}
                             onSelectNode={handleSelectNode}
-                            propagationState={propagationState}
-                            recenterKey={focusEntityId || "overview"}
+                            propagationState={mapPropagation}
+                            recenterKey={focusEntityId || `overview:${kindFilter}:${searchQuery}`}
                             graphLoading={graphLoading}
-                            canFocusTravel={Boolean(focusEntityId)}
+                            canFocusTravel
                             canToggleStruct={Boolean(focusEntityId)}
                             relationMode={relationMode}
                             travelTargetId={travelTargetId}
                             focusTravelRequest={focusTravelRequest}
                             onFocusTravelComplete={handleFocusTravelComplete}
+                            showSyncChrome={Boolean(focusEntityId)}
                             canDragNodes={canDragNodes}
                             onNodePositionPreview={canDragNodes ? handleNodePositionPreview : undefined}
                             onNodePositionCommit={canDragNodes ? handleNodePositionCommit : undefined}
@@ -394,29 +543,13 @@ export default function CampaignNeuralLabOverlay() {
                                                 component="button"
                                                 type="button"
                                                 onClick={() => setScope(s)}
-                                                sx={{
-                                                    border: `1px solid ${scope === s ? ACCENT : UI_COLORS.border}`,
-                                                    bgcolor: scope === s ? `${ACCENT}18` : "rgba(10,10,20,0.85)",
-                                                    color: scope === s ? ACCENT : UI_COLORS.textSecondary,
-                                                    fontFamily: '"Fira Code", monospace',
-                                                    fontSize: "0.5rem",
-                                                    px: 0.75,
-                                                    py: 0.35,
-                                                    borderRadius: "3px",
-                                                    cursor: "pointer",
-                                                }}
+                                                sx={filterChipSx(scope === s)}
                                             >
                                                 {s.toUpperCase()}
                                             </Box>
                                         ))}
                                     </Box>
-                                ) : (
-                                    <CyberText sx={{ fontSize: "0.58rem", color: UI_COLORS.textSecondary }}>
-                                        {isDM
-                                            ? "Arrastra desde la cabecera del card · click para centrar"
-                                            : "Click un personaje para centrar el circuito"}
-                                    </CyberText>
-                                )
+                                ) : null
                             }
                         />
                     )}
@@ -439,9 +572,12 @@ export default function CampaignNeuralLabOverlay() {
                             entities={entities}
                             relations={relations}
                             narrativeSettings={narrativeSettings}
-                            onPropagationStart={(state) => setPropagationState(state)}
-                            onPropagationEnd={() => setPropagationState(null)}
+                            onPropagationStart={handleLabPropagationStart}
+                            onPropagationEnd={() => setLabPropagationState(null)}
+                            onPropagationResult={handleLabPropagationResult}
                             cascadePresentation="queue"
+                            propagationDepth={labDepth}
+                            onPropagationDepthChange={setLabDepth}
                         />
                     </Box>
                 )}

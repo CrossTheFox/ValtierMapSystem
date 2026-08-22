@@ -11,11 +11,16 @@ import {
     orderBy,
     serverTimestamp,
 } from "firebase/firestore";
+import {
+    resolveRelationStrength,
+    WIKI_RELATION_STRENGTH_MIN as STRENGTH_MIN,
+    WIKI_RELATION_STRENGTH_MAX as STRENGTH_MAX,
+} from "../../src/constants/wikiRelationTypes";
 
-export const WIKI_RELATION_STRENGTH_MIN = -10;
-export const WIKI_RELATION_STRENGTH_MAX = 10;
+export const WIKI_RELATION_STRENGTH_MIN = STRENGTH_MIN;
+export const WIKI_RELATION_STRENGTH_MAX = STRENGTH_MAX;
 
-/** Clamp narrative affinity to -10..+10 (0 = neutral). */
+/** Clamp narrative affinity to -10..+10 (0 = neutral). Structural callers should use resolveRelationStrength. */
 export function clampRelationStrength(value) {
     const n = Number(value);
     if (Number.isNaN(n)) return 0;
@@ -73,15 +78,22 @@ export async function listAllRelations(campaignId) {
 
 /**
  * Create a relation between two wiki entities.
+ * Pass fromEntityType/toEntityType so structural edges force strength=0.
  */
 export async function createWikiRelation(campaignId, data, uid) {
+    const strength = resolveRelationStrength({
+        relationType: data.relationType,
+        fromEntityType: data.fromEntityType ?? null,
+        toEntityType: data.toEntityType ?? null,
+        strength: data.strength ?? 0,
+    });
     const payload = {
         campaignId,
         fromEntityId: data.fromEntityId,
         toEntityId: data.toEntityId,
         relationType: data.relationType,
         label: data.label || "",
-        strength: clampRelationStrength(data.strength ?? 0),
+        strength,
         createdAt: serverTimestamp(),
         createdBy: uid || null,
     };
@@ -91,11 +103,19 @@ export async function createWikiRelation(campaignId, data, uid) {
 
 /**
  * Update an existing relation (partial).
+ * When updating strength, pass relationType + entity types (or relationType alone for always-structural).
  */
 export async function updateWikiRelation(campaignId, relationId, data) {
     const payload = { ...data };
-    if (payload.strength !== undefined) {
-        payload.strength = clampRelationStrength(payload.strength);
+    delete payload.fromEntityType;
+    delete payload.toEntityType;
+    if (data.strength !== undefined) {
+        payload.strength = resolveRelationStrength({
+            relationType: data.relationType,
+            fromEntityType: data.fromEntityType ?? null,
+            toEntityType: data.toEntityType ?? null,
+            strength: data.strength,
+        });
     }
     await updateDoc(wikiRelationDocRef(campaignId, relationId), payload);
     return { id: relationId, ...payload };

@@ -14,9 +14,13 @@ import {
 import { resolveAbilityContentInline } from "../../src/utils/abilityRollCommands.js";
 import { resolveCombatStats } from "../../src/utils/resolveCombatStats.js";
 import { rollAttackD20 } from "../../src/utils/attackRoll.js";
+import { rollIconActionDice } from "../../src/utils/actionDiceRoll.js";
 import { normalizeAbilityKind, ABILITY_KINDS, sanitizeTagKeys } from "../../src/constants/abilityKinds.js";
 import { getCharacterById } from "./characterService";
 import { getClaseDoc } from "./classService";
+import { liveMask, maskCells } from "../../src/utils/briefcaseGrid.js";
+
+export { rollIconActionDice };
 
 const messagesCol = (campaignId) => collection(db, "campaigns", campaignId, "messages");
 
@@ -24,6 +28,7 @@ export const CHAT_MESSAGE_TYPES = {
     TEXT: "text",
     DICE: "dice",
     ABILITY: "ability",
+    ITEM: "item",
     SYSTEM: "system",
 };
 
@@ -44,6 +49,7 @@ export async function sendChatMessage(campaignId, {
     abilityInlineRolls,
     diceResult,
     diceFormula,
+    itemCard = null,
 }) {
     await addDoc(messagesCol(campaignId), {
         type,
@@ -62,6 +68,7 @@ export async function sendChatMessage(campaignId, {
         abilityInlineRolls: Array.isArray(abilityInlineRolls) ? abilityInlineRolls : null,
         diceResult: diceResult ?? null,
         diceFormula: diceFormula ?? null,
+        itemCard: itemCard && typeof itemCard === "object" ? itemCard : null,
         createdAt: serverTimestamp(),
     });
 }
@@ -221,48 +228,10 @@ export function rollDiceFormula(formula) {
     };
 }
 
-function rollD6() {
-    return Math.floor(Math.random() * 6) + 1;
-}
-
-/**
- * ICON action die: roll N d6 and keep the highest.
- * Score 0 → roll 2d6 and keep the lowest.
- * @param {number} statValue
- * @param {string} [statLabel]
- */
-export function rollIconActionDice(statValue, statLabel = "Stat") {
-    const n = Math.max(0, Math.floor(Number(statValue) || 0));
-    if (n <= 0) {
-        const rolls = [rollD6(), rollD6()];
-        const total = Math.min(rolls[0], rolls[1]);
-        return {
-            rolls,
-            mod: 0,
-            total,
-            mode: "lowest",
-            formula: `${statLabel} 0 → 2d6 (mín)`,
-            diceCount: 2,
-            sides: 6,
-        };
-    }
-    const rolls = Array.from({ length: n }, () => rollD6());
-    const total = Math.max(...rolls);
-    return {
-        rolls,
-        mod: 0,
-        total,
-        mode: "highest",
-        formula: `${statLabel} ${n} → ${n}d6 (máx)`,
-        diceCount: n,
-        sides: 6,
-    };
-}
-
 /** Post an ICON skill/action roll into campaign chat. */
-export async function rollStatInChat(campaignId, profile, character, statDef, statValue) {
+export async function rollStatInChat(campaignId, profile, character, statDef, statValue, mods = {}) {
     const label = statDef?.label || statDef?.key || "Stat";
-    const diceResult = rollIconActionDice(statValue, label);
+    const diceResult = rollIconActionDice(statValue, label, mods);
     await sendChatMessage(campaignId, {
         type: CHAT_MESSAGE_TYPES.DICE,
         text: `${character?.name || profile?.nickname || "Jugador"} tira ${label}`,
@@ -338,14 +307,19 @@ export async function callAbilityInChat(campaignId, profile, ability, options = 
     let claseDoc = options.claseDoc || null;
     let combatStats = options.combatStats || null;
 
-    if ((hasRollCue || isAttack) && !combatStats) {
-        if (!character && ability.characterId) {
-            try {
-                character = await getCharacterById(ability.characterId);
-            } catch (err) {
-                console.warn("[callAbilityInChat] character fetch failed", err);
-            }
+    const needCharacter = Boolean(
+        !character && ability.characterId
+        && (hasRollCue || isAttack || !ability.characterAvatarUrl)
+    );
+    if (needCharacter) {
+        try {
+            character = await getCharacterById(ability.characterId);
+        } catch (err) {
+            console.warn("[callAbilityInChat] character fetch failed", err);
         }
+    }
+
+    if ((hasRollCue || isAttack) && !combatStats) {
         if (!claseDoc && character) {
             const classId = character.activeClassId || character.assignedClassIds?.[0];
             if (classId) {
@@ -359,11 +333,16 @@ export async function callAbilityInChat(campaignId, profile, ability, options = 
         combatStats = resolveCombatStats(character, claseDoc);
     }
 
+    const avatarUrl = ability.characterAvatarUrl
+        || character?.tokenImageUrl
+        || character?.imageUrl
+        || null;
+
     const rollChar = character || {
         id: ability.characterId ?? null,
         name: ability.characterName ?? null,
-        tokenImageUrl: ability.characterAvatarUrl ?? null,
-        imageUrl: ability.characterAvatarUrl ?? null,
+        tokenImageUrl: avatarUrl,
+        imageUrl: avatarUrl,
     };
 
     // Attack d20 first (animated card), then ability card with inline damage.
@@ -385,12 +364,9 @@ export async function callAbilityInChat(campaignId, profile, ability, options = 
         text: displayText || content,
         senderId: profile?.uid,
         senderName: profile?.nickname ?? "Jugador",
-        characterId: ability.characterId ?? null,
-        characterName: ability.characterName ?? null,
-        characterAvatarUrl: ability.characterAvatarUrl
-            || character?.tokenImageUrl
-            || character?.imageUrl
-            || null,
+        characterId: ability.characterId ?? character?.id ?? null,
+        characterName: ability.characterName ?? character?.name ?? null,
+        characterAvatarUrl: avatarUrl,
         abilityId: ability.id,
         abilityLabel: ability.label,
         abilityTags: tagKeys.length ? tagKeys : null,
@@ -416,18 +392,19 @@ export async function callKitCardInChat(campaignId, profile, card, options = {})
     let claseDoc = options.claseDoc || null;
     let combatStats = options.combatStats || null;
 
+    if (!character && card.characterId && (hasInlineCue || !card.characterAvatarUrl)) {
+        try {
+            character = await getCharacterById(card.characterId);
+        } catch (err) {
+            console.warn("[callKitCardInChat] character fetch failed", err);
+        }
+    }
+
     let displayText = content;
     let inlineRolls = [];
 
     if (hasInlineCue) {
         if (!combatStats) {
-            if (!character && card.characterId) {
-                try {
-                    character = await getCharacterById(card.characterId);
-                } catch (err) {
-                    console.warn("[callKitCardInChat] character fetch failed", err);
-                }
-            }
             if (!claseDoc && character) {
                 const classId = character.activeClassId || character.assignedClassIds?.[0];
                 if (classId) {
@@ -447,6 +424,11 @@ export async function callKitCardInChat(campaignId, profile, card, options = {})
         inlineRolls = resolved.inlineRolls || [];
     }
 
+    const avatarUrl = card.characterAvatarUrl
+        || character?.tokenImageUrl
+        || character?.imageUrl
+        || null;
+
     await sendChatMessage(campaignId, {
         type: CHAT_MESSAGE_TYPES.ABILITY,
         text: displayText || content || label,
@@ -454,16 +436,45 @@ export async function callKitCardInChat(campaignId, profile, card, options = {})
         senderName: profile?.nickname ?? "Jugador",
         characterId: card.characterId ?? character?.id ?? null,
         characterName: card.characterName ?? character?.name ?? null,
-        characterAvatarUrl: card.characterAvatarUrl
-            || character?.tokenImageUrl
-            || character?.imageUrl
-            || null,
+        characterAvatarUrl: avatarUrl,
         abilityId: card.id ?? null,
         abilityLabel: label,
         abilityTags: tagKeys.length ? tagKeys : null,
         abilityKind,
         abilityCost: card.cost || null,
         abilityInlineRolls: inlineRolls.length ? inlineRolls : null,
+        isOOC: false,
+    });
+}
+
+/**
+ * Post an inventory item card into campaign chat (shape + what it is / does).
+ */
+export async function callItemInChat(campaignId, profile, item, options = {}) {
+    const character = options.character || null;
+    const avatarUrl = character?.tokenImageUrl || character?.imageUrl || null;
+    const name = String(item?.name || "Objeto").trim() || "Objeto";
+    const description = String(item?.description || "").trim();
+    const cells = maskCells(liveMask(item)).map((c) => ({ x: c.x, y: c.y }));
+
+    await sendChatMessage(campaignId, {
+        type: CHAT_MESSAGE_TYPES.ITEM,
+        text: description || name,
+        senderId: profile?.uid,
+        senderName: profile?.nickname ?? "Jugador",
+        characterId: character?.id ?? null,
+        characterName: character?.name ?? null,
+        characterAvatarUrl: avatarUrl,
+        itemCard: {
+            id: item?.id || null,
+            name,
+            type: item?.type || "junk",
+            rarity: item?.rarity || "common",
+            description,
+            qty: item?.qty ?? null,
+            effectLabel: options.effectLabel || null,
+            cells,
+        },
         isOOC: false,
     });
 }

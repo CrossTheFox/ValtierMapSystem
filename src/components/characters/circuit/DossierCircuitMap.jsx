@@ -46,6 +46,22 @@ function clampPct(n) {
     return Math.max(-20, Math.min(120, n));
 }
 
+function expandIdsWithAliases(base, aliasToCanonical) {
+    const out = new Set(base);
+    if (!aliasToCanonical?.size) return out;
+    for (const [from, to] of aliasToCanonical.entries()) {
+        if (out.has(to)) out.add(from);
+        if (out.has(from)) out.add(to);
+    }
+    return out;
+}
+
+function traceClassForEdge(edge) {
+    if (edge.structural) return "struct";
+    if (edge.secondary) return "secondary";
+    return edge.traceClass || "idle";
+}
+
 /**
  * @param {{
  *   layout: { nodes: object[], edges: object[], hubId?: string|null },
@@ -69,6 +85,7 @@ function clampPct(n) {
  *   onNodePositionCommit?: (entityId: string, pos: { x: number, y: number }) => void,
  *   topLeftSlot?: import('react').ReactNode,
  *   topRightSlot?: import('react').ReactNode,
+ *   showSyncChrome?: boolean,
  * }} props
  */
 export default function DossierCircuitMap({
@@ -93,6 +110,7 @@ export default function DossierCircuitMap({
     onNodePositionCommit,
     topLeftSlot = null,
     topRightSlot = null,
+    showSyncChrome = null,
 }) {
     ensureCircuitCss();
     const shellRef = useRef(null);
@@ -136,18 +154,66 @@ export default function DossierCircuitMap({
         return m;
     }, [layout]);
 
-    const selectedNode = selectedId ? nodesById.get(selectedId) : null;
+    const selectedNode = (() => {
+        if (!selectedId) return null;
+        if (nodesById.has(selectedId)) return nodesById.get(selectedId);
+        for (const n of layout?.nodes || []) {
+            if (n.entityId === selectedId) return n;
+        }
+        return null;
+    })();
     const hubNode = nodesById.get(layout?.hubId) || layout?.nodes?.find((n) => n.kind === "hub");
+    const syncChromeVisible = showSyncChrome == null ? Boolean(hubNode) : Boolean(showSyncChrome);
 
     const waveSets = useMemo(() => {
         const w1 = new Set();
         const w2 = new Set();
-        if (!propagationState?.waves?.length) return { w1, w2, live: false };
+        let lit = new Set();
+        const depthById = new Map();
+        const alias = layout?.aliasToCanonical;
+        if (!propagationState?.waves?.length) {
+            return { w1, w2, lit, depthById, live: false, hasWaves: false };
+        }
         const waves = propagationState.waves;
-        for (const id of waves[0]?.nodeIds || []) w1.add(id);
-        for (const id of waves[1]?.nodeIds || []) w2.add(id);
-        return { w1, w2, live: propagationState.mode === "live" && propagationState.active };
-    }, [propagationState]);
+        const revealThrough = Number.isFinite(propagationState.revealThrough)
+            ? propagationState.revealThrough
+            : waves.length - 1;
+        for (let i = 0; i < waves.length; i++) {
+            for (const id of waves[i]?.nodeIds || []) {
+                depthById.set(id, i);
+                if (i === 1) w1.add(id);
+                if (i === 2) w2.add(id);
+                if (i <= revealThrough) lit.add(id);
+            }
+        }
+        if (selectedId) {
+            lit.add(selectedId);
+            if (!depthById.has(selectedId)) depthById.set(selectedId, 0);
+        }
+        lit = expandIdsWithAliases(lit, alias);
+        return {
+            w1: expandIdsWithAliases(w1, alias),
+            w2: expandIdsWithAliases(w2, alias),
+            lit,
+            depthById,
+            live: propagationState.mode === "live" && propagationState.active,
+            hasWaves: true,
+            revealThrough,
+        };
+    }, [propagationState, layout?.aliasToCanonical, selectedId]);
+
+    const worldW = layout?.worldW || CIRCUIT_WORLD_W;
+    const worldH = layout?.worldH || CIRCUIT_WORLD_H;
+    const hubX = Number.isFinite(layout?.hubX) ? layout.hubX : CIRCUIT_HUB_X;
+    const hubY = Number.isFinite(layout?.hubY) ? layout.hubY : CIRCUIT_HUB_Y;
+    const worldWRef = useRef(worldW);
+    const worldHRef = useRef(worldH);
+    worldWRef.current = worldW;
+    worldHRef.current = worldH;
+    const hubXRef = useRef(hubX);
+    const hubYRef = useRef(hubY);
+    hubXRef.current = hubX;
+    hubYRef.current = hubY;
 
     const refreshAxisMarks = useCallback(() => {
         const axis = axisRef.current;
@@ -283,8 +349,8 @@ export default function DossierCircuitMap({
         st.scale = scale;
         const vw = viewport?.clientWidth || 900;
         const vh = viewport?.clientHeight || 560;
-        st.x = vw / 2 - CIRCUIT_HUB_X * st.scale;
-        st.y = vh / 2 - CIRCUIT_HUB_Y * st.scale;
+        st.x = vw / 2 - hubXRef.current * st.scale;
+        st.y = vh / 2 - hubYRef.current * st.scale;
     }, []);
 
     const animatePanToWorld = useCallback((wx, wy, durationMs, onDone) => {
@@ -430,11 +496,10 @@ export default function DossierCircuitMap({
 
         clearCircuitSeals(shell);
         const ac = new AbortController();
-        const svgEl = world.querySelector("svg.ckt-svg");
         runCircuitPacketCascadeLoop({
             shellEl: shell,
             worldEl: world,
-            svgEl,
+            svgEl: world,
             nodesById,
             layoutEdges: layout?.edges || [],
             waves,
@@ -515,9 +580,11 @@ export default function DossierCircuitMap({
             const dy = (e.clientY - nd.startClientY) / scale;
             if (Math.abs(dx) + Math.abs(dy) > 1) nd.moved = true;
             const pad = 40;
+            const ww = worldWRef.current || CIRCUIT_WORLD_W;
+            const wh = worldHRef.current || CIRCUIT_WORLD_H;
             const next = {
-                x: Math.round(Math.min(CIRCUIT_WORLD_W - pad, Math.max(pad, nd.originX + dx))),
-                y: Math.round(Math.min(CIRCUIT_WORLD_H - pad, Math.max(pad, nd.originY + dy))),
+                x: Math.round(Math.min(ww - pad, Math.max(pad, nd.originX + dx))),
+                y: Math.round(Math.min(wh - pad, Math.max(pad, nd.originY + dy))),
             };
             nd.x = next.x;
             nd.y = next.y;
@@ -656,10 +723,49 @@ export default function DossierCircuitMap({
         },
     };
 
+    const layoutEdges = layout?.edges || [];
+    const layeredTraces = layoutEdges.some((e) => e.layer);
+    const backEdges = layeredTraces
+        ? layoutEdges.filter((e) => e.layer !== "front")
+        : layoutEdges;
+    const frontEdges = layeredTraces
+        ? layoutEdges.filter((e) => e.layer === "front")
+        : [];
+    const traceAnimClass = `${animPhase === "out" ? " ckt-traces-exit" : ""}${animPhase === "in" ? " ckt-traces-enter" : ""}`;
+
+    const renderTraces = (edgeList, extraClass) => (
+        <svg
+            className={`ckt-svg${extraClass}${traceAnimClass}`}
+            viewBox={`0 0 ${worldW} ${worldH}`}
+            width={worldW}
+            height={worldH}
+        >
+            {edgeList.map((edge, i) => {
+                const from = nodesById.get(edge.fromId) || hubNode;
+                const to = nodesById.get(edge.toId);
+                if (!from || !to) return null;
+                const d = manhattanPath(from, to);
+                const tc = traceClassForEdge(edge);
+                return (
+                    <g key={`${edge.fromId}-${edge.toId}-${i}`}>
+                        <path className={`trace ${tc}`} d={d} />
+                        <path className={`trace-flow ${tc}`} d={d} />
+                        <circle className={`pad ${tc === "secondary" ? "idle" : tc}`} cx={to.x} cy={to.y} r={4} />
+                    </g>
+                );
+            })}
+        </svg>
+    );
+
     return (
         <Box
             ref={shellRef}
-            className={`ckt-shell${animPhase ? " ckt-animating" : ""}`}
+            className={[
+                "ckt-shell",
+                animPhase ? "ckt-animating" : "",
+                waveSets.live ? "wave-live" : "",
+                !waveSets.live && waveSets.hasWaves ? "wave-preview" : "",
+            ].filter(Boolean).join(" ")}
             sx={{ height: "100%", minHeight: 0 }}
         >
             <Box
@@ -677,47 +783,51 @@ export default function DossierCircuitMap({
                     onSelectNode?.(hubNode || null);
                 }}
             >
-                <div ref={atmosphereRef} className="ckt-atmosphere" aria-hidden />
+                <div ref={atmosphereRef} className="ckt-atmosphere" aria-hidden style={{ opacity: syncChromeVisible ? 1 : 0 }} />
                 <div ref={gridRef} className="ckt-grid" aria-hidden />
 
-                <Box ref={worldRef} className="ckt-world">
-                    <div className="ckt-hub-ring" style={{ opacity: hubNode ? 1 : 0 }} />
-                    <div className="ckt-horizon" style={{ opacity: hubNode ? 1 : 0.35 }} />
+                <Box
+                    ref={worldRef}
+                    className="ckt-world"
+                    sx={{ width: worldW, height: worldH }}
+                >
+                    <div className="ckt-hub-ring" style={{ opacity: hubNode ? 1 : 0, left: hubX, top: hubY }} />
+                    <div
+                        className="ckt-horizon"
+                        style={{ opacity: syncChromeVisible && hubNode ? 1 : 0, top: hubY }}
+                    />
 
-                    <svg
-                        className={`ckt-svg${animPhase === "out" ? " ckt-traces-exit" : ""}${animPhase === "in" ? " ckt-traces-enter" : ""}`}
-                        viewBox={`0 0 ${CIRCUIT_WORLD_W} ${CIRCUIT_WORLD_H}`}
-                    >
-                        {(layout?.edges || []).map((edge, i) => {
-                            const from = nodesById.get(edge.fromId) || hubNode;
-                            const to = nodesById.get(edge.toId);
-                            if (!from || !to) return null;
-                            const d = manhattanPath(from, to);
-                            const tc = edge.structural
-                                ? "struct"
-                                : edge.secondary
-                                    ? "secondary"
-                                    : edge.traceClass || "idle";
-                            return (
-                                <g key={`${edge.fromId}-${edge.toId}-${i}`}>
-                                    <path className={`trace ${tc}`} d={d} />
-                                    <path className={`trace-flow ${tc}`} d={d} />
-                                    <circle className={`pad ${tc === "secondary" ? "idle" : tc}`} cx={to.x} cy={to.y} r={4} />
-                                </g>
-                            );
-                        })}
-                    </svg>
+                    {renderTraces(backEdges, layeredTraces ? " ckt-svg-back" : "")}
 
                     {(layout?.nodes || []).map((node) => {
-                        const isSelected = selectedId === node.id || (!selectedId && node.kind === "hub");
+                        const isSelected = selectedId === node.id
+                            || selectedId === node.entityId
+                            || (!selectedId && node.kind === "hub");
+                        const eid = node.entityId || node.id;
+                        const overviewLit = layout?.litIds;
+                        const inWave = waveSets.lit.has(eid)
+                            || waveSets.lit.has(node.id)
+                            || Boolean(
+                                selectedId
+                                && overviewLit instanceof Set
+                                && (overviewLit.has(eid) || overviewLit.has(node.id)),
+                            );
                         // During cascade live, dim/hit is owned by circuitPacketCascade (DOM)
-                        const dim = !waveSets.live
-                            && Boolean(selectedId)
-                            && selectedId !== node.id
-                            && node.kind !== "hub";
-                        let waveClass = "";
+                        let dim = false;
                         if (!waveSets.live) {
-                            const eid = node.entityId || node.id;
+                            if (waveSets.hasWaves) {
+                                dim = !inWave && !isSelected && node.kind !== "hub";
+                            } else if (selectedId) {
+                                dim = !isSelected && node.kind !== "hub";
+                            }
+                        }
+                        let waveClass = "";
+                        if (!waveSets.live && waveSets.hasWaves) {
+                            const depth = waveSets.depthById.get(eid) ?? waveSets.depthById.get(node.id);
+                            if (depth === 0 || isSelected) waveClass = "wave0";
+                            else if (depth === 1) waveClass = "wave1";
+                            else if (depth >= 2) waveClass = "wave2";
+                        } else if (!waveSets.live) {
                             if (waveSets.w1.has(eid) || waveSets.w1.has(node.id)) waveClass = "wave1";
                             else if (waveSets.w2.has(eid) || waveSets.w2.has(node.id)) waveClass = "wave2";
                         }
@@ -754,6 +864,8 @@ export default function DossierCircuitMap({
                             />
                         );
                     })}
+
+                    {frontEdges.length > 0 ? renderTraces(frontEdges, " ckt-svg-front") : null}
                 </Box>
 
                 {waveSets.live && (
@@ -777,6 +889,7 @@ export default function DossierCircuitMap({
                         "& > *": { pointerEvents: "auto" },
                     }}
                 >
+                    {syncChromeVisible && (
                     <div ref={axisRef} className="ckt-axis" aria-hidden>
                         {SYNC_TICKS.map((t) => (
                             <div
@@ -798,12 +911,13 @@ export default function DossierCircuitMap({
                             </div>
                         ))}
                     </div>
+                    )}
 
                     <Box
                         sx={{
                             position: "absolute",
                             top: 10,
-                            left: 88,
+                            left: syncChromeVisible ? 88 : 12,
                             right: 12,
                             display: "flex",
                             alignItems: "center",
@@ -817,6 +931,7 @@ export default function DossierCircuitMap({
                         </Box>
                     </Box>
 
+                    {syncChromeVisible && (
                     <Box
                         sx={{
                             position: "absolute",
@@ -848,6 +963,7 @@ export default function DossierCircuitMap({
                             ↓ Peor sync
                         </Box>
                     </Box>
+                    )}
 
                     <Box
                         sx={{
@@ -883,6 +999,7 @@ export default function DossierCircuitMap({
                             {" · "}
                             {syncLabel}
                         </CyberText>
+                        {syncChromeVisible && (
                         <Box
                             sx={{
                                 height: 10,
@@ -907,12 +1024,13 @@ export default function DossierCircuitMap({
                                 }}
                             />
                         </Box>
+                        )}
                         <CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.textSecondary, lineHeight: 1.4 }}>
                             {selectedNode?.kind === "cluster"
                                 ? "Click para expandir el grupo de este rango."
                                 : hubNode
                                     ? "Altura = afinidad (−10…+10). Click enfoca."
-                                    : "Click un personaje para centrar el circuito."}
+                                    : "Click selecciona · icono foco entra al circuito ego."}
                         </CyberText>
                     </Box>
 

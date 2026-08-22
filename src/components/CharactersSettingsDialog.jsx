@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo, useRef, useCallback, createContext, useContext } from "react";
 import { useSelector, useDispatch } from "react-redux";
-import { Dialog, DialogContent, Box, CircularProgress } from "@mui/material";
+import { Dialog, DialogContent, Box, CircularProgress, Divider } from "@mui/material";
 import MinimizeIcon from "@mui/icons-material/Remove";
 import CloseIcon from "@mui/icons-material/Close";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 
 import { fetchPlayerCharacters, updateCharacterInList } from "../store/characterSlice";
 import { updateCharacterInState } from "../store/worldSlice";
+import { showSnackbar } from "../store/uiSlice";
 import { UI_COLORS } from "../constants/uiColors";
 import { DIALOG_IDS } from "../constants/dialogIds";
 import { VTT_DIALOG_SIZE } from "../constants/vttHudTokens";
@@ -16,18 +17,25 @@ import useDialogActions from "../hooks/useDialogActions";
 import { useStatSystem } from "../hooks/useStatSystem";
 import { useCampaignWikiEntities } from "../hooks/useCampaignWikiEntities";
 import { updateCharacterFields } from "../../firebase/services/characterService";
+import { normalizeBurdens } from "../utils/characterBurdens";
 import DraggableResizablePaper from "./DraggableResizablePaper";
 import usePopout from "../hooks/usePopout";
 import CharacterSheetBody from "./characters/CharacterSheetBody";
-import { SHEET_TABS, normalizeSheetTab } from "./characters/CharacterSheetTabs";
+import { SHEET_TABS, normalizeSheetTab, isMaletinIntent } from "./characters/CharacterSheetTabs";
+
+/** Debounce for text / click edits before Firestore write. */
+const AUTOSAVE_MS = 600;
 
 /* ── Dossier context (passed down to ID/KIT views) ────────────────── */
 export const DossierContext = createContext({
     editMode: true,
     dirty: false,
     draft: null,
+    saveStatus: "idle",
     spawnPing: () => {},
     patchDraft: () => {},
+    saveDraft: async () => true,
+    flushSave: async () => true,
     requestToggleEdit: () => {},
 });
 export const useDossier = () => useContext(DossierContext);
@@ -37,14 +45,66 @@ const TAB_COLORS = {
     IDENTIDAD: UI_COLORS.anomaly,      // #00f2ea cyan
     KIT:       UI_COLORS.anomaly,
     MESH:      UI_COLORS.accent,       // #ff66ff pink
+    NARRATIVA: UI_COLORS.accentStrong, // #ff1493 — narrative facet
 };
 
-const UNSAVED_MSG = "Hay cambios sin guardar. Si cierras ahora se perderán.";
+const SAVE_FAILED_MSG = "No se pudieron guardar los cambios. Reintenta o descarta para salir.";
+
+/**
+ * Merge sheet list + world realtime without blocking user edits.
+ * List wins for keys it actually has (incl. 0 / empty string). World fills gaps only.
+ * If list stats look like an empty stub while world has real values, keep world
+ * (guards against partial list patches wiping the sheet — without Math.max freezes).
+ */
+function isHollowStats(stats) {
+    if (!stats || typeof stats !== "object") return true;
+    const vals = Object.values(stats).map((v) => Number(v));
+    if (!vals.length) return true;
+    return vals.every((n) => !Number.isFinite(n) || n === 0);
+}
+
+function mergeStatsSafe(listStats, worldStats) {
+    const list = listStats && typeof listStats === "object" ? listStats : {};
+    const world = worldStats && typeof worldStats === "object" ? worldStats : {};
+    if (!Object.keys(list).length || (isHollowStats(list) && !isHollowStats(world))) {
+        return { ...world };
+    }
+    const keys = new Set([...Object.keys(world), ...Object.keys(list)]);
+    const out = {};
+    for (const k of keys) {
+        if (Object.prototype.hasOwnProperty.call(list, k)) {
+            const n = Number(list[k]);
+            out[k] = Number.isFinite(n) ? n : (Number(world[k]) || 0);
+        } else {
+            out[k] = Number(world[k]) || 0;
+        }
+    }
+    return out;
+}
+
+function mergeBondSafe(listBond, worldBond) {
+    const list = listBond && typeof listBond === "object" ? listBond : {};
+    const world = worldBond && typeof worldBond === "object" ? worldBond : {};
+    if (!Object.keys(list).length) return { ...world };
+    return {
+        ...world,
+        ...list,
+        ideals: Array.isArray(list.ideals)
+            ? list.ideals
+            : (Array.isArray(world.ideals) ? world.ideals : []),
+    };
+}
+
+function mergeBondPowersSafe(listPowers, worldPowers) {
+    if (Array.isArray(listPowers)) return listPowers;
+    if (Array.isArray(worldPowers)) return worldPowers;
+    return [];
+}
 
 /**
  * Player dossier for the HUD-active character — Holodeck shell.
- * Chrome: tabs (ID / KIT / MESH) left, character name + level centred, controls right.
- * Always click-to-edit; GUARDAR FAB appears only when there are uncommitted changes.
+ * Chrome: tabs (ID / KIT / MESH / NAR) left, character name + level centred, controls right.
+ * Always click-to-edit; edits autosave (debounce + flush on blur / leave).
  */
 export default function CharactersSettingsDialog({ open, onClose, popupMode = false }) {
     const dispatch = useDispatch();
@@ -62,7 +122,9 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
     const [draft, setDraft] = useState(null);
     const [dirty, setDirty] = useState(false);
     const [saving, setSaving] = useState(false);
-    /** In-dialog leave guard — avoids unreliable window.confirm under MUI focus trap. */
+    /** idle | pending | saving | saved | error */
+    const [saveStatus, setSaveStatus] = useState("idle");
+    /** In-dialog leave guard — only when flush fails. */
     const [leaveGuard, setLeaveGuard] = useState(null); // 'close' | 'mesh' | 'popout' | 'backdrop'
 
     const { isMinimized, toggleMinimize, forceMinimize } = useDialogActions(DIALOG_IDS.SHEET);
@@ -71,7 +133,12 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
     /* ── Ping overlay ref ─────────────────────────────────────────── */
     const pingLayerRef = useRef(null);
     const dirtyRef = useRef(false);
-    dirtyRef.current = dirty;
+    const draftRef = useRef(null);
+    /** Bumped on every patchDraft so saveDraft won't clear newer in-flight edits. */
+    const draftEpochRef = useRef(0);
+    const saveTimerRef = useRef(null);
+    const savedClearTimerRef = useRef(null);
+    const saveDraftRef = useRef(async () => true);
 
     const spawnPing = useCallback((x, y) => {
         const layer = pingLayerRef.current;
@@ -89,18 +156,25 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
 
     /* ── Character resolution ─────────────────────────────────────── */
     const activeCharacterId = profile?.activeCharacterId || null;
+    const focusCharacterId = sheetFocus?.characterId || activeCharacterId || null;
 
     const selectedCharacter = useMemo(() => {
-        if (!activeCharacterId) return null;
-        const fromList = characters.find((c) => c.id === activeCharacterId);
-        const fromWorld = worldChars[activeCharacterId];
+        if (!focusCharacterId) return null;
+        const fromList = characters.find((c) => c.id === focusCharacterId);
+        const fromWorld = worldChars[focusCharacterId];
         if (fromList && fromWorld) {
-            // Sheet doc is richer for bio/banner; world may have fresher placement/token.
-            // Don't let a missing media key on one source wipe the other.
+            // Sheet list can lag / get partial patches; world realtime has the full doc.
+            // Never let empty list stats/bond wipe richer world data (burden autosave bug).
             return {
                 ...fromWorld,
                 ...fromList,
-                id: activeCharacterId,
+                id: focusCharacterId,
+                stats: mergeStatsSafe(fromList.stats, fromWorld.stats),
+                bond: mergeBondSafe(fromList.bond, fromWorld.bond),
+                bondPowers: mergeBondPowersSafe(fromList.bondPowers, fromWorld.bondPowers),
+                burdens: normalizeBurdens(
+                    fromList.burdens !== undefined ? fromList.burdens : fromWorld.burdens,
+                ),
                 bannerUrl: fromList.bannerUrl ?? fromWorld.bannerUrl ?? null,
                 imageUrl: fromList.imageUrl ?? fromWorld.imageUrl ?? null,
                 tokenImageUrl: fromList.tokenImageUrl ?? fromWorld.tokenImageUrl ?? null,
@@ -108,27 +182,52 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                 level: fromList.level ?? fromWorld.level ?? 0,
             };
         }
-        if (fromList) return fromList;
-        if (fromWorld) return { id: activeCharacterId, ...fromWorld };
+        if (fromList) {
+            return {
+                ...fromList,
+                stats: fromList.stats || {},
+                bond: fromList.bond || {},
+                burdens: normalizeBurdens(fromList.burdens),
+            };
+        }
+        if (fromWorld) {
+            return {
+                id: focusCharacterId,
+                ...fromWorld,
+                burdens: normalizeBurdens(fromWorld.burdens),
+            };
+        }
         return null;
-    }, [activeCharacterId, characters, worldChars]);
+    }, [focusCharacterId, characters, worldChars]);
 
     /** Character as shown in the sheet (live doc + uncommitted draft). */
     const viewCharacter = useMemo(() => {
         if (!selectedCharacter) return null;
         if (!draft) return selectedCharacter;
+        // Apply only known draft keys — never raw-spread draft (avoids wiping nested fields).
         return {
             ...selectedCharacter,
-            ...draft,
+            name: draft.name ?? selectedCharacter.name,
             bond: { ...(selectedCharacter.bond || {}), ...(draft.bond || {}) },
             stats: { ...(selectedCharacter.stats || {}), ...(draft.stats || {}) },
             bondPowers: draft.bondPowers ?? selectedCharacter.bondPowers,
+            burdens: draft.burdens !== undefined
+                ? normalizeBurdens(draft.burdens)
+                : normalizeBurdens(selectedCharacter.burdens),
             narrativeShortcuts: draft.narrativeShortcuts ?? selectedCharacter.narrativeShortcuts,
-            bannerUrl: draft.bannerUrl ?? selectedCharacter.bannerUrl ?? null,
-            imageUrl: draft.imageUrl ?? selectedCharacter.imageUrl ?? null,
-            tokenImageUrl: draft.tokenImageUrl ?? selectedCharacter.tokenImageUrl ?? null,
+            bannerUrl: draft.bannerUrl !== undefined ? draft.bannerUrl : (selectedCharacter.bannerUrl ?? null),
+            imageUrl: draft.imageUrl !== undefined ? draft.imageUrl : (selectedCharacter.imageUrl ?? null),
+            tokenImageUrl: draft.tokenImageUrl !== undefined
+                ? draft.tokenImageUrl
+                : (selectedCharacter.tokenImageUrl ?? null),
             ap: draft.ap ?? selectedCharacter.ap ?? 0,
             level: draft.level ?? selectedCharacter.level ?? 0,
+            assignedClassIds: draft.assignedClassIds ?? selectedCharacter.assignedClassIds,
+            activeClassId: draft.activeClassId ?? selectedCharacter.activeClassId,
+            combatOverrides: draft.combatOverrides ?? selectedCharacter.combatOverrides,
+            vit: draft.vit ?? selectedCharacter.vit,
+            jobResources: draft.jobResources ?? selectedCharacter.jobResources,
+            macroBar: draft.macroBar ?? selectedCharacter.macroBar,
         };
     }, [selectedCharacter, draft]);
 
@@ -149,20 +248,66 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
 
     /* Reset draft when character changes */
     useEffect(() => {
+        if (saveTimerRef.current) {
+            clearTimeout(saveTimerRef.current);
+            saveTimerRef.current = null;
+        }
+        if (savedClearTimerRef.current) {
+            clearTimeout(savedClearTimerRef.current);
+            savedClearTimerRef.current = null;
+        }
+        draftEpochRef.current += 1;
+        draftRef.current = null;
+        dirtyRef.current = false;
         setDraft(null);
         setDirty(false);
+        setSaveStatus("idle");
         setLeaveGuard(null);
-    }, [activeCharacterId]);
+    }, [focusCharacterId]);
 
     /* Reset draft when sheet fully closes (keeps state while minimized). */
     useEffect(() => {
         if (open || popupMode) return;
+        if (saveTimerRef.current) {
+            clearTimeout(saveTimerRef.current);
+            saveTimerRef.current = null;
+        }
+        if (savedClearTimerRef.current) {
+            clearTimeout(savedClearTimerRef.current);
+            savedClearTimerRef.current = null;
+        }
+        draftEpochRef.current += 1;
+        draftRef.current = null;
+        dirtyRef.current = false;
         setDraft(null);
         setDirty(false);
+        setSaveStatus("idle");
         setLeaveGuard(null);
     }, [open, popupMode]);
 
+    useEffect(() => () => {
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        if (savedClearTimerRef.current) clearTimeout(savedClearTimerRef.current);
+    }, []);
+
+    const clearAutosaveTimer = useCallback(() => {
+        if (saveTimerRef.current) {
+            clearTimeout(saveTimerRef.current);
+            saveTimerRef.current = null;
+        }
+    }, []);
+
+    const scheduleAutosave = useCallback(() => {
+        setSaveStatus("pending");
+        clearAutosaveTimer();
+        saveTimerRef.current = setTimeout(() => {
+            saveTimerRef.current = null;
+            saveDraftRef.current?.();
+        }, AUTOSAVE_MS);
+    }, [clearAutosaveTimer]);
+
     const patchDraft = useCallback((partial) => {
+        draftEpochRef.current += 1;
         setDraft((prev) => {
             const base = prev || {};
             const next = { ...base, ...partial };
@@ -172,86 +317,113 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
             if (partial.stats) {
                 next.stats = { ...(base.stats || {}), ...partial.stats };
             }
+            draftRef.current = next;
             return next;
         });
+        dirtyRef.current = true;
         setDirty(true);
-    }, []);
+        scheduleAutosave();
+    }, [scheduleAutosave]);
 
     const discardDraft = useCallback(() => {
+        clearAutosaveTimer();
+        if (savedClearTimerRef.current) {
+            clearTimeout(savedClearTimerRef.current);
+            savedClearTimerRef.current = null;
+        }
+        draftEpochRef.current += 1;
+        draftRef.current = null;
+        dirtyRef.current = false;
         setDraft(null);
         setDirty(false);
+        setSaveStatus("idle");
         setLeaveGuard(null);
-    }, []);
+    }, [clearAutosaveTimer]);
 
     const saveDraft = useCallback(async () => {
-        if (!selectedCharacter?.id || !draft || !dirty) return false;
+        const liveDraft = draftRef.current;
+        const liveDirty = dirtyRef.current;
+        // Nothing pending → success (flush / leave can proceed).
+        if (!selectedCharacter?.id || !liveDraft || !liveDirty) {
+            setSaveStatus((s) => (s === "pending" || s === "saving" ? "idle" : s));
+            return true;
+        }
+        const epochAtStart = draftEpochRef.current;
         setSaving(true);
+        setSaveStatus("saving");
         try {
             const payload = {};
             const reduxPatch = {};
-            if (draft.name != null) {
-                payload.name = draft.name;
-                reduxPatch.name = draft.name;
+            const baseStats = selectedCharacter.stats || {};
+            const baseBond = selectedCharacter.bond || {};
+            if (liveDraft.name != null) {
+                payload.name = liveDraft.name;
+                reduxPatch.name = liveDraft.name;
             }
-            if (draft.bannerUrl !== undefined) {
-                payload.bannerUrl = draft.bannerUrl;
-                reduxPatch.bannerUrl = draft.bannerUrl;
+            if (liveDraft.bannerUrl !== undefined) {
+                payload.bannerUrl = liveDraft.bannerUrl;
+                reduxPatch.bannerUrl = liveDraft.bannerUrl;
             }
-            if (draft.imageUrl !== undefined) {
-                payload.imageUrl = draft.imageUrl;
-                reduxPatch.imageUrl = draft.imageUrl;
+            if (liveDraft.imageUrl !== undefined) {
+                payload.imageUrl = liveDraft.imageUrl;
+                reduxPatch.imageUrl = liveDraft.imageUrl;
             }
-            if (draft.tokenImageUrl !== undefined) {
-                payload.tokenImageUrl = draft.tokenImageUrl;
-                reduxPatch.tokenImageUrl = draft.tokenImageUrl;
+            if (liveDraft.tokenImageUrl !== undefined) {
+                payload.tokenImageUrl = liveDraft.tokenImageUrl;
+                reduxPatch.tokenImageUrl = liveDraft.tokenImageUrl;
             }
-            if (draft.stats) {
-                Object.entries(draft.stats).forEach(([k, v]) => {
+            if (liveDraft.stats) {
+                // Only write keys the user actually edited — never dump a full zero map.
+                Object.entries(liveDraft.stats).forEach(([k, v]) => {
                     payload[`stats.${k}`] = v;
                 });
-                reduxPatch.stats = { ...(selectedCharacter.stats || {}), ...draft.stats };
+                reduxPatch.stats = { ...baseStats, ...liveDraft.stats };
             }
-            if (draft.bond) {
-                Object.entries(draft.bond).forEach(([k, v]) => {
+            if (liveDraft.bond) {
+                Object.entries(liveDraft.bond).forEach(([k, v]) => {
                     payload[`bond.${k}`] = v;
                 });
-                reduxPatch.bond = { ...(selectedCharacter.bond || {}), ...draft.bond };
+                reduxPatch.bond = { ...baseBond, ...liveDraft.bond };
             }
-            if (draft.bondPowers !== undefined) {
-                payload.bondPowers = draft.bondPowers;
-                reduxPatch.bondPowers = draft.bondPowers;
+            if (liveDraft.bondPowers !== undefined) {
+                payload.bondPowers = liveDraft.bondPowers;
+                reduxPatch.bondPowers = liveDraft.bondPowers;
             }
-            if (draft.narrativeShortcuts !== undefined) {
-                payload.narrativeShortcuts = draft.narrativeShortcuts;
-                reduxPatch.narrativeShortcuts = draft.narrativeShortcuts;
+            if (liveDraft.burdens !== undefined) {
+                payload.burdens = normalizeBurdens(liveDraft.burdens);
+                reduxPatch.burdens = payload.burdens;
             }
-            if (draft.assignedClassIds !== undefined) {
-                payload.assignedClassIds = draft.assignedClassIds;
-                reduxPatch.assignedClassIds = draft.assignedClassIds;
+            if (liveDraft.narrativeShortcuts !== undefined) {
+                payload.narrativeShortcuts = liveDraft.narrativeShortcuts;
+                reduxPatch.narrativeShortcuts = liveDraft.narrativeShortcuts;
             }
-            if (draft.activeClassId !== undefined) {
-                payload.activeClassId = draft.activeClassId;
-                reduxPatch.activeClassId = draft.activeClassId;
+            if (liveDraft.assignedClassIds !== undefined) {
+                payload.assignedClassIds = liveDraft.assignedClassIds;
+                reduxPatch.assignedClassIds = liveDraft.assignedClassIds;
             }
-            if (draft.combatOverrides !== undefined) {
-                payload.combatOverrides = draft.combatOverrides;
-                reduxPatch.combatOverrides = draft.combatOverrides;
+            if (liveDraft.activeClassId !== undefined) {
+                payload.activeClassId = liveDraft.activeClassId;
+                reduxPatch.activeClassId = liveDraft.activeClassId;
             }
-            if (draft.vit !== undefined) {
-                payload.vit = draft.vit;
-                reduxPatch.vit = draft.vit;
+            if (liveDraft.combatOverrides !== undefined) {
+                payload.combatOverrides = liveDraft.combatOverrides;
+                reduxPatch.combatOverrides = liveDraft.combatOverrides;
             }
-            if (draft.level !== undefined) {
-                payload.level = draft.level;
-                reduxPatch.level = draft.level;
+            if (liveDraft.vit !== undefined) {
+                payload.vit = liveDraft.vit;
+                reduxPatch.vit = liveDraft.vit;
             }
-            if (draft.ap !== undefined) {
-                payload.ap = draft.ap;
-                reduxPatch.ap = draft.ap;
+            if (liveDraft.level !== undefined) {
+                payload.level = liveDraft.level;
+                reduxPatch.level = liveDraft.level;
             }
-            if (draft.jobResources !== undefined) {
-                payload.jobResources = draft.jobResources;
-                reduxPatch.jobResources = draft.jobResources;
+            if (liveDraft.ap !== undefined) {
+                payload.ap = liveDraft.ap;
+                reduxPatch.ap = liveDraft.ap;
+            }
+            if (liveDraft.jobResources !== undefined) {
+                payload.jobResources = liveDraft.jobResources;
+                reduxPatch.jobResources = liveDraft.jobResources;
             }
             if (Object.keys(payload).length) {
                 await updateCharacterFields(selectedCharacter.id, payload);
@@ -262,17 +434,45 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                     data: reduxPatch,
                 }));
             }
-            setDraft(null);
-            setDirty(false);
-            setLeaveGuard(null);
+            // Don't wipe edits typed/clicked while Firestore save was in flight.
+            if (draftEpochRef.current === epochAtStart) {
+                draftRef.current = null;
+                dirtyRef.current = false;
+                setDraft(null);
+                setDirty(false);
+                setLeaveGuard(null);
+                setSaveStatus("saved");
+                if (savedClearTimerRef.current) clearTimeout(savedClearTimerRef.current);
+                savedClearTimerRef.current = setTimeout(() => {
+                    savedClearTimerRef.current = null;
+                    setSaveStatus((s) => (s === "saved" ? "idle" : s));
+                }, 1800);
+            } else {
+                // Newer edits landed during save — schedule another pass.
+                scheduleAutosave();
+            }
             return true;
         } catch (err) {
             console.error("[Dossier] save:", err);
+            setSaveStatus("error");
             return false;
         } finally {
             setSaving(false);
         }
-    }, [selectedCharacter, draft, dirty, dispatch]);
+    }, [selectedCharacter, dispatch, scheduleAutosave]);
+
+    saveDraftRef.current = saveDraft;
+
+    const flushSave = useCallback(async () => {
+        clearAutosaveTimer();
+        // Drain pending draft (incl. edits that arrived mid-write).
+        for (let i = 0; i < 4; i += 1) {
+            if (!dirtyRef.current || !draftRef.current) return true;
+            const ok = await saveDraftRef.current?.();
+            if (!ok) return false;
+        }
+        return !dirtyRef.current;
+    }, [clearAutosaveTimer]);
 
     const runLeaveAction = useCallback((action) => {
         discardDraft();
@@ -297,28 +497,53 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
         onClose();
     }, [discardDraft, forceMinimize, popout, onClose, popupMode]);
 
-    const requestLeave = useCallback((action) => {
-        if (dirtyRef.current) {
-            setLeaveGuard(action);
+    const requestLeave = useCallback(async (action) => {
+        if (!dirtyRef.current && !saveTimerRef.current) {
+            runLeaveAction(action);
             return;
         }
-        runLeaveAction(action);
-    }, [runLeaveAction]);
+        const ok = await flushSave();
+        if (ok && !dirtyRef.current) {
+            runLeaveAction(action);
+            return;
+        }
+        setLeaveGuard(action);
+        dispatch(showSnackbar({
+            message: "No se pudieron guardar los cambios del dossier",
+            severity: "error",
+        }));
+    }, [runLeaveAction, flushSave, dispatch]);
 
     const requestToggleEdit = useCallback(() => {
-        /* no-op: dossier is always editable; GUARDAR appears when dirty */
+        /* no-op: dossier is always editable; autosave handles persistence */
     }, []);
 
-    const handleTabChange = (tabId) => {
+    const handleTabChange = useCallback(async (tabId) => {
         const next = normalizeSheetTab(tabId);
-        if (next === "MESH" && dirtyRef.current) {
-            requestLeave("mesh");
-            return;
+        if (next === activeTab) return;
+        if (dirtyRef.current || saveTimerRef.current) {
+            const ok = await flushSave();
+            if (!ok || dirtyRef.current) {
+                setLeaveGuard(next === "MESH" ? "mesh" : null);
+                if (next === "MESH") {
+                    dispatch(showSnackbar({
+                        message: "No se pudieron guardar los cambios del dossier",
+                        severity: "error",
+                    }));
+                }
+                return;
+            }
         }
         setActiveTab(next);
-    };
+    }, [activeTab, flushSave, dispatch]);
 
-    const handleToggleMinimize = (e) => { e.stopPropagation(); toggleMinimize(); };
+    const handleToggleMinimize = async (e) => {
+        e.stopPropagation();
+        if (dirtyRef.current || saveTimerRef.current) {
+            await flushSave();
+        }
+        toggleMinimize();
+    };
 
     const attemptClose = useCallback(() => {
         requestLeave("close");
@@ -362,13 +587,14 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
 
     const chrome = (
         <Box className="dialog-drag-handle" sx={chromeSx}>
-            {/* LEFT — tabs */}
+            {/* LEFT — play tabs | narrative facet */}
             <Box sx={{ display: "flex", alignItems: "center", gap: "2px", zIndex: 1 }}>
                 {SHEET_TABS.map((tab) => {
                     const on = activeTab === tab.id;
                     const isMesh = tab.id === "MESH";
-                    const tabColor = TAB_COLORS[tab.id];
-                    return (
+                    const isNar = tab.id === "NARRATIVA";
+                    const tabColor = TAB_COLORS[tab.id] || UI_COLORS.anomaly;
+                    const tabBtn = (
                         <Box
                             key={tab.id}
                             component="button"
@@ -393,14 +619,29 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                                     color: "#ffffff",
                                     bgcolor: "rgba(255,255,255,0.04)",
                                 },
-                                ...(isMesh && on
-                                    ? { color: "#ffffff", bgcolor: `${UI_COLORS.accent}22` }
+                                ...((isMesh || isNar) && on
+                                    ? { color: "#ffffff", bgcolor: `${tabColor}22` }
                                     : {}),
                             }}
                         >
                             {tab.id === "IDENTIDAD" ? "▣ ID"
                                 : tab.id === "KIT" ? "⚙ KIT"
-                                : "◈ MESH"}
+                                : tab.id === "MESH" ? "◈ MESH"
+                                : "◇ NAR"}
+                        </Box>
+                    );
+                    if (!isNar) return tabBtn;
+                    return (
+                        <Box
+                            key="nar-facet"
+                            sx={{ display: "flex", alignItems: "stretch", ml: "4px" }}
+                        >
+                            <Divider
+                                orientation="vertical"
+                                flexItem
+                                sx={{ borderColor: `${UI_COLORS.accentStrong}66`, mx: 1 }}
+                            />
+                            {tabBtn}
                         </Box>
                     );
                 })}
@@ -428,6 +669,7 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                         component="input"
                         value={viewCharacter?.name ?? ""}
                         onChange={(e) => patchDraft({ name: e.target.value })}
+                        onBlur={() => { flushSave(); }}
                         placeholder="NOMBRE"
                         sx={{
                             fontFamily: "Orbitron, sans-serif",
@@ -437,7 +679,13 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                             textAlign: "center",
                             textTransform: "uppercase",
                             bgcolor: "rgba(0,0,0,0.45)",
-                            border: `1px solid ${dirty ? UI_COLORS.accent : UI_COLORS.border}`,
+                            border: `1px solid ${
+                                saveStatus === "error"
+                                    ? UI_COLORS.danger
+                                    : (dirty || saveStatus === "pending" || saveStatus === "saving")
+                                        ? UI_COLORS.accent
+                                        : UI_COLORS.border
+                            }`,
                             borderRadius: "4px",
                             outline: "none",
                             px: 1.5,
@@ -464,6 +712,7 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                                 const n = Math.max(0, Math.min(12, Math.floor(Number(e.target.value) || 0)));
                                 patchDraft({ level: n });
                             }}
+                            onBlur={() => { flushSave(); }}
                             sx={{
                                 width: 44,
                                 fontFamily: "Orbitron, sans-serif",
@@ -497,6 +746,7 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                                 const n = Math.max(0, Math.floor(Number(e.target.value) || 0));
                                 patchDraft({ ap: n });
                             }}
+                            onBlur={() => { flushSave(); }}
                             sx={{
                                 width: 44,
                                 fontFamily: "Orbitron, sans-serif",
@@ -541,8 +791,46 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                 </Box>
             )}
 
-            {/* RIGHT — window controls */}
+            {/* RIGHT — autosave chip + window controls */}
             <Box sx={{ display: "flex", alignItems: "center", gap: "6px", zIndex: 1 }} className="dialog-no-drag">
+                {saveStatus !== "idle" && (
+                    <Box
+                        sx={{
+                            fontFamily: "Orbitron, sans-serif",
+                            fontSize: "0.42rem",
+                            letterSpacing: "0.1em",
+                            px: 0.85,
+                            py: 0.45,
+                            borderRadius: "3px",
+                            border: `1px solid ${
+                                saveStatus === "error"
+                                    ? UI_COLORS.danger
+                                    : saveStatus === "saved"
+                                        ? UI_COLORS.anomaly
+                                        : UI_COLORS.border
+                            }`,
+                            color: saveStatus === "error"
+                                ? UI_COLORS.danger
+                                : saveStatus === "saved"
+                                    ? UI_COLORS.anomaly
+                                    : UI_COLORS.textSecondary,
+                            bgcolor: saveStatus === "error"
+                                ? `${UI_COLORS.danger}14`
+                                : saveStatus === "saved"
+                                    ? `${UI_COLORS.anomaly}12`
+                                    : "rgba(0,0,0,0.35)",
+                            whiteSpace: "nowrap",
+                            minWidth: 72,
+                            textAlign: "center",
+                        }}
+                        title={saveStatus === "error" ? "Error al guardar" : undefined}
+                    >
+                        {saveStatus === "pending" && "…"}
+                        {saveStatus === "saving" && "GUARDANDO"}
+                        {saveStatus === "saved" && "GUARDADO"}
+                        {saveStatus === "error" && "ERROR"}
+                    </Box>
+                )}
                 {!popupMode && (
                     <>
                         <Box
@@ -610,13 +898,7 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                     <Box
                         component="button"
                         type="button"
-                        onClick={() => {
-                            if (dirtyRef.current) {
-                                setLeaveGuard("close");
-                                return;
-                            }
-                            window.close();
-                        }}
+                        onClick={() => requestLeave("close")}
                         sx={{
                             width: 28, height: 28,
                             border: `1px solid ${UI_COLORS.border}`,
@@ -640,10 +922,13 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
         editMode,
         dirty,
         draft,
+        saveStatus,
         spawnPing,
         patchDraft,
+        saveDraft,
+        flushSave,
         requestToggleEdit,
-    }), [editMode, dirty, draft, spawnPing, patchDraft, requestToggleEdit]);
+    }), [editMode, dirty, draft, saveStatus, spawnPing, patchDraft, saveDraft, flushSave, requestToggleEdit]);
 
     /* ── Body ─────────────────────────────────────────────────────── */
     const sheetBody = (
@@ -654,6 +939,7 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                 onTabChange={handleTabChange}
                 kitView={kitView}
                 onKitViewChange={setKitView}
+                initialMaletinOpen={Boolean(sheetFocus?.openMaletin) || isMaletinIntent(sheetFocus?.tab)}
                 statDefinitions={statDefinitions}
                 maxStat={4}
                 wikiEntities={campaignWikiEntities}
@@ -663,38 +949,6 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
             />
         </DossierContext.Provider>
     );
-
-    const saveFab = dirty && activeTab !== "MESH" ? (
-        <Box
-            component="button"
-            type="button"
-            className="dialog-no-drag"
-            disabled={saving}
-            onClick={saveDraft}
-            sx={{
-                position: "absolute",
-                right: 18,
-                bottom: 18,
-                zIndex: 20,
-                fontFamily: "Orbitron, sans-serif",
-                fontSize: "0.62rem",
-                letterSpacing: "0.14em",
-                px: 2.2,
-                py: 1.1,
-                borderRadius: "8px",
-                cursor: saving ? "wait" : "pointer",
-                border: `1px solid ${UI_COLORS.accent}`,
-                bgcolor: "rgba(255,102,255,0.22)",
-                color: "#ffffff",
-                boxShadow: "0 0 24px rgba(255,102,255,0.35)",
-                backdropFilter: "blur(10px)",
-                "&:hover": { bgcolor: "rgba(255,102,255,0.35)" },
-                "&:disabled": { opacity: 0.6 },
-            }}
-        >
-            {saving ? "GUARDANDO…" : "GUARDAR"}
-        </Box>
-    ) : null;
 
     const leaveGuardUi = leaveGuard ? (
         <Box
@@ -730,7 +984,7 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                     color: "#ffffff",
                     mb: 0.75,
                 }}>
-                    CAMBIOS SIN GUARDAR
+                    NO SE PUDO GUARDAR
                 </Box>
                 <Box sx={{
                     fontFamily: "Fira Sans, sans-serif",
@@ -739,7 +993,7 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                     mb: 1.5,
                     lineHeight: 1.4,
                 }}>
-                    {UNSAVED_MSG}
+                    {SAVE_FAILED_MSG}
                 </Box>
                 <Box sx={{ display: "flex", gap: 1, justifyContent: "flex-end", justifyContent: "flex-end" }}>
                     <Box
@@ -768,8 +1022,8 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                         disabled={saving}
                         onClick={async () => {
                             const action = leaveGuard;
-                            const ok = await saveDraft();
-                            if (!ok) return;
+                            const ok = await flushSave();
+                            if (!ok || dirtyRef.current) return;
                             runLeaveAction(action);
                         }}
                         sx={{
@@ -787,7 +1041,7 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                             "&:disabled": { opacity: 0.6 },
                         }}
                     >
-                        GUARDAR Y SALIR
+                        REINTENTAR Y SALIR
                     </Box>
                     <Box
                         component="button"
@@ -840,7 +1094,6 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                                 <CircularProgress />
                             </Box>
                         ) : sheetBody}
-                        {saveFab}
                         {leaveGuardUi}
                     </Box>
                 </Box>
@@ -877,7 +1130,7 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                         flexDirection: "column",
                         m: 0,
                         borderRadius: { xs: "12px 12px 0 0", sm: VTT_DIALOG_SIZE.xl.borderRadius },
-                        height: { xs: "92vh", sm: VTT_DIALOG_SIZE.xl.height },
+                        height: { xs: "96vh", sm: VTT_DIALOG_SIZE.xl.height },
                         width: { xs: "100%", sm: VTT_DIALOG_SIZE.xl.width },
                         maxWidth: "100vw",
                         maxHeight: "100vh",
@@ -906,7 +1159,6 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                             <CircularProgress />
                         </Box>
                     ) : sheetBody}
-                    {saveFab}
                     {leaveGuardUi}
                 </DialogContent>
             </Dialog>

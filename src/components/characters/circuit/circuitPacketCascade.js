@@ -127,6 +127,10 @@ export async function runCircuitPacketCascadeLoop(opts) {
         if (!el) return;
         el.dataset.cktLit = on ? "1" : "0";
         el.classList.toggle("ckt-pkt-lit", on);
+        if (on) {
+            el.dataset.cktWave = "on";
+            el.classList.remove("dim");
+        }
     };
     const flashHit = (entityId) => {
         const el = findNodeEl(entityId);

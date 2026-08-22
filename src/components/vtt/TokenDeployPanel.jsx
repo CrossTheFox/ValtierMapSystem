@@ -23,11 +23,12 @@ import {
 import {
     TOKEN_SIZE_OPTIONS,
     resolveCellSize,
-    snapToGridCenter,
+    snapTokenToGrid,
     resolveTokenSizeKey,
 } from "../../utils/gridMath";
 import { clientToWorld } from "../../utils/clientToWorld";
 import { canControlToken, findNearestLocation, isDmRole } from "../../utils/tokenControl";
+import { buildCampaignCharacterMap } from "../../utils/characterCombat";
 
 const FILTERS = [
     { id: "all", label: "Todos" },
@@ -108,6 +109,9 @@ const ROSTER_SCROLL_SX = {
 /**
  * Token tray: DM sees campaign roster; players see only controllable chars.
  * Drag undeployed rows onto the map to place (grid-snapped + locationId sync).
+ *
+ * Roster = Redux world (same as Combat HUD) + live Firestore query by campaignId.
+ * The list opens even without an active map (deploy stays disabled until there is one).
  */
 export default function TokenDeployPanel({ open, onClose }) {
     const [filter, setFilter] = useState("all");
@@ -126,6 +130,8 @@ export default function TokenDeployPanel({ open, onClose }) {
     const map = useSelector((s) => s.world.map);
     const gridConfig = useSelector((s) => s.world.gridConfig);
     const locations = useSelector((s) => s.world.locations);
+    const charactersById = useSelector((s) => s.world.charactersById ?? {});
+    const sheetCharacters = useSelector((s) => s.characters.list);
     const tokenPositions = useSelector((s) => s.game.tokenPositions ?? {});
     const profile = useSelector((s) => s.player.profile);
     const isDM = isDmRole(profile?.role);
@@ -149,14 +155,24 @@ export default function TokenDeployPanel({ open, onClose }) {
     }, [campaignId]);
 
     const characters = useMemo(() => {
-        const list = campaignChars
+        const byId = buildCampaignCharacterMap(
+            charactersById,
+            locations,
+            sheetCharacters,
+            campaignId,
+        );
+        (campaignChars || []).forEach((c) => {
+            if (!c?.id) return;
+            const prev = byId.get(c.id);
+            byId.set(c.id, prev ? { ...prev, ...c } : c);
+        });
+        return [...byId.values()]
             .filter((c) => isDM || canControlToken(c, profile))
-            .slice()
-            .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-        return list;
-    }, [campaignChars, isDM, profile]);
+            .sort((a, b) => (a.name || "").localeCompare(b.name || "", "es"));
+    }, [charactersById, locations, sheetCharacters, campaignId, campaignChars, isDM, profile]);
 
-    const mapTokens = tokenPositions[mapId] ?? {};
+    const mapTokens = mapId ? (tokenPositions[mapId] ?? {}) : {};
+    const canDeploy = Boolean(campaignId && mapId);
 
     const filtered = useMemo(() => {
         return characters.filter((char) => {
@@ -199,9 +215,10 @@ export default function TokenDeployPanel({ open, onClose }) {
 
             const gc = gridConfigRef.current;
             const cell = resolveCellSize(mapRef.current, gc);
+            const sizeKey = resolveTokenSizeKey({ tokenSize: payload.tokenSize });
             const snapped = gc?.snap === false
                 ? world
-                : snapToGridCenter(world.x, world.y, cell);
+                : snapTokenToGrid(world.x, world.y, cell, sizeKey);
 
             const nearest = findNearestLocation(locationsRef.current, snapped.x, snapped.y);
 
@@ -230,25 +247,37 @@ export default function TokenDeployPanel({ open, onClose }) {
         };
     }, [dragGhost, campaignId, mapId]);
 
-    if (!open || !campaignId || !mapId) return null;
+    if (!open || !campaignId) return null;
 
     const handleRemove = async (charId) => {
+        if (!mapId) return;
         await removeTokenFromMap(campaignId, mapId, charId);
     };
 
     const handleSizeChange = async (char, sizeKey) => {
+        if (!mapId) return;
         const pos = mapTokens[char.id];
         if (!pos) return;
-        await updateTokenSizeOverride(campaignId, mapId, char.id, sizeKey, pos);
+        const gc = gridConfigRef.current;
+        const cell = resolveCellSize(mapRef.current, gc);
+        const snapped = gc?.snap === false
+            ? { x: pos.x, y: pos.y }
+            : snapTokenToGrid(pos.x, pos.y, cell, sizeKey);
+        await updateTokenSizeOverride(campaignId, mapId, char.id, sizeKey, {
+            ...pos,
+            x: snapped.x,
+            y: snapped.y,
+        });
     };
 
     const startDrag = (char, e) => {
+        if (!canDeploy) return;
         if (mapTokens[char.id]) return;
         if (!canControlToken(char, profile)) return;
         if (e.button != null && e.button !== 0) return;
         e.preventDefault();
         e.currentTarget?.setPointerCapture?.(e.pointerId);
-        const payload = { charId: char.id, name: char.name };
+        const payload = { charId: char.id, name: char.name, tokenSize: char.tokenSize || "normal" };
         dragRef.current = payload;
         setDragGhost({
             ...payload,
@@ -333,14 +362,22 @@ export default function TokenDeployPanel({ open, onClose }) {
                         ))}
                     </ToggleButtonGroup>
                     <CyberText sx={{ fontSize: "0.55rem", color: UI_COLORS.textSecondary, mt: 0.4 }}>
-                        Arrastra al mapa · sincroniza posición y locación
+                        {canDeploy
+                            ? "Arrastra al mapa · sincroniza posición y locación"
+                            : "Lista de personajes de la campaña (despliegue requiere mapa)"}
                     </CyberText>
                 </Box>
 
                 <Box sx={ROSTER_SCROLL_SX}>
                     {!filtered.length && (
                         <CyberText sx={{ fontSize: "0.7rem", color: UI_COLORS.textSecondary, p: 1 }}>
-                            {isDM ? "Sin resultados." : "No tienes personajes asignados para este mapa."}
+                            {characters.length === 0
+                                ? (isDM
+                                    ? "No hay personajes en esta campaña."
+                                    : "No tienes personajes asignados en esta campaña.")
+                                : (isDM
+                                    ? "Sin resultados para este filtro."
+                                    : "No tienes personajes asignados para este mapa.")}
                         </CyberText>
                     )}
                     <div className="tk-rows">
@@ -353,7 +390,7 @@ export default function TokenDeployPanel({ open, onClose }) {
                                 "tk-row",
                                 deployed ? "deployed" : "",
                                 controllable ? "" : "locked",
-                                deployed || !controllable ? "" : "draggable",
+                                deployed || !controllable || !canDeploy ? "" : "draggable",
                             ].filter(Boolean).join(" ");
                             return (
                                 <div
@@ -375,9 +412,10 @@ export default function TokenDeployPanel({ open, onClose }) {
                                         <div className="tk-name">{char.name || char.id}</div>
                                         <div className="tk-sub">
                                             {npc ? "NPC" : "PJ"} · {sizeKey}
+                                            {!canDeploy ? " · sin mapa" : ""}
                                         </div>
                                     </div>
-                                    {deployed && controllable && (
+                                    {deployed && controllable && canDeploy && (
                                         <Select
                                             size="small"
                                             value={sizeKey}
@@ -406,7 +444,7 @@ export default function TokenDeployPanel({ open, onClose }) {
                                             ))}
                                         </Select>
                                     )}
-                                    {deployed && controllable && (
+                                    {deployed && controllable && canDeploy && (
                                         <Tooltip title="Quitar del mapa">
                                             <IconButton
                                                 size="small"

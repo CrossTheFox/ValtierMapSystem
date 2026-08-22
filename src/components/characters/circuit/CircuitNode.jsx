@@ -91,9 +91,9 @@ function CircuitNode({
     const cls = kindClass(node);
     const isHub = node.kind === "hub";
     const isCluster = node.kind === "cluster";
-    const sync = Number.isFinite(node.sync) ? node.sync : 0;
-    const syncLabel = sync > 0 ? `+${sync}` : String(sync);
-    const meterLeft = `${syncMeterPct(sync)}%`;
+    const sync = Number.isFinite(node.sync) ? node.sync : null;
+    const syncLabel = sync == null ? null : (sync > 0 ? `+${sync}` : String(sync));
+    const meterLeft = sync == null ? "50%" : `${syncMeterPct(sync)}%`;
     const entityId = node.entityId || node.id;
     const isPersonaje = node.entityType === WIKI_ENTITY_TYPES.PERSONAJE
         || (!node.entityType && node.kind === "affinity");
@@ -123,8 +123,16 @@ function CircuitNode({
     useLayoutEffect(() => {
         const el = rootRef.current;
         if (!el) return;
-        if (el.dataset.cktDim === "1") el.classList.add("dim");
-        if (el.dataset.cktLit === "1") el.classList.add("ckt-pkt-lit");
+        el.classList.toggle("dim", Boolean(dim));
+        el.dataset.cktWave = dim ? "off" : "on";
+        if (dim) {
+            el.dataset.cktDim = "1";
+            el.dataset.cktLit = "0";
+            el.classList.remove("ckt-pkt-lit");
+        } else {
+            el.dataset.cktDim = "0";
+            if (el.dataset.cktLit === "1") el.classList.add("ckt-pkt-lit");
+        }
         if (el.dataset.cktHit === "1") el.classList.add("ckt-pkt-hit");
         const seal = el.dataset.cktSeal;
         if (seal === "ok" || seal === "warn" || seal === "fail") {
@@ -138,7 +146,7 @@ function CircuitNode({
                 mark.style.borderColor = col;
             }
         }
-    }, [className]);
+    }, [className, dim]);
 
     return (
         <Box
@@ -160,9 +168,10 @@ function CircuitNode({
             data-id={node.id}
             data-ckt-nid={node.id}
             data-ckt-eid={entityId || node.id}
+            data-ckt-wave={dim ? "off" : "on"}
             data-name={node.title}
             data-rank={node.rankLabel}
-            data-sync={String(sync)}
+            data-sync={sync == null ? "" : String(sync)}
             data-role={node.kind}
         >
             <span className="ckt-seal-mark" data-ckt-seal aria-hidden />
@@ -281,7 +290,7 @@ function CircuitNode({
             <Box className="rank" sx={{ color: `${node.rankColor || UI_COLORS.anomaly} !important` }}>
                 {node.rankLabel || (isHub ? "ANCLA" : "-")}
             </Box>
-            {!isHub && node.kind !== "structural" && node.kind !== "secondary" && (
+            {!isHub && node.kind !== "structural" && node.kind !== "secondary" && sync != null && (
                 <>
                     <Box
                         className="sy"
@@ -304,6 +313,11 @@ function CircuitNode({
                         </Box>
                     )}
                 </>
+            )}
+            {!isHub && node.kind === "satellite" && sync == null && (
+                <Box className="sy" sx={{ color: UI_COLORS.textSecondary }}>
+                    {node.relationLabel || "—"}
+                </Box>
             )}
             {node.kind === "structural" && (
                 <CyberTooltip

@@ -86,12 +86,14 @@ const uiSlice = createSlice({
         /**
          * Deep-link target when opening the character dossier.
          * tab: "IDENTIDAD" | "KIT" | "MESH" | "NARRATIVA"; kitView: "list" | "tree"
+         * openMaletin: KIT briefcase drawer (legacy INVENTARIO / INV).
          */
         sheetFocus: {
             tab: "IDENTIDAD",
             kitView: "tree",
             /** Optional: open dossier for this id (DM roster). Else activeCharacterId. */
             characterId: null,
+            openMaletin: false,
             nonce: 0,
         },
         /**
@@ -412,9 +414,14 @@ const uiSlice = createSlice({
                 tab = "IDENTIDAD",
                 kitView = "tree",
                 characterId = null,
+                openMaletin = false,
             } = action.payload || {};
             const validTabs = ["IDENTIDAD", "KIT", "MESH", "NARRATIVA"];
-            const nextTab = validTabs.includes(tab) ? tab : "IDENTIDAD";
+            const maletinTabs = new Set(["INVENTARIO", "INV", "INVENTORY", "BRIEFCASE"]);
+            const wantMaletin = Boolean(openMaletin) || maletinTabs.has(tab);
+            const nextTab = wantMaletin
+                ? "KIT"
+                : (validTabs.includes(tab) ? tab : "IDENTIDAD");
             const nextKit = kitView === "list" ? "list" : "tree";
             state.openDialogs.sheet = true;
             state.minimizedDialogs[DIALOG_IDS.SHEET] = false;
@@ -422,6 +429,7 @@ const uiSlice = createSlice({
                 tab: nextTab,
                 kitView: nextKit,
                 characterId: characterId ? String(characterId) : null,
+                openMaletin: wantMaletin,
                 nonce: (state.sheetFocus?.nonce || 0) + 1,
             };
         },

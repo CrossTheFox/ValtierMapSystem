@@ -20,11 +20,17 @@ export default function AdminDataRow({ primary, secondary, meta, actions, childr
                 )}
                 {children}
             </Box>
-            {meta && (
-                <CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.anomaly, flexShrink: 0 }}>
-                    {meta}
-                </CyberText>
-            )}
+            {meta ? (
+                <Box sx={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
+                    {typeof meta === "string" || typeof meta === "number" ? (
+                        <CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.anomaly }}>
+                            {meta}
+                        </CyberText>
+                    ) : (
+                        meta
+                    )}
+                </Box>
+            ) : null}
             {actions && (
                 <Box sx={{ display: "flex", gap: 0.5, alignItems: "center", flexShrink: 0 }}>
                     {actions}

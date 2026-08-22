@@ -8,7 +8,12 @@
     ╔══════════════════════════════════════════════════════════════════════════╗
     ║  CANON MOCKUP — fuente de verdad visual 1:1 para React                    ║
     ║  Archivo: docs/mockups/kit-job-header/dossier-viewport.html               ║
+    ║  REVIEW ONLY · VTT_DIALOG_SIZE.xl fullscreen of KIT                       ║
+    ║  CANON de KIT (headers + body B2 + EDIT): ./index.html #dossier           ║
+    ║  NO forkar el dossier aquí — editar index.html #dossier y copiar si hace falta ║
+    ║  Chat C2 vive en index.html #chat — NO regenerar con _build_viewport.py   ║
     ║  Headers lab (histórico): ./meta-chips-proposals.html                     ║
+    ║  Body/chat lab (histórico): ./ability-body-proposals.html                 ║
     ║  Modelo habilidades: ./ability-model.md                                   ║
     ║  Condiciones/tags:   ./conditions-and-tags.md                             ║
     ╚══════════════════════════════════════════════════════════════════════════╝
@@ -79,13 +84,15 @@
 
       Selects: NUNCA <select> nativo (lista blanca en Windows). Widget .cyber-sel
         (papel #12121a, texto #fff, Fira Code, hover/selected magenta, cyber scroll).
-        >2 opciones = cyber Select (cost/range/aoe/mode/fx kind/label/die/tag-add/plate DIE).
-        ≤2 = toggle/chip (ATK|STD, JOB|ZAR, autohit, unlocked, pin).
+        >2 opciones = cyber Select (cost/range/aoe chip glyphs · mode/fx/die/plate DIE).
+        ≤2 = toggle/chip (ATK|STD; SRC/ZAR deferred). Tags via purple tag-btn pop.
 
       ABILITY · VERTICAL MICRO · LEFT  (Loadout, 12-col LOCAL)
         Grid 3 · 6 · 1 · 2  (CORE 1–3 · TITLE 4–9 · TAGS 10 · TOOLS 11–12)
         CORE izq: chips SVG Action + Range? + AoE?  (.vchip.act/.rng/.aoe)
-        TITLE izq: marker ATK=espadas cruzadas | STD=pulse cian  + nombre (sin divider der)
+        TITLE izq: marker ATK=espadas cruzadas | STD=pulse cian + nombre
+          · .atk-mark 20×20, SVG 18×18, SIN .field-cell (el padding recorta el glifo)
+          · mismo KIT_SVG.cross / pulse que chat C2 (index.html #chat)
         TAGS: SOLO tag-btn morado + pip (keywords en pop vertical)
         TOOLS der (2 cols): magenta .hd-div | pin · play · ▸
         Inset rail = box-shadow (no border-left que desalineé el grid)
@@ -94,15 +101,26 @@
       TRAIT RAIL: alto completo del header (stretch, SVG ~22px, col 36px).
         Fila única: nombre + tchip mode + tag-btn (sin mid-row apilada).
 
-      KIT STUDIO (cuerpo, card abierta · solo con kitEdit ON):
-        Click campo → is-selected cian; click fuera commit. Cyber-sel para >2 opts.
-        Grid 12: flavor · identity chips (kind/src toggles; cost/range/aoe/tags selects)
-          · effects 0..N · attack matrix (MODE/ATK/DoH/DoM/DoC) si hasAttack · T1/T2/Mastery
-        + en slots Traits/Loadout con kitEdit ON. Loadout >6 = warning, no bloqueo.
-        LB: 1 por job, sin +. Mastery = Ultimate. RES via cyber-sel.
+      BODY B2 (LOCKED · same classes as historical ability-body-proposals.html):
+        VIEW (kitEdit OFF): merge unlocked upgrades → flavor · ticket row
+          (AUTOHIT chip if autoHit + Light / independent Heavy / Miss / AoE)
+          · effects one row (lane + text; T1/T2/M left rail if append_effect)
+          · upgrades 3 cols T1/T2/M (LB: T1/T2 disabled, M only).
+        EDIT (kitEdit ON): same body surfaces. Flavor textarea. Formula inputs [damageDie]/[fray].
+          + AoE ghost / × remove AoE. Lane 3-click ON HIT → MECH → NONE. × delete effect.
+          Macro helper column to the RIGHT of the card (overlay). ON/OFF on upgrades is LAB ONLY.
+        HEADER EDIT (no studio-ident bar): click CORE chips → cyber-sel panel (micro labels /
+          chip glyphs, NOT long words). Click ATK/STD mark → toggles hasAttack. SRC/Zarkenity
+          stays job for now. Tags: purple tag-btn always if ≥1 tag; if 0 tags in EDIT, ghost
+          tag-btn appears to open ADD list. Click a tag in the pop to add/remove.
+        Packets = { formula: string }. Heavy ≠ 2× Light. Pierce = header tag, not packet.
+        TITLE MARK: ATK crossed swords / STD pulse — 20×20 box, 18×18 SVG, NO .field-cell
+          padding (clips the glyph). Same KIT_SVG.cross/pulse as chat C2.
+        React: DossierKitView.jsx. Reuse formula util + .fx-rail + KIT_SVG with VttChatPanel.
+          Header chip selects → same cyberMenuPaperSx pattern. PixiJS does not render this.
 
-      PLAY BODY (EDIT OFF): prose flavor · fx-item.view · attack compact + ROLL ·
-        talent chips unfold read-only. Trait = párrafo.
+      PLAY BODY / STUDIO: both call kitCardBody (B2). Trait cards = flavor paragraph only.
+        Attack matrix DoH/DoM/DoC RETIRED. studio-ident / KIND·SRC·cost row RETIRED.
 
       MODELO JOB: traits + abilities + lb + loadoutIds viven en jobs[activeJobId].
         Plate job-row cicla el job (demo warden ↔ fool). React: clases/{jobId}/abilities.
@@ -118,15 +136,19 @@
         Always-on click-to-edit sin toggle de columna
 
       LB · STACK COMPACT  (col span 3)
-        Fila 1: star mark + título + READY|LOCKED + tools
-        Fila 2: vpack-sm (Action/Range/AoE) + RES N + tag-btn (keywords en pop vertical)
+        Fila 1: star mark + ATK/STD mark (click toggles hasAttack in EDIT) + título
+          + READY|LOCKED + tools
+        Fila 2: vpack-sm cyber-sel (Action/Range/AoE) + RES cyber-sel + tag-btn
         Locked: rail rojo, mark X, sin play, título atenuado
         Marca LB gold #ffcc33
 
       TRAITS · CATEGORY RAIL · traitMode (Eje A)
         Grid: rail 36px full-height | mid | tools
-        Rail + .tchip = traitMode (passive|active|trigger|interrupt) — único chip visible
-        Coste/rango/AoE + keyword tags → tag-btn morado (pop vertical); no pills sueltas
+        Rail icon (EDIT): cycles traitMode. .tchip (EDIT): cyber-sel of mode chips
+          (PASSIVE|ACTIVE|TRIGGER|INTERRUPT glyphs — not long words).
+        CORE chips (cost/range/AoE): same vpack / vpackEditHtml as abilities (EDIT).
+          VIEW: only show chips that exist (passive w/ no cost → no clock chip).
+        Tags: purple tag-btn (≥1 always; EDIT ghost "+" if empty) — same as abilities.
         traitCategory (Statuses/Positive/Simple) = filtro de sabor LEGACY, no chrome
         Campo futuro Firestore type===trait: traitMode  — ANOTADO, no wired aún
         Vigilance spends → traitMode "trigger" (NO interrupt; glossary)
@@ -159,6 +181,7 @@
       VTT:     src/components/vtt/CharacterCombatHud.jsx (+ VitRingAvatar, burdens)
       Dialog:  src/components/CharactersSettingsDialog.jsx
       KIT tab: src/components/characters/DossierKitView.jsx
+               Canon = index.html #dossier (this file = xl preview)
       Maletín: drawer en KIT (MaletinChromeButton / DossierInventoryView)
       Stats:   useResolvedCombatStats (+ item/burden overlays)
       Colores: src/constants/uiColors.js · designSystem.js · vttHudTokens.js
@@ -236,6 +259,7 @@
       --status-slashed: #ff8a3d;
       --status-dazed: #a78bfa;
       --atk: #ff8a3d;
+      --mech: #a78bfa;
       --sh: #ff3355;
       --lb: #ffcc33;
       --lb-locked: #ff3355;
@@ -266,7 +290,7 @@
       --pill-pad-y: 5px;
       --pill-pad-x: 8px;
       --pill-fs: 0.48rem;
-      --title-fs: 0.7rem;
+      --title-fs: 0.86rem;
     }
     * { box-sizing: border-box; }
     html { scroll-behavior: smooth; }
@@ -2179,9 +2203,10 @@
     .card-hd .hd-tools .roll-btn { padding: 2px 5px; font-size: 0.34rem; }
     .atk-mark {
       flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
-      width: 16px; height: 16px; color: var(--atk);
+      width: 20px; height: 20px; color: var(--atk);
+      padding: 0; border: 0;
     }
-    .atk-mark svg { width: 14px; height: 14px; }
+    .atk-mark svg { width: 18px; height: 18px; display: block; }
     .card.tone-std .atk-mark { color: var(--cyan); opacity: 0.85; }
     .card.tone-zar .atk-mark { color: var(--pink); }
 
@@ -2246,7 +2271,7 @@
     .card.lb-card.locked .lb-mark { color: var(--lb-locked); }
     .lb1-top .nm {
       flex: 1; min-width: 0;
-      font-family: Orbitron, sans-serif; font-size: 0.68rem; letter-spacing: 0.06em;
+      font-family: Orbitron, sans-serif; font-size: 0.82rem; letter-spacing: 0.06em;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .card.lb-card.locked .lb1-top .nm { opacity: 0.55; }
@@ -2304,7 +2329,7 @@
       padding: 4px 8px; min-width: 0;
     }
     .card.trait .mid .nm {
-      font-family: Orbitron, sans-serif; font-size: 0.62rem; letter-spacing: 0.06em;
+      font-family: Orbitron, sans-serif; font-size: 0.72rem; letter-spacing: 0.06em;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       flex: 1 1 auto; min-width: 0;
     }
@@ -2502,6 +2527,62 @@
     }
     .cyber-sel-opt:hover { background: rgba(255,102,255,0.12); }
     .cyber-sel-opt.on { background: rgba(255,102,255,0.18); }
+    /* CORE chips as cyber-sel triggers (EDIT header) */
+    .cyber-sel.vchip-sel {
+      min-width: 0; display: inline-flex; vertical-align: middle;
+    }
+    .cyber-sel.vchip-sel .vchip-sel-btn {
+      display: inline-flex; padding: 0; border: 0; background: transparent;
+      cursor: pointer; color: inherit;
+    }
+    .cyber-sel.vchip-sel.open .vchip,
+    .cyber-sel.vchip-sel.open .tchip,
+    .cyber-sel.vchip-sel.open .pill.resolve {
+      box-shadow: 0 0 0 1px var(--cyan), 0 0 10px rgba(0,242,234,0.25);
+      background: rgba(0,242,234,0.1);
+    }
+    .card.trait .rail[data-act] { cursor: pointer; }
+    .card.trait .rail[data-act]:hover { filter: brightness(1.25); }
+    .card.trait .mid .vpack { flex-shrink: 0; }
+    .lb1-top .atk-mark { flex-shrink: 0; }
+    .cyber-sel.vchip-sel .cyber-sel-panel.vchip-panel {
+      min-width: 88px; padding: 6px; display: none;
+      flex-direction: column; gap: 4px;
+      border-color: rgba(255,102,255,0.35);
+      background: #12121a;
+      /* fixed on open (JS) so .cscroll does not clip the menu */
+      position: fixed; z-index: 80; max-height: 220px; overflow: auto;
+    }
+    .cyber-sel.vchip-sel.open .cyber-sel-panel.vchip-panel { display: flex; }
+    .cyber-sel-opt.vchip-opt {
+      display: flex; align-items: center; justify-content: center;
+      padding: 4px; border-radius: 2px;
+    }
+    .cyber-sel-opt.vchip-opt .vchip,
+    .cyber-sel-opt.vchip-opt .tchip,
+    .cyber-sel-opt.vchip-opt .pill { pointer-events: none; }
+    .cyber-sel-opt.vchip-opt.on {
+      background: rgba(255,102,255,0.18);
+      box-shadow: inset 0 0 0 1px rgba(255,102,255,0.45);
+    }
+    .tag-btn.ghost {
+      opacity: 0.75; border-style: dashed;
+      border-color: rgba(0,242,234,0.55); color: var(--cyan);
+      background: rgba(0,242,234,0.08);
+    }
+    .tag-btn.ghost .pip {
+      background: var(--cyan); color: #0a0a12; min-width: 12px;
+    }
+    .tag-pop .pill.removable { cursor: pointer; }
+    .tag-pop .pill.removable:hover {
+      border-color: rgba(255,51,85,0.55); color: #ff8a9a;
+    }
+    .tag-pop .pill.addable {
+      cursor: pointer; opacity: 0.75; border-style: dashed;
+    }
+    .tag-pop .pill.addable:hover {
+      opacity: 1; border-color: rgba(0,242,234,0.55); color: var(--cyan);
+    }
     .stat-v .cyber-sel { min-width: 3.2rem; }
     .stat-v .cyber-sel-btn { color: var(--gold); background: transparent; border: none; padding: 0 4px; min-height: 0; }
     .stat-v .cyber-sel-btn i { border-top-color: var(--gold); }
@@ -2612,6 +2693,50 @@
       color: rgba(255,255,255,0.88);
       min-width: 0;
     }
+    .auto-chip {
+      font-family: Orbitron, sans-serif; font-size: 0.42rem; letter-spacing: 0.1em;
+      padding: 5px 8px; border-radius: 2px; flex-shrink: 0;
+      border: 1px solid rgba(245,197,66,0.65); background: rgba(245,197,66,0.12); color: var(--gold);
+    }
+    .atk-tickets { margin: 2px 0 8px; }
+    .atk-tickets .top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .atk-tickets .row {
+      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px;
+    }
+    .atk-tickets .row.n3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .atk-tickets .row.n2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .pkt {
+      padding: 7px 8px; border-radius: 3px;
+      border: 1px solid rgba(255,138,61,0.35);
+      background: rgba(0,0,0,0.4);
+      border-top: 2px solid var(--atk);
+    }
+    .pkt.miss { border-top-color: rgba(255,255,255,0.35); border-color: rgba(255,255,255,0.14); }
+    .pkt.aoe {
+      border-top-color: var(--cyan);
+      border-style: dashed; border-color: rgba(0,242,234,0.45);
+      background: rgba(0,242,234,0.06);
+    }
+    .pkt .dmg-lbl {
+      font-family: Orbitron, sans-serif; font-style: normal; font-size: 0.38rem;
+      letter-spacing: 0.1em; color: var(--atk); display: block; margin-bottom: 2px;
+    }
+    .pkt.aoe .dmg-lbl { color: var(--cyan); }
+    .pkt.miss .dmg-lbl { color: rgba(255,255,255,0.5); }
+    .pkt .dmg-num {
+      font-family: "Fira Code", monospace; font-size: 1.02rem; font-weight: 600;
+      color: #fff; line-height: 1.15;
+    }
+    .col.side .atk-tickets .row,
+    .col.side .atk-tickets .row.n3,
+    .col.side .atk-tickets .row.n2 { grid-template-columns: 1fr 1fr; }
+    .fx-roll {
+      display: inline-flex; align-items: baseline; gap: 3px;
+      font-family: "Fira Code", monospace; font-weight: 700; font-size: 0.78rem;
+      padding: 0 5px; margin-left: 4px; border-radius: 3px;
+      border: 1px solid var(--cyan); color: var(--cyan); background: rgba(0,242,234,0.12);
+    }
+    .fx-roll .tip { font-size: 0.48rem; font-weight: 500; opacity: 0.7; }
     .card-bd .desc-ta {
       width: 100%; min-height: 36px; max-height: 72px; resize: vertical;
       margin-bottom: 0;
@@ -2670,6 +2795,376 @@
       font-family: Orbitron, sans-serif; font-size: 0.34rem; letter-spacing: 0.1em;
       color: rgba(0,242,234,0.65); margin-bottom: 4px;
     }
+
+    /* ═══ B2 BODY (locked) — same classes as ability-body-proposals.html ═══
+       React: DossierKitView.jsx. Reuse .pkt / .fx-item / .fx-rail / .up-slot / formula util.
+       EDIT helper overlays to the right of .card-bd (position:relative). */
+    .card-bd {
+      position: relative;
+      overflow: visible;
+    }
+    .col.side .card-bd { overflow: visible; }
+    .fld {
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 3px; padding: 6px 10px; margin-bottom: 8px;
+      background: rgba(0,0,0,0.2);
+    }
+    .card.lb-card .fld { padding: 4px 8px; margin-bottom: 5px; }
+    .card.lb-card .fld .val { font-size: 0.82rem; line-height: 1.35; }
+    body.kit-edit .fld {
+      border-color: rgba(0,242,234,0.35);
+      background: rgba(0,242,234,0.06);
+    }
+    .fld .lbl {
+      font-family: Orbitron, sans-serif; font-size: 0.42rem; letter-spacing: 0.12em;
+      color: var(--muted); margin-bottom: 4px;
+    }
+    body.kit-edit .fld .lbl { color: rgba(0,242,234,0.75); }
+    .fld .val { font-size: 0.92rem; line-height: 1.45; color: #fff; }
+    .card-bd .desc-ta, .card-bd .fx-ta {
+      width: 100%; min-height: 40px; font-family: "Fira Sans", sans-serif;
+      font-size: 0.92rem; color: #fff; background: #12121a;
+      border: 1px solid rgba(0,242,234,0.35); border-radius: 2px; padding: 6px 8px;
+      margin-bottom: 0;
+    }
+    .card.lb-card .card-bd .desc-ta,
+    .card.lb-card .card-bd .fx-ta { min-height: 36px; font-size: 0.82rem; padding: 4px 6px; }
+    .auto-chip {
+      font-family: Orbitron, sans-serif; font-size: 0.42rem; letter-spacing: 0.1em;
+      padding: 5px 8px; border-radius: 2px; cursor: default; flex-shrink: 0;
+      border: 1px solid rgba(255,255,255,0.22); background: rgba(0,0,0,0.4); color: var(--muted);
+    }
+    .auto-chip.on {
+      color: var(--gold); border-color: rgba(245,197,66,0.65);
+      background: rgba(245,197,66,0.12);
+    }
+    body.kit-edit .auto-chip { cursor: pointer; }
+    .atk-tickets { margin: 8px 0 10px; }
+    .card.lb-card .atk-tickets { margin: 4px 0 6px; }
+    .atk-tickets .row {
+      display: flex; align-items: stretch; gap: 6px;
+    }
+    .col.side .atk-tickets .row { flex-wrap: wrap; }
+    .pkt {
+      flex: 1; min-width: 0;
+      position: relative;
+      padding: 7px 8px; border-radius: 3px;
+      border: 1px solid rgba(255,138,61,0.35);
+      background: rgba(0,0,0,0.4);
+      border-top: 2px solid var(--atk);
+    }
+    .card.lb-card .pkt { padding: 4px 6px; }
+    .pkt.chip-slot {
+      flex: 0 0 auto;
+      display: flex; align-items: center; justify-content: center;
+      min-width: 76px; border-top-color: var(--gold);
+    }
+    .pkt.miss { border-top-color: var(--muted); border-color: rgba(255,255,255,0.14); }
+    .pkt.aoe {
+      border-top-color: var(--cyan);
+      border-style: dashed; border-color: rgba(0,242,234,0.45);
+      background: rgba(0,242,234,0.06);
+    }
+    .pkt.add-aoe {
+      cursor: pointer; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      color: var(--cyan); border-style: dashed;
+      background: rgba(0,242,234,0.04);
+    }
+    .pkt.add-aoe .dmg-lbl { color: var(--cyan); margin-bottom: 0; }
+    .pkt .dmg-lbl {
+      font-family: Orbitron, sans-serif; font-style: normal; font-size: 0.38rem;
+      letter-spacing: 0.1em; color: var(--atk); display: block; margin-bottom: 2px;
+    }
+    .pkt.aoe .dmg-lbl { color: var(--cyan); }
+    .pkt.miss .dmg-lbl { color: var(--muted); }
+    .pkt .dmg-num {
+      font-family: "Fira Code", monospace; font-size: 1.02rem; font-weight: 600;
+      color: #fff; line-height: 1.15;
+    }
+    .card.lb-card .pkt .dmg-num { font-size: 0.92rem; }
+    .pkt-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 4px;
+      margin-bottom: 2px;
+    }
+    .aoe-x {
+      font-family: "Fira Code", monospace; font-size: 0.72rem; line-height: 1;
+      border: 0; background: transparent; color: var(--cyan); cursor: pointer; padding: 0 2px;
+    }
+    .macro-inp {
+      width: 100%; font-family: "Fira Code", monospace; font-size: 0.78rem;
+      color: #fff; background: #12121a;
+      border: 1px solid rgba(0,242,234,0.35); border-radius: 2px;
+      padding: 4px 6px;
+    }
+    .macro-help {
+      position: absolute;
+      left: calc(100% + 8px);
+      top: 0;
+      z-index: 50;
+      width: 148px;
+      display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+      padding: 8px;
+      border: 1px dashed rgba(0,242,234,0.45); border-radius: 3px;
+      background: rgba(8,8,14,0.97);
+      box-shadow: 0 12px 32px rgba(0,0,0,0.65);
+      pointer-events: auto;
+    }
+    .col.side .macro-help {
+      left: auto; right: 8px; top: auto; bottom: 8px;
+      width: calc(100% - 16px);
+    }
+    .macro-help .mh-lab {
+      font-family: Orbitron, sans-serif; font-size: 0.38rem; letter-spacing: 0.12em; color: var(--cyan);
+    }
+    .macro-help .mh-hint { font-size: 0.62rem; color: var(--muted); line-height: 1.35; }
+    .tok-chip {
+      font-family: "Fira Code", monospace; font-size: 0.68rem;
+      padding: 5px 7px; cursor: pointer; border-radius: 2px; text-align: left;
+      border: 1px solid rgba(0,242,234,0.45); background: rgba(0,0,0,0.35); color: #fff;
+    }
+    .tok-chip:hover { background: rgba(0,242,234,0.12); }
+    .fx-lane-tog {
+      font-family: Orbitron, sans-serif; font-size: 0.38rem; letter-spacing: 0.1em;
+      padding: 3px 7px; border-radius: 2px; cursor: pointer; color: #fff;
+      border: 1px solid rgba(255,255,255,0.22); background: transparent;
+      flex-shrink: 0; align-self: flex-start; margin-top: 5px; min-width: 4.6em; text-align: center;
+    }
+    .fx-x {
+      font-family: "Fira Code", monospace; font-size: 0.72rem; line-height: 1;
+      border: 0; background: transparent; color: var(--muted); cursor: pointer;
+      padding: 2px 2px 0; flex-shrink: 0; align-self: flex-start;
+    }
+    .fx-x:hover { color: var(--sh); }
+    .fx-lane-tog.hit { border-color: var(--atk); color: var(--atk); background: rgba(255,138,61,0.12); }
+    .fx-lane-tog.mech { border-color: var(--mech); color: var(--mech); background: rgba(167,139,250,0.12); }
+    .fx-lane-tog.plain { border-color: rgba(255,255,255,0.28); color: var(--muted); }
+    .card-bd .fx-item {
+      display: flex; align-items: center; gap: 8px;
+      position: relative;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 3px; padding: 4px 8px; margin-bottom: 4px;
+      background: rgba(0,0,0,0.22);
+    }
+    body.kit-edit .card-bd .fx-item { align-items: flex-start; }
+    .card.lb-card .card-bd .fx-item { padding: 3px 6px; margin-bottom: 3px; }
+    .card-bd .fx-item.hit { border-color: rgba(255,138,61,0.35); }
+    .card-bd .fx-item.mech {
+      border-color: rgba(167,139,250,0.45);
+      background: rgba(167,139,250,0.07);
+    }
+    .card-bd .fx-item .fx-meta {
+      font-family: Orbitron, sans-serif; font-size: 0.38rem; letter-spacing: 0.08em;
+      color: var(--cyan); margin: 0; flex-shrink: 0; min-width: 4.6em;
+    }
+    .card-bd .fx-item.hit .fx-meta { color: var(--atk); }
+    .card-bd .fx-item.mech .fx-meta { color: var(--mech); }
+    .card-bd .fx-item .fx-text,
+    .card-bd .fx-item .fx-ta { flex: 1; min-width: 0; font-size: 0.92rem; line-height: 1.4; color: #fff; }
+    .card-bd .fx-item .fx-ta { min-height: 32px; padding: 4px 6px; }
+    .card-bd .fx-item.b2 { border-left: 3px solid var(--cyan); }
+    .card-bd .fx-item.b2.hit { border-left-color: var(--atk); }
+    .card-bd .fx-item.b2.mech { border-left-color: var(--mech); }
+    .card-bd .fx-add {
+      font-family: Orbitron, sans-serif; font-size: 0.42rem; letter-spacing: 0.1em;
+      padding: 6px 10px; cursor: pointer; color: #fff;
+      border: 1px dashed rgba(0,242,234,0.45); background: rgba(0,242,234,0.06);
+      width: 100%; margin-top: 4px;
+    }
+    .card-bd .upgrades { margin-top: 8px; display: block; }
+    .card.lb-card .card-bd .upgrades { margin-top: 6px; }
+    .upgrades-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      width: 100%;
+    }
+    .col.side .upgrades-row { grid-template-columns: 1fr; }
+    .up-slot {
+      min-width: 0;
+      padding: 7px 8px;
+      border-radius: 3px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(0,0,0,0.35);
+      color: var(--muted);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      align-items: stretch;
+    }
+    .card.lb-card .up-slot { padding: 4px 6px; gap: 3px; }
+    .up-slot.on {
+      border-color: var(--cyan);
+      color: #fff;
+      background: rgba(0,242,234,0.08);
+    }
+    .up-slot.mastery {
+      border-color: rgba(245,197,66,0.42);
+      background: rgba(245,197,66,0.06);
+    }
+    .up-slot.mastery.on {
+      border-color: rgba(245,197,66,0.65);
+      color: #fff;
+      background: rgba(245,197,66,0.1);
+    }
+    .up-slot.empty:not(.disabled) { opacity: 0.55; }
+    .up-slot.empty.disabled { opacity: 0.28; pointer-events: none; }
+    .up-slot.add-up {
+      cursor: pointer;
+      border-style: dashed;
+      border-color: rgba(0,242,234,0.4);
+      background: rgba(0,242,234,0.04);
+      color: var(--cyan);
+      align-items: center;
+      justify-content: center;
+      min-height: 52px;
+      font-family: Orbitron, sans-serif;
+      font-size: 0.38rem;
+      letter-spacing: 0.1em;
+    }
+    .up-slot.add-up.mastery {
+      border-color: rgba(245,197,66,0.45);
+      background: rgba(245,197,66,0.04);
+      color: var(--gold);
+    }
+    .up-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+    }
+    .up-head-end {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .up-badge {
+      font-family: Orbitron, sans-serif;
+      font-size: 0.38rem;
+      letter-spacing: 0.1em;
+      color: var(--cyan);
+    }
+    .up-slot.mastery .up-badge { color: var(--gold); }
+    .up-lock {
+      font-family: Orbitron, sans-serif;
+      font-size: 0.3rem;
+      letter-spacing: 0.08em;
+      padding: 2px 5px;
+      border-radius: 2px;
+      cursor: pointer;
+      border: 1px dashed rgba(255,255,255,0.28);
+      background: transparent;
+      color: var(--muted);
+    }
+    .up-lock.on {
+      border-color: var(--cyan);
+      color: var(--cyan);
+      background: rgba(0,242,234,0.12);
+    }
+    .up-slot.mastery .up-lock.on {
+      border-color: var(--gold);
+      color: var(--gold);
+      background: rgba(245,197,66,0.12);
+    }
+    .up-label, .up-label-inp, .up-detail-ta, .up-detail-view {
+      font-family: "Fira Sans", sans-serif;
+      font-size: 0.92rem;
+      line-height: 1.45;
+      color: #fff;
+    }
+    .card.lb-card .up-label,
+    .card.lb-card .up-label-inp,
+    .card.lb-card .up-detail-ta,
+    .card.lb-card .up-detail-view { font-size: 0.82rem; line-height: 1.35; }
+    .up-label {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .up-lvl {
+      font-family: "Fira Code", monospace;
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+    .up-slot.on .up-lvl { color: var(--cyan); }
+    .up-slot.mastery .up-lvl { color: rgba(245,197,66,0.85); }
+    .up-detail-view { color: rgba(255,255,255,0.82); }
+    .up-label-inp, .up-detail-ta {
+      width: 100%;
+      background: #12121a;
+      border: 1px solid rgba(0,242,234,0.35);
+      border-radius: 2px;
+      padding: 4px 6px;
+    }
+    .up-detail-ta { min-height: 52px; resize: vertical; }
+    .card.lb-card .up-detail-ta { min-height: 40px; }
+    .up-chev {
+      font-size: 0.55rem; color: var(--muted); flex-shrink: 0;
+      border: 0; background: transparent; cursor: pointer; padding: 0; line-height: 1;
+    }
+    .up-body {
+      display: none; flex-direction: column; gap: 3px;
+      padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.1);
+    }
+    .up-slot.open .up-body { display: flex; }
+    .up-mod {
+      font-size: 0.82rem; line-height: 1.4; color: rgba(255,255,255,0.42);
+    }
+    .up-slot.on .up-mod.active,
+    .up-slot.mastery.on .up-mod.active { color: rgba(255,255,255,0.88); }
+    .up-mod-lab {
+      font-family: Orbitron, sans-serif; font-size: 0.32rem; letter-spacing: 0.08em;
+      color: var(--cyan); display: block; margin-bottom: 1px;
+    }
+    .up-slot.mastery .up-mod-lab { color: var(--gold); }
+    .fx-item .fx-body {
+      display: flex; align-items: center; gap: 8px;
+      flex: 1; min-width: 0;
+    }
+    .card-bd .fx-item.from-up {
+      display: grid;
+      grid-template-columns: 32px minmax(0, 1fr);
+      padding: 0;
+      overflow: hidden;
+      align-items: stretch;
+    }
+    .card-bd .fx-item.b2.from-up { border-left-width: 0; }
+    .card-bd .fx-item.from-up .fx-body { padding: 4px 8px; }
+    .fx-rail {
+      display: flex; align-items: center; justify-content: center;
+      align-self: stretch;
+      font-family: Orbitron, sans-serif; font-size: 0.42rem; letter-spacing: 0.08em;
+      color: var(--cyan);
+      background: rgba(0,242,234,0.12);
+      border-right: 1px solid rgba(0,242,234,0.28);
+    }
+    .fx-rail.m {
+      color: var(--gold);
+      background: rgba(245,197,66,0.12);
+      border-right-color: rgba(245,197,66,0.38);
+    }
+    .pkt.from-up { box-shadow: inset 0 0 0 1px rgba(0,242,234,0.35); }
+    .pkt.from-up::after {
+      content: attr(data-up);
+      position: absolute; top: 3px; right: 4px;
+      font-family: Orbitron, sans-serif; font-size: 0.28rem; letter-spacing: 0.08em;
+      color: var(--cyan);
+    }
+    .pkt.from-up[data-up="M"]::after { color: var(--gold); }
+    .pkt-edit { display: flex; flex-direction: column; gap: 0; align-items: stretch;
+      padding: 0; border: 0; background: transparent; }
+    .cc-roll {
+      display: inline-flex; align-items: baseline; gap: 3px;
+      font-family: "Fira Code", monospace; font-weight: 700; font-size: 0.82rem;
+      padding: 0 5px; margin-left: 4px; border-radius: 3px;
+      border: 1px solid var(--cyan); color: var(--cyan); background: rgba(0,242,234,0.12);
+    }
+    .atk-mark {
+      width: 20px; height: 20px;
+      padding: 0; border: 0;
+    }
+    .atk-mark svg { width: 18px; height: 18px; display: block; }
 
     .ico-btn {
       width: var(--ico-btn); height: var(--ico-btn); border-radius: 4px;
@@ -3950,22 +4445,42 @@
       return { key: "aura", code: "A", size, name: "Aura" };
     }
     function isSel(key) { return state.selectedField === key; }
+    function costChipHtml(c, ghost) {
+      if (ghost) {
+        return `<span class="vchip act" title="Action cost" style="opacity:.45"><span class="ic">${KIT_SVG.act}</span><span class="n sm">+</span></span>`;
+      }
+      const a = actChipInfo(c);
+      return `<span class="vchip act${a.sh ? " sh" : ""}" title="${escAttr(a.tip)}"><span class="ic">${KIT_SVG.act}</span><span class="n${a.sm ? " sm" : ""}">${a.micro}</span></span>`;
+    }
+    function rangeChipHtml(range, ghost) {
+      if (ghost) {
+        return `<span class="vchip rng" title="Range" style="opacity:.45"><span class="ic">${KIT_SVG.rng}</span><span class="n sm">+</span></span>`;
+      }
+      return `<span class="vchip rng" title="Range ${escAttr(range)}"><span class="ic">${KIT_SVG.rng}</span><span class="n">${escAttr(String(range))}</span></span>`;
+    }
+    function aoeChipHtml(raw, ghost) {
+      if (ghost) {
+        return `<span class="vchip aoe" title="AoE" style="opacity:.45"><span class="ic">${KIT_SVG.aoe.aura}</span><span class="n sm">+</span></span>`;
+      }
+      const parsed = parseAoe(raw);
+      if (!parsed) return "";
+      const val = `${parsed.code}${parsed.size}`;
+      const svg = KIT_SVG.aoe[parsed.key] || KIT_SVG.aoe.aura;
+      return `<span class="vchip aoe" data-aoe="${parsed.key}" title="${escAttr(parsed.name)} · size ${parsed.size}"><span class="ic">${svg}</span><span class="n${val.length > 2 ? " sm" : ""}">${val}</span></span>`;
+    }
     function vpackHtml(ab, compact, showGhost) {
-      const a = actChipInfo(ab.actionCost);
       const parsed = parseAoe(ab.aoe);
       const sm = compact ? " vpack-sm" : "";
-      let html = `<span class="vchip act${a.sh ? " sh" : ""}" title="${escAttr(a.tip)}"><span class="ic">${KIT_SVG.act}</span><span class="n${a.sm ? " sm" : ""}">${a.micro}</span></span>`;
+      let html = costChipHtml(ab.actionCost);
       if (ab.range && ab.range !== "self") {
-        html += `<span class="vchip rng" title="Range ${escAttr(ab.range)}"><span class="ic">${KIT_SVG.rng}</span><span class="n">${escAttr(String(ab.range))}</span></span>`;
+        html += rangeChipHtml(ab.range, false);
       } else if (showGhost) {
-        html += `<span class="vchip rng" title="Range" style="opacity:.45"><span class="ic">${KIT_SVG.rng}</span><span class="n sm">+</span></span>`;
+        html += rangeChipHtml(null, true);
       }
       if (parsed) {
-        const val = `${parsed.code}${parsed.size}`;
-        const svg = KIT_SVG.aoe[parsed.key] || KIT_SVG.aoe.aura;
-        html += `<span class="vchip aoe" data-aoe="${parsed.key}" title="${escAttr(parsed.name)} · size ${parsed.size}"><span class="ic">${svg}</span><span class="n${val.length > 2 ? " sm" : ""}">${val}</span></span>`;
+        html += aoeChipHtml(ab.aoe, false);
       } else if (showGhost) {
-        html += `<span class="vchip aoe" title="AoE" style="opacity:.45"><span class="ic">${KIT_SVG.aoe.aura}</span><span class="n sm">+</span></span>`;
+        html += aoeChipHtml(null, true);
       }
       return `<span class="vpack${sm}">${html}</span>`;
     }
@@ -3982,27 +4497,23 @@
       const kindAct = editing ? ` data-act="pick-field" data-field="${pfx}:kind"` : "";
       const titleAct = editing ? ` data-act="pick-field" data-field="${pfx}:title"` : "";
       return `<span class="cluster">
-        <span class="atk-mark field-cell tap${kindSel}" title="${tip}"${kindAct}>${svg}</span>
+        <span class="atk-mark tap${kindSel}" title="${tip}"${kindAct}>${svg}</span>
         <span class="nm field-cell${titleSel}"${titleAct}>${titleInner}</span>
       </span>`;
     }
     const escAttr = (s) => String(s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-    const packetLabel = (p) => {
+    const packetLabel = (p) => viewFormula(pktFormula(p)) || "—";
+    function packetViewLabel(p) {
       if (!p) return "—";
-      const bits = [];
-      if (p.die != null) bits.push(String(p.die));
-      if (p.fray === true) bits.push("+ Fray");
-      else if (p.fray != null) bits.push("+ Fray " + p.fray);
-      if (p.flat) bits.push("+" + p.flat);
-      if (p.pierce) bits.push("Pierce");
-      return bits.join(" ") || (p.notes || "—");
-    };
+      return viewFormula(pktFormula(p));
+    }
 
     const state = {
       vit: 8, def: 12, spd: 4, fray: 1, die: 8, arm: 1, ap: 12, lv: 3,
       hpCur: 18, hpMax: 24, vigor: 2,
       act1: true, act2: true, move: true, chromeVit: 3, resource: "xmax",
       open: {}, pinned: {}, talentOpen: {}, selectedField: null, tagPop: null,
+      lastFocus: null, upOpen: {},
       kitEdit: false, benchOpen: false,
       activeJobId: "warden",
       jobs: {
@@ -4014,10 +4525,18 @@
         description: "Detonate the ward: enemies in aura take heavy damage and are Shoved.",
         actionCost: "superheavy", resolveCost: 2, range: null, aoe: "aura 2", tags: ["shove", "heroic", "pierce", "area", "stun", "slashed"],
         locked: false,
+        hasAttack: true,
+        attack: {
+          autoHit: false,
+          toHit: { boons: 0 },
+          damageOnHit: { formula: "2[damageDie]" },
+          damageOnMiss: { formula: "[fray]" },
+          damageOnCrit: { formula: "2[damageDie]+[fray]" },
+          damageAoe: { formula: "[damageDie]+[fray]" },
+        },
         effects: [
-          { id: "e1", kind: "text", label: "EFFECT", text: "Spend Ultimate. Enemies in Aura 2 take heavy damage and are Shoved 2." },
-          { id: "e2", kind: "damage", label: "BLAST", text: "2×[D] + Fray to each enemy in Aura 2.",
-            rolls: [{ id: "r1", label: "Blast", expr: "2d8", when: "manual" }] },
+          { id: "e1", lane: "plain", kind: "text", label: "EFFECT", text: "Spend Ultimate. Enemies in Aura 2 take heavy damage and are Shoved 2." },
+          { id: "e2", lane: "mech", kind: "damage", label: "BLAST", text: "2[damageDie]+[fray] to each enemy in Aura 2." },
         ],
         mastery: {
           id: "lb-m", label: "ULTIMATE · SEALBREAK", level: 8, unlocked: true,
@@ -4048,10 +4567,11 @@
           attack: {
             autoHit: false,
             toHit: { boons: 0 },
-            damageOnHit: { die: "[D]", fray: true },
-            damageOnMiss: { fray: true },
-            damageOnCrit: null,
-            notes: "Rolled to-hit: nat 20 = crit → DoC (2× DoH default).",
+            damageOnHit: { formula: "[damageDie]+[fray]" },
+            damageOnMiss: { formula: "[fray]" },
+            damageOnCrit: { formula: "2[damageDie]" },
+            damageAoe: { formula: "[damageDie]" },
+            notes: "Rolled to-hit: nat 20 = Heavy formula (independent). Pierce is a header tag.",
           },
           talents: [
             {
@@ -4068,7 +4588,7 @@
           mastery: {
             id: "a1-m", label: "Worldspike", level: 6, unlocked: false,
             detail: "Empower DoH with +1 flat.",
-            mods: [{ op: "patch_attack", patch: { damageOnHit: { die: "[D]", fray: true, flat: 1 } } }],
+            mods: [{ op: "patch_attack", patch: { damageOnHit: { formula: "[damageDie]+[fray]+1" } } }],
           },
         },
         {
@@ -4096,9 +4616,9 @@
           attack: {
             autoHit: false,
             toHit: { boons: 1 },
-            damageOnHit: { die: "[D]", fray: true, pierce: true },
-            damageOnMiss: { fray: true },
-            damageOnCrit: { die: "[D]", fray: true, pierce: true, flat: 2 },
+            damageOnHit: { formula: "[damageDie]+[fray]" },
+            damageOnMiss: { formula: "[fray]" },
+            damageOnCrit: { formula: "[damageDie]+[fray]+2" },
             notes: "+1 boon on to-hit. Pierce.",
           },
           talents: [
@@ -4145,9 +4665,9 @@
           attack: {
             autoHit: false,
             toHit: { boons: 0 },
-            damageOnHit: { die: "[D]", fray: true, pierce: true },
-            damageOnMiss: { fray: true },
-            damageOnCrit: null,
+            damageOnHit: { formula: "[damageDie]+[fray]" },
+            damageOnMiss: { formula: "[fray]" },
+            damageOnCrit: { formula: "2[damageDie]" },
           },
           talents: [
             { id: "a6-t0", label: "Bleed Lance", level: 3, unlocked: false, detail: "Apply Bleeding on hit.", mods: [{ op: "append_effect", effect: { id: "e2", kind: "status", statusCode: "BLD", statusTarget: "target", text: "On hit: Bleeding." } }] },
@@ -4179,9 +4699,9 @@
           attack: {
             autoHit: true,
             toHit: null,
-            damageOnHit: { die: "[D]", fray: true },
+            damageOnHit: { formula: "[damageDie]+[fray]" },
             damageOnMiss: null,
-            damageOnCrit: null,
+            damageOnCrit: { formula: "2[damageDie]" },
             notes: "Autohit: no d20, no miss. Crit only if an effect grants it.",
           },
           talents: [
@@ -4213,9 +4733,9 @@
           attack: {
             autoHit: false,
             toHit: { boons: 1 },
-            damageOnHit: { die: "[D]", fray: true },
-            damageOnMiss: { fray: true },
-            damageOnCrit: null,
+            damageOnHit: { formula: "[damageDie]+[fray]" },
+            damageOnMiss: { formula: "[fray]" },
+            damageOnCrit: { formula: "2[damageDie]" },
             notes: "SuperHeavy. Prefer Bloodied targets for FB.",
           },
           talents: [
@@ -4259,9 +4779,9 @@
             ],
             attack: {
               autoHit: false, toHit: { boons: 0 },
-              damageOnHit: { die: "[D]", fray: true },
-              damageOnMiss: { fray: true },
-              damageOnCrit: null,
+              damageOnHit: { formula: "[damageDie]+[fray]" },
+              damageOnMiss: { formula: "[fray]" },
+              damageOnCrit: { formula: "2[damageDie]" },
             },
             talents: [
               { id: "f1-t0", label: "Second Joke", level: 2, unlocked: false, detail: "May Rush 1 after the cut.", mods: [{ op: "append_effect", effect: { id: "e2", kind: "move", text: "Rush 1." } }] },
@@ -4397,50 +4917,92 @@
         <aside class="tag-pop ${open ? "open" : ""}" role="dialog">${body}</aside>
       </span>`;
     }
-    function metaCorePills(ab, opts) {
-      const o = opts || {};
-      const bits = [];
-      if (o.withResolve) {
-        const resN = ab.resolveCost != null ? ab.resolveCost : 1;
-        bits.push(`<span class="pill resolve" title="Resolve cost">RES ${resN}</span>`);
-      }
-      return bits.join("");
+    /** EDIT: tag-btn always (ghost pip "+" if empty). Click tags to add/remove. */
+    function tagEditPopHtml(owner, scope, popKey) {
+      const tags = owner.tags || [];
+      const open = state.tagPop === popKey;
+      const onRow = tags.length
+        ? `<div class="tp-lbl">ON</div><div class="tp-row">${tags.map((t) =>
+            `<button type="button" class="pill tag removable on" data-act="tag-del" data-scope="${scope}" data-id="${owner.id}" data-tag="${escAttr(t)}" title="Remove">${escAttr(TAG_LABEL[t] || t)}</button>`
+          ).join("")}</div>`
+        : "";
+      const addables = Object.keys(TAG_LABEL).filter((k) => !tags.includes(k));
+      const addRow = addables.length
+        ? `<div class="tp-lbl">ADD</div><div class="tp-row">${addables.map((k) =>
+            `<button type="button" class="pill tag addable" data-act="tag-add-one" data-scope="${scope}" data-id="${owner.id}" data-tag="${escAttr(k)}">${escAttr(TAG_LABEL[k] || k)}</button>`
+          ).join("")}</div>`
+        : "";
+      const body = `<div class="tp-h">TAGS</div>${onRow}${addRow}`;
+      const pip = tags.length || "+";
+      const ghost = tags.length ? "" : " ghost";
+      return `<span class="tag-btn-wrap" style="position:relative;flex-shrink:0" data-stop>
+        <button type="button" class="tag-btn${ghost}${open ? " open" : ""}" data-act="tag-pop" data-key="${popKey}" title="Tags" aria-expanded="${open}">
+          ${TAG_ICO}<span class="pip">${pip}</span>
+        </button>
+        <aside class="tag-pop ${open ? "open" : ""}" role="dialog">${body}</aside>
+      </span>`;
     }
-    /** Abilities: all keyword tags live in tag-btn (vertical pop). Cost/Range/AoE = CORE chips. */
+    function resolveChipHtml(n) {
+      const resN = n != null ? n : 1;
+      return `<span class="pill resolve" title="Resolve cost">RES ${resN}</span>`;
+    }
+    function resolveEditHtml(lb) {
+      const resN = lb.resolveCost != null ? lb.resolveCost : 1;
+      const opts = [1, 2, 3, 4].map((n) => ({
+        value: String(n),
+        html: resolveChipHtml(n),
+      }));
+      return vchipCyberSel(
+        { cfg: "res", scope: "lb", id: lb.id, value: String(resN), title: "Resolve cost", options: opts },
+        resolveChipHtml(resN)
+      );
+    }
+    /** Abilities: keyword tags in tag-btn. Cost/Range/AoE = CORE chips (edit via chip cyber-sel). */
     function metaPills(ab) {
       const tags = ab.tags || [];
+      if (kitEditing()) return tagEditPopHtml(ab, "ab", `ab:${ab.id}`);
       if (!tags.length) return "";
       return tagPopHtml(tags.map(tagPill).join(""), `ab:${ab.id}`, tags.length, "TAGS");
     }
-    /** LB: RES stays visible; keyword tags collapse into tag-btn. */
+    /** LB: RES cyber-sel in EDIT; keyword tags collapse into tag-btn. */
     function metaPillsLb(lb) {
       const tags = lb.tags || [];
-      const core = metaCorePills(lb, { withResolve: true });
-      if (!tags.length) return core;
-      return `${core}${tagPopHtml(tags.map(tagPill).join(""), "lb", tags.length, "TAGS")}`;
+      const res = kitEditing() ? resolveEditHtml(lb) : resolveChipHtml(lb.resolveCost);
+      if (kitEditing()) return `${res}${tagEditPopHtml(lb, "lb", "lb")}`;
+      if (!tags.length) return res;
+      return `${res}${tagPopHtml(tags.map(tagPill).join(""), "lb", tags.length, "TAGS")}`;
+    }
+    /** Traits: tags only in tag-btn (CORE chips live next to mode). */
+    function metaPillsTr(tr) {
+      const tags = tr.tags || [];
+      if (kitEditing()) return tagEditPopHtml(tr, "tr", `tr:${tr.id}`);
+      if (!tags.length) return "";
+      return tagPopHtml(tags.map(tagPill).join(""), `tr:${tr.id}`, tags.length, "TAGS");
     }
     function keywordPills(ab) {
       return (ab.tags || []).map(tagPill).join("");
     }
-    /** Trait mid-row: only mode chip visible; cost/range/aoe + tags → purple tag-btn. */
-    function traitMetaPop(tr, editing) {
-      const bits = [];
-      if (tr.actionCost != null && tr.actionCost !== "") {
-        const a = actChipInfo(tr.actionCost);
-        bits.push(`<span class="pill cost" title="${escAttr(a.tip)}">${escAttr(String(a.micro))}</span>`);
-      }
-      if (tr.range) bits.push(`<span class="pill rng" title="Range ${escAttr(String(tr.range))}">R${escAttr(String(tr.range))}</span>`);
-      const parsed = tr.aoe ? parseAoe(tr.aoe) : null;
-      if (parsed) bits.push(`<span class="pill aoe" title="${escAttr(parsed.name)}">${parsed.code}${parsed.size}</span>`);
-      (tr.tags || []).forEach((t) => {
-        if (editing) {
-          bits.push(`<span class="pill tag removable" data-act="tag-del" data-scope="tr" data-id="${tr.id}" data-tag="${escAttr(t)}">${escAttr(TAG_LABEL[t] || t)}</span>`);
-        } else {
-          bits.push(tagPill(t));
-        }
-      });
-      if (!bits.length) return "";
-      return tagPopHtml(bits.join(""), `tr:${tr.id}`, bits.length, "META");
+    function tchipHtml(mode) {
+      const m = mode || "passive";
+      return `<span class="tchip ${m}">${m.toUpperCase()}</span>`;
+    }
+    function modeEditHtml(tr) {
+      const mode = tr.traitMode || "passive";
+      const opts = MODE_SEL.map((o) => ({ value: o.value, html: tchipHtml(o.value) }));
+      return vchipCyberSel(
+        { cfg: "mode", scope: "tr", id: tr.id, value: mode, title: "Trait mode", options: opts },
+        tchipHtml(mode)
+      );
+    }
+    /** Traits VIEW: only chips that exist. EDIT: full CORE cyber-sels (cost may be —). */
+    function traitVpackHtml(tr, editing) {
+      if (editing) return vpackEditHtml(tr, true, "tr");
+      let html = "";
+      if (tr.actionCost != null && tr.actionCost !== "") html += costChipHtml(tr.actionCost);
+      if (tr.range && tr.range !== "self") html += rangeChipHtml(tr.range, false);
+      if (tr.aoe && parseAoe(tr.aoe)) html += aoeChipHtml(tr.aoe, false);
+      if (!html) return "";
+      return `<span class="vpack vpack-sm">${html}</span>`;
     }
     function fitCardMetaTags(scope) {
       /* Tags always collapse into tag-btn; ResizeObserver hook retained. */
@@ -4470,17 +5032,17 @@
     const PLUS_ICO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>';
     const TAG_KEYS = Object.keys(TAG_LABEL);
     const COST_SEL = [
-      { value: "1", label: "1 Action" }, { value: "2", label: "2 Actions" },
-      { value: "free", label: "Free" }, { value: "interrupt", label: "Interrupt" },
-      { value: "superheavy", label: "S.H. Action" },
+      { value: "1", label: "1" }, { value: "2", label: "2" },
+      { value: "free", label: "F" }, { value: "interrupt", label: "I" },
+      { value: "superheavy", label: "SH" },
     ];
     const RANGE_SEL = [{ value: "", label: "—" }, ...["1","2","3","4","5","6"].map((n) => ({ value: n, label: "R" + n }))];
     const AOE_SEL = [
       { value: "", label: "—" },
-      { value: "blast 1", label: "Blast 1" }, { value: "blast 2", label: "Blast 2" },
-      { value: "closeblast 1", label: "Close 1" }, { value: "aura 1", label: "Aura 1" },
-      { value: "aura 2", label: "Aura 2" }, { value: "line 1x4", label: "Line 1×4" },
-      { value: "arc 3", label: "Arc 3" }, { value: "xpat 1", label: "Cross 1" },
+      { value: "blast 1", label: "B1" }, { value: "blast 2", label: "B2" },
+      { value: "closeblast 1", label: "CB1" }, { value: "aura 1", label: "A1" },
+      { value: "aura 2", label: "A2" }, { value: "line 1x4", label: "L1×4" },
+      { value: "arc 3", label: "R3" }, { value: "xpat 1", label: "X1" },
     ];
     const MODE_SEL = [
       { value: "passive", label: "Passive" }, { value: "active", label: "Active" },
@@ -4501,6 +5063,56 @@
         <div class="cyber-sel-panel">${items}</div>
       </div>`;
     }
+    /** Header CORE: chip is the trigger; panel options are the same vchip glyphs (not words). */
+    function vchipCyberSel(cfg, triggerHtml) {
+      const opts = cfg.options || [];
+      const cur = cfg.value == null ? "" : String(cfg.value);
+      const items = opts.map((o) => {
+        const on = String(o.value) === cur;
+        const inner = o.html != null ? o.html : escAttr(o.label);
+        return `<button type="button" class="cyber-sel-opt vchip-opt${on ? " on" : ""}" data-act="cyber-pick" data-value="${escAttr(String(o.value))}">${inner}</button>`;
+      }).join("");
+      return `<div class="cyber-sel vchip-sel" data-stop data-cfg="${escAttr(cfg.cfg)}" data-scope="${escAttr(cfg.scope || "")}" data-id="${escAttr(cfg.id || "")}">
+        <button type="button" class="vchip-sel-btn" data-act="cyber-open" title="${escAttr(cfg.title || "")}">${triggerHtml}</button>
+        <div class="cyber-sel-panel vchip-panel">${items}</div>
+      </div>`;
+    }
+    function vpackEditHtml(ab, compact, scopeOverride) {
+      const scope = scopeOverride || (kitIsLb(ab) ? "lb" : "ab");
+      const sm = compact ? " vpack-sm" : "";
+      const emptyCost = scope === "tr" && (ab.actionCost == null || ab.actionCost === "");
+      const costVal = emptyCost ? "" : (ab.actionCost == null ? "1" : String(ab.actionCost));
+      const costOptsBase = COST_SEL.map((o) => ({
+        value: o.value,
+        html: costChipHtml(o.value === "1" || o.value === "2" ? Number(o.value) : o.value),
+      }));
+      const costOpts = scope === "tr"
+        ? [{ value: "", html: costChipHtml(null, true) }, ...costOptsBase]
+        : costOptsBase;
+      const rangeVal = ab.range && ab.range !== "self" ? String(ab.range) : "";
+      const rangeOpts = RANGE_SEL.map((o) => ({
+        value: o.value,
+        html: o.value ? rangeChipHtml(o.value, false) : rangeChipHtml(null, true),
+      }));
+      const aoeVal = ab.aoe || "";
+      const aoeOpts = AOE_SEL.map((o) => ({
+        value: o.value,
+        html: o.value ? aoeChipHtml(o.value, false) : aoeChipHtml(null, true),
+      }));
+      let html = vchipCyberSel(
+        { cfg: "cost", scope, id: ab.id, value: costVal, title: "Action cost", options: costOpts },
+        emptyCost ? costChipHtml(null, true) : costChipHtml(ab.actionCost)
+      );
+      html += vchipCyberSel(
+        { cfg: "range", scope, id: ab.id, value: rangeVal, title: "Range", options: rangeOpts },
+        rangeVal ? rangeChipHtml(rangeVal, false) : rangeChipHtml(null, true)
+      );
+      html += vchipCyberSel(
+        { cfg: "aoe", scope, id: ab.id, value: aoeVal, title: "AoE", options: aoeOpts },
+        aoeVal ? aoeChipHtml(aoeVal, false) : aoeChipHtml(null, true)
+      );
+      return `<span class="vpack${sm}">${html}</span>`;
+    }
     function kitEditing() { return !!state.kitEdit; }
     function editBtn() {
       const on = kitEditing();
@@ -4512,8 +5124,364 @@
       }</span>`;
     }
 
+    const LANE_CYCLE = ["hit", "mech", "plain"];
+    const MACRO_TOKS = [
+      { tok: "[damageDie]", lab: "damageDie" },
+      { tok: "[fray]", lab: "fray" },
+      { tok: "[mechanicResource]", lab: "mechanicResource" },
+    ];
+    function kitIsLb(ab) {
+      const lb = currentJob() && currentJob().lb;
+      return !!(ab && lb && ab.id === lb.id);
+    }
+    function pktFormula(p) {
+      if (!p) return "";
+      if (p.formula != null) return String(p.formula);
+      const bits = [];
+      if (p.die === "[D]") bits.push("[damageDie]");
+      else if (p.die) bits.push(String(p.die));
+      if (p.fray) bits.push("[fray]");
+      if (p.flat) bits.push(String(p.flat));
+      return bits.join("+");
+    }
+    function viewFormula(raw) {
+      if (raw == null || raw === "") return "—";
+      let s = String(raw).replace(/\s+/g, "");
+      s = s.replace(/(\d*)\[(?:damageDie|D)\]/gi, (_, n) => (n ? n : "") + "d" + state.die);
+      s = s.replace(/\[fray\]/gi, String(state.fray));
+      s = s.replace(/\[mechanicResource\]/gi, "1");
+      s = s.replace(/\[(\d*)d(\d+)\]/gi, (_, n, sides) => (n ? n : "") + "d" + sides);
+      return s;
+    }
+    function inferLane(e) {
+      const lab = String(e.label || "").toUpperCase();
+      const kind = e.kind || "";
+      if (lab === "MECH" || ["trigger", "counter", "resource"].includes(kind) || e.trigger
+        || ["CHARGE", "HEROIC", "FINISHING BLOW", "COLLIDE", "FB", "BLESSING"].includes(lab)) {
+        return "mech";
+      }
+      if (lab === "ON HIT" || lab === "ON MISS" || lab === "ON CRIT") return "hit";
+      return "plain";
+    }
+    function fxLane(e) {
+      if (e.lane === "hit" || e.lane === "plain" || e.lane === "mech") return e.lane;
+      return inferLane(e);
+    }
+    function laneCaption(lane) {
+      if (lane === "hit") return "ON HIT";
+      if (lane === "mech") return "MECH";
+      return "NONE";
+    }
+    function applyLane(efx, lane) {
+      efx.lane = lane;
+      if (lane === "hit") { efx.label = "ON HIT"; return; }
+      if (lane === "mech") { efx.label = "MECH"; return; }
+      efx.label = "";
+    }
+    function nextLane(lane) {
+      const i = LANE_CYCLE.indexOf(lane);
+      return LANE_CYCLE[(i < 0 ? 0 : i + 1) % LANE_CYCLE.length];
+    }
+    function extractMacros(text) {
+      const out = [];
+      String(text || "").replace(/(\d*)\[[^\]]+\]/g, (m) => { out.push(m); return m; });
+      return out;
+    }
+    function pktSlotKey(key) {
+      if (key === "light") return "damageOnHit";
+      if (key === "heavy") return "damageOnCrit";
+      if (key === "miss") return "damageOnMiss";
+      return "damageAoe";
+    }
+    function ensurePkt(atk, key) {
+      const field = pktSlotKey(key);
+      if (!atk[field]) atk[field] = { formula: "" };
+      return atk[field];
+    }
+    function packetEdit(p, key) {
+      return `<div class="pkt-edit"><input class="macro-inp" data-field="formula" data-pkt="${key}" value="${escAttr(pktFormula(p))}" spellcheck="false" data-stop /></div>`;
+    }
+    function autoChip(s) {
+      if (!s.hasAttack || !s.attack) return "";
+      const on = !!s.attack.autoHit;
+      if (!kitEditing() && !on) return "";
+      const act = kitEditing() ? ` data-act="tog-auto"` : "";
+      return `<button type="button" class="auto-chip ${on ? "on" : ""}"${act} data-stop>${on ? "AUTOHIT" : "ROLLED"}</button>`;
+    }
+    function dmgSlots(s, meta) {
+      if (!s.hasAttack || !s.attack) return [];
+      const atk = s.attack;
+      const atkUp = (meta && meta.attackPatches) || {};
+      const slots = [
+        { key: "light", lbl: "Light", kind: "light", pkt: atk.damageOnHit, fromUp: atkUp.damageOnHit },
+        { key: "heavy", lbl: "Heavy", kind: "heavy", pkt: atk.damageOnCrit, fromUp: atkUp.damageOnCrit },
+      ];
+      if (!atk.autoHit) {
+        slots.push({ key: "miss", lbl: "Miss", kind: "miss", pkt: atk.damageOnMiss, fromUp: atkUp.damageOnMiss });
+      }
+      if (atk.damageAoe) {
+        const parsed = parseAoe(s.aoe);
+        const code = parsed ? parsed.code + parsed.size : "AoE";
+        slots.push({ key: "aoe", lbl: "AoE · " + code, kind: "aoe", pkt: atk.damageAoe, fromUp: atkUp.damageAoe });
+      }
+      return slots;
+    }
+    function slotInner(slot) {
+      const x = slot.kind === "aoe" && kitEditing()
+        ? `<button type="button" class="aoe-x" data-act="tog-aoe" title="Remove AoE" data-stop>×</button>`
+        : "";
+      const lbl = `<div class="pkt-head"><span class="dmg-lbl">${escAttr(slot.lbl)}</span>${x}</div>`;
+      if (kitEditing()) return lbl + packetEdit(slot.pkt, slot.key);
+      return lbl + `<span class="dmg-num">${escAttr(packetViewLabel(slot.pkt))}</span>`;
+    }
+    function slotPktWrap(sl) {
+      const cls = `pkt ${sl.kind}${sl.fromUp ? " from-up" : ""}`;
+      const data = sl.fromUp ? ` data-up="${escAttr(sl.fromUp)}"` : "";
+      return `<div class="${cls}"${data}>${slotInner(sl)}</div>`;
+    }
+    function atkB2(s, meta) {
+      if (!s.hasAttack || !s.attack) return "";
+      const slots = dmgSlots(s, meta);
+      const chip = autoChip(s);
+      const chipCell = chip ? `<div class="pkt chip-slot">${chip}</div>` : "";
+      const addAoe = kitEditing() && !s.attack.damageAoe
+        ? `<button type="button" class="pkt aoe add-aoe" data-act="tog-aoe" data-stop><span class="dmg-lbl">+ AoE</span></button>`
+        : "";
+      return `<div class="atk-tickets"><div class="row">${chipCell}${slots.map(slotPktWrap).join("")}${addAoe}</div></div>`;
+    }
+    function b2FlavorHtml(s, scope) {
+      const text = scope === "tr" ? (s.body || s.description || "") : (s.description || "");
+      if (kitEditing() && scope !== "tr") {
+        return `<div class="fld"><div class="lbl">FLAVOR</div><div class="val"><textarea class="desc-ta" data-field="description" data-stop>${escAttr(text)}</textarea></div></div>`;
+      }
+      return `<div class="fld"><div class="lbl">FLAVOR</div><div class="val">${escAttr(text) || "<span style='opacity:.4'>—</span>"}</div></div>`;
+    }
+    function fromRail(badge) {
+      if (!badge) return "";
+      return `<span class="fx-rail${badge === "M" ? " m" : ""}" title="From ${escAttr(badge)}">${escAttr(badge)}</span>`;
+    }
+    function effectBody(e, meta, owner) {
+      const lane = fxLane(e);
+      const lab = e.label || (lane === "plain" ? "EFFECT" : lane === "hit" ? "ON HIT" : "MECH");
+      const src = meta && meta.effectSources && meta.effectSources[e.id];
+      const fromCls = src ? " from-up" : "";
+      const scope = kitIsLb(owner) ? "lb" : "ab";
+      if (kitEditing()) {
+        return `<div class="fx-item ${lane} b2">
+          <button type="button" class="fx-lane-tog ${lane}" data-act="fx-lane" data-id="${escAttr(e.id)}" data-stop>${laneCaption(lane)}</button>
+          <textarea class="fx-ta" data-field="fx-text" data-id="${escAttr(e.id)}" data-stop>${escAttr(e.text)}</textarea>
+          <button type="button" class="fx-x" data-act="fx-del" data-scope="${scope}" data-id="${escAttr(owner.id)}" data-fx="${escAttr(e.id)}" title="Remove effect" data-stop>×</button>
+        </div>`;
+      }
+      const shown = extractMacros(e.text).map((m) => `<span class="cc-roll">${escAttr(viewFormula(m))}</span>`).join("");
+      const prose = String(e.text || "").replace(/(\d*)\[[^\]]+\]/g, "").replace(/\s+/g, " ").trim();
+      return `<div class="fx-item ${lane} b2${fromCls}">
+        ${fromRail(src)}
+        <div class="fx-body">
+          <div class="fx-meta">${escAttr(lab)}</div>
+          <div class="fx-text">${escAttr(prose)}${shown}</div>
+        </div>
+      </div>`;
+    }
+    function addFxBtn(owner) {
+      if (!kitEditing()) return "";
+      const scope = kitIsLb(owner) ? "lb" : "ab";
+      return `<button type="button" class="fx-add" data-act="fx-add" data-scope="${scope}" data-id="${escAttr(owner.id)}" data-stop>+ EFFECT</button>`;
+    }
+    function effectsB12(s, meta, owner) {
+      return (s.effects || []).map((e) => effectBody(e, meta, owner)).join("") + addFxBtn(owner);
+    }
+    function cloneAbility(s) { return JSON.parse(JSON.stringify(s)); }
+    function patchAttackField(atk, key, patchVal) {
+      if (!patchVal) return;
+      if (typeof patchVal === "object" && atk[key]) atk[key] = { ...atk[key], ...patchVal };
+      else atk[key] = patchVal;
+    }
+    function applyUpgradeOp(ab, op, track) {
+      if (op.op === "append_effect") {
+        ab.effects = ab.effects || [];
+        const fx = { ...op.effect, id: op.effect.id || "fx" + Date.now() };
+        ab.effects.push(fx);
+        if (track) track.effectSources[fx.id] = track.badge;
+        return;
+      }
+      if (op.op === "replace_effect") {
+        const i = (ab.effects || []).findIndex((e) => e.id === op.effectId);
+        if (i >= 0) ab.effects[i] = { ...ab.effects[i], ...op.effect };
+        return;
+      }
+      if (op.op === "empower_effect") {
+        const e = (ab.effects || []).find((x) => x.id === op.effectId);
+        if (e) Object.assign(e, op.patch);
+        return;
+      }
+      if (op.op === "patch_attack") {
+        if (!ab.attack) ab.attack = {};
+        Object.keys(op.patch || {}).forEach((k) => {
+          patchAttackField(ab.attack, k, op.patch[k]);
+          if (track && track.badge) track.attackPatches[k] = track.badge;
+        });
+        return;
+      }
+      if (op.op === "add_tags") { ab.tags = [...(ab.tags || []), ...(op.tags || [])]; return; }
+      if (op.op === "set_fields") Object.assign(ab, op.patch || {});
+    }
+    function unlockedUpgrades(s) {
+      const out = [];
+      if (!kitIsLb(s)) {
+        (s.talents || []).forEach((t, i) => {
+          if (t && t.unlocked) out.push({ badge: "T" + (i + 1), key: i === 0 ? "t0" : "t1", up: t });
+        });
+      }
+      if (s.mastery && s.mastery.unlocked) out.push({ badge: "M", key: "m", up: s.mastery });
+      return out;
+    }
+    function mergeAbility(s) {
+      const ab = cloneAbility(s);
+      const meta = { effectSources: {}, attackPatches: {} };
+      unlockedUpgrades(s).forEach(({ badge, up }) => {
+        (up.mods || []).forEach((op) => {
+          applyUpgradeOp(ab, op, { badge, effectSources: meta.effectSources, attackPatches: meta.attackPatches });
+        });
+      });
+      ab._mergeMeta = meta;
+      return ab;
+    }
+    function modSummary(op) {
+      if (op.op === "append_effect") {
+        const e = op.effect || {};
+        return "+ " + (e.label || e.text || "Effect");
+      }
+      if (op.op === "replace_effect") return "Replace " + (op.effectId || "effect");
+      if (op.op === "empower_effect") return "Empower " + (op.effectId || "effect");
+      if (op.op === "patch_attack") {
+        const p = op.patch || {};
+        const bits = [];
+        if (p.damageOnHit) bits.push("Light → " + viewFormula(pktFormula(p.damageOnHit)));
+        if (p.damageOnCrit) bits.push("Heavy → " + viewFormula(pktFormula(p.damageOnCrit)));
+        if (p.damageOnMiss) bits.push("Miss → " + viewFormula(pktFormula(p.damageOnMiss)));
+        if (p.damageAoe) bits.push("AoE → " + viewFormula(pktFormula(p.damageAoe)));
+        if (p.autoHit != null) bits.push("Autohit → " + (p.autoHit ? "ON" : "OFF"));
+        return bits.length ? bits.join(" · ") : "Patch attack";
+      }
+      if (op.op === "add_tags") return "+ Tags: " + (op.tags || []).join(", ");
+      if (op.op === "set_fields") {
+        const p = op.patch || {};
+        return Object.keys(p).map((k) => k + " → " + p[k]).join(" · ");
+      }
+      if (op.op === "prose_only") return op.detail || "Note";
+      return op.op;
+    }
+    function upgradeModsHtml(up, active) {
+      return (up.mods || []).map((op) => {
+        const lab = op.op.replace(/_/g, " ").toUpperCase();
+        return `<div class="up-mod ${active ? "active" : ""}"><span class="up-mod-lab">${lab}</span>${escAttr(modSummary(op))}</div>`;
+      }).join("");
+    }
+    function upgradeRef(s, key) {
+      if (key === "m") return s.mastery || null;
+      const i = key === "t0" ? 0 : 1;
+      return (s.talents || [])[i] || null;
+    }
+    function defaultUpgrade(kind, badge) {
+      return {
+        id: (kind === "m" ? "m" : "t") + Date.now(),
+        label: kind === "m" ? "New mastery" : "New talent " + badge,
+        level: kind === "m" ? 6 : badge === "T1" ? 2 : 4,
+        unlocked: false, detail: "", mods: [],
+      };
+    }
+    function upOpenKey(ab, key) { return ab.id + ":" + key; }
+    function upgradeSlotView(ab, slot) {
+      if (slot.disabled) {
+        return `<div class="up-slot empty disabled"><div class="up-head"><span class="up-badge">${slot.badge}</span></div><span class="up-label">—</span></div>`;
+      }
+      const up = slot.up;
+      const cls = ["up-slot", slot.kind];
+      if (up && up.unlocked) cls.push("on");
+      if (!up) cls.push("empty");
+      if (!up) {
+        return `<div class="${cls.join(" ")}"><div class="up-head"><span class="up-badge">${slot.badge}</span></div><span class="up-label">—</span></div>`;
+      }
+      const open = !!state.upOpen[upOpenKey(ab, slot.key)];
+      if (open) cls.push("open");
+      const lvl = up.level != null ? `<span class="up-lvl" title="Unlock level / AP">L${up.level}</span>` : "";
+      const hasMods = !!(up.mods && up.mods.length);
+      const body = hasMods ? `<div class="up-body">${upgradeModsHtml(up, !!up.unlocked)}</div>` : "";
+      const chev = hasMods
+        ? `<button type="button" class="up-chev" data-act="tog-up" data-up="${slot.key}" data-stop>${open ? "▾" : "▸"}</button>`
+        : "";
+      const detail = up.detail ? `<div class="up-detail-view">${escAttr(up.detail)}</div>` : "";
+      return `<div class="${cls.join(" ")}">
+        <div class="up-head"><span class="up-badge">${slot.badge}</span><span class="up-head-end">${lvl}${chev}</span></div>
+        <span class="up-label">${escAttr(up.label)}</span>${detail}${body}
+      </div>`;
+    }
+    function upgradeSlotEdit(s, slot) {
+      if (slot.disabled) {
+        return `<div class="up-slot empty disabled"><div class="up-head"><span class="up-badge">${slot.badge}</span></div><span class="up-label">—</span></div>`;
+      }
+      const up = slot.up;
+      if (!up) {
+        return `<button type="button" class="up-slot add-up ${slot.kind}" data-act="add-up" data-up="${slot.key}" data-stop>
+          <span class="up-badge">${slot.badge}</span><span>+ ADD</span>
+        </button>`;
+      }
+      const lockOn = !!up.unlocked;
+      const open = !!state.upOpen[upOpenKey(s, slot.key)];
+      const hasMods = !!(up.mods && up.mods.length);
+      const lvl = up.level != null ? `<span class="up-lvl" title="Unlock level / AP — not edited here">L${up.level}</span>` : "";
+      const chev = hasMods
+        ? `<button type="button" class="up-chev" data-act="tog-up" data-up="${slot.key}" data-stop>${open ? "▾" : "▸"}</button>`
+        : "";
+      const lock = `<button type="button" class="up-lock ${lockOn ? "on" : ""}" data-act="tog-up-unlock" data-up="${slot.key}" title="Lab only — not in final design" data-stop>${lockOn ? "ON" : "OFF"}</button>`;
+      const modPanel = hasMods ? `<div class="up-body">${upgradeModsHtml(up, lockOn)}</div>` : "";
+      return `<div class="up-slot edit ${slot.kind}${lockOn ? " on" : ""}${open ? " open" : ""}">
+        <div class="up-head"><span class="up-badge">${slot.badge}</span><span class="up-head-end">${lvl}${chev}${lock}</span></div>
+        <input class="up-label-inp" data-field="up-label" data-up="${slot.key}" value="${escAttr(up.label)}" spellcheck="false" data-stop />
+        <textarea class="up-detail-ta" data-field="up-detail" data-up="${slot.key}" data-stop>${escAttr(up.detail || "")}</textarea>
+        ${modPanel}
+      </div>`;
+    }
+    function upgradeSlots(s) {
+      if (kitIsLb(s)) {
+        return [
+          { key: "t0", badge: "T1", kind: "talent", up: null, disabled: true },
+          { key: "t1", badge: "T2", kind: "talent", up: null, disabled: true },
+          { key: "m", badge: "M", kind: "mastery", up: s.mastery || null },
+        ];
+      }
+      const talents = s.talents || [];
+      return [
+        { key: "t0", badge: "T1", kind: "talent", up: talents[0] || null },
+        { key: "t1", badge: "T2", kind: "talent", up: talents[1] || null },
+        { key: "m", badge: "M", kind: "mastery", up: s.mastery || null },
+      ];
+    }
+    function b2UpgradesBlock(s) {
+      const slots = upgradeSlots(s);
+      const inner = slots.map((slot) => (kitEditing() ? upgradeSlotEdit(s, slot) : upgradeSlotView(s, slot))).join("");
+      return `<div class="upgrades"><div class="upgrades-row">${inner}</div></div>`;
+    }
+    function b2MacroHelp() {
+      if (!kitEditing()) return "";
+      const chips = MACRO_TOKS.map((t) => `<button type="button" class="tok-chip" data-act="ins-tok" data-tok="${escAttr(t.tok)}" data-stop>${escAttr(t.lab)}</button>`).join("");
+      return `<div class="macro-help"><span class="mh-lab">MACROS</span>${chips}<span class="mh-hint">[] = cálculo<br>2[damageDie] · +[fray]<br>literales 2d8 / +1</span></div>`;
+    }
+    function kitCardBody(ab, opts) {
+      const o = opts || {};
+      if (o.scope === "tr") {
+        const flavor = ab.body || ab.description || "";
+        return `<div class="play-body">${b2FlavorHtml(ab, "tr")}</div>`;
+      }
+      const editing = kitEditing();
+      const merged = editing ? ab : mergeAbility(ab);
+      const meta = merged._mergeMeta || { effectSources: {}, attackPatches: {} };
+      return `${b2FlavorHtml(ab, o.scope || "ab")}${atkB2(merged, meta)}${effectsB12(merged, meta, ab)}${b2UpgradesBlock(ab)}${b2MacroHelp()}`;
+    }
+
     function defaultAttack() {
-      return { autoHit: false, toHit: { boons: 0 }, damageOnHit: { die: "[D]", fray: true }, damageOnMiss: { fray: true }, damageOnCrit: null };
+      return { autoHit: false, toHit: { boons: 0 }, damageOnHit: { formula: "[damageDie]+[fray]" }, damageOnMiss: { formula: "[fray]" }, damageOnCrit: { formula: "2[damageDie]" } };
     }
     function blankAbility(asAttack) {
       const id = "n" + Date.now().toString(36).slice(-5);
@@ -4565,32 +5533,7 @@
         <label class="micro-chk"><input type="checkbox" data-cfg="pkt" data-scope="${scope}" data-id="${abId}" data-pkt="${field}" data-key="pierce" ${pkt.pierce ? "checked" : ""}/>PRC</label>
       </span>`;
     }
-    function identStrip(ab, scope) {
-      const pfx = scope === "lb" ? "lb" : `ab:${ab.id}`;
-      const kind = ab.hasAttack ? "ATK" : "STD";
-      const src = ab.source === "zarkenity" ? "ZAR" : "JOB";
-      const chip = (field, label, val) =>
-        `<button type="button" class="ident-chip${selClass(pfx + ":" + field)}" data-act="pick-field" data-field="${pfx}:${field}"><span class="k">${label}</span> ${escAttr(String(val))}</button>`;
-      const costVal = ab.actionCost == null ? "1" : String(ab.actionCost);
-      const extras = scope === "lb"
-        ? cyberSelHtml({ cfg: "res", scope: "lb", id: ab.id, value: String(ab.resolveCost != null ? ab.resolveCost : 1), options: [{ value: "1", label: "RES 1" }, { value: "2", label: "RES 2" }, { value: "3", label: "RES 3" }] })
-        : "";
-      const tags = (ab.tags || []).map((t) =>
-        `<span class="pill tag removable" data-act="tag-del" data-scope="${scope}" data-id="${ab.id}" data-tag="${escAttr(t)}" title="Remove">${TAG_LABEL[t] || t}</span>`
-      ).join("");
-      const addTag = cyberSelHtml({
-        cfg: "tag-add", scope, id: ab.id, value: "", placeholder: "+ TAG",
-        options: [{ value: "", label: "+ TAG" }, ...TAG_KEYS.map((k) => ({ value: k, label: TAG_LABEL[k] }))],
-      });
-      return `<div class="studio-ident">
-        ${chip("kind", "KIND", kind)}${chip("source", "SRC", src)}
-        ${cyberSelHtml({ cfg: "cost", scope, id: ab.id, value: costVal, options: COST_SEL })}
-        ${cyberSelHtml({ cfg: "range", scope, id: ab.id, value: ab.range && ab.range !== "self" ? String(ab.range) : "", options: RANGE_SEL })}
-        ${cyberSelHtml({ cfg: "aoe", scope, id: ab.id, value: ab.aoe || "", options: AOE_SEL })}
-        ${extras}
-        <div class="tag-edit-row" style="grid-column:1/-1">${tags}${addTag}</div>
-      </div>`;
-    }
+    /* identStrip RETIRED — EDIT identity via header CORE chips + tag-btn (see vpackEditHtml / tagEditPopHtml). */
     function fieldEditorSelect() { return ""; }
     function flavorHtml(ab, scope) {
       const pfx = scope === "lb" ? "lb" : scope === "tr" ? `tr:${ab.id}` : `ab:${ab.id}`;
@@ -4711,28 +5654,23 @@
       </div>`;
     }
     function studioBody(ab, opts) {
-      const o = opts || {};
-      const editing = !!o.editing;
-      return `<div class="studio">
-        ${flavorHtml(ab, o.scope || "ab")}
-        ${identStrip(ab, o.scope || "ab")}
-        ${effectsStudio(ab, o.scope || "ab")}
-        ${o.noAttack ? "" : attackMatrixHtml(ab)}
-        ${upgradesHtml(ab, !!o.lbOnly, true)}
-      </div>`;
+      return kitCardBody(ab, opts || {});
     }
     function playEffectsHtml(ab) {
       return (ab.effects || []).map((e) => {
-        const roll0 = (e.rolls && e.rolls[0]) || null;
         const meta = [e.label || "EFFECT", e.kind].filter(Boolean).join(" · ");
         const st = e.kind === "status" && e.statusCode
           ? ` · ${e.statusCode}${e.statusTarget ? "/" + e.statusTarget : ""}`
           : "";
+        const rolls = (e.rolls || []).map((r) => {
+          const expr = String(r.expr || "");
+          const shown = expr === "[D]" ? ("d" + state.die) : expr;
+          return `<span class="fx-roll">${escAttr(shown)}<span class="tip">${escAttr(r.label || "")}</span></span>`;
+        }).join("");
         return `<div class="fx-item view">
           <div class="fl">${escAttr(meta)}${escAttr(st)}</div>
           <div class="fx-line">
-            <div class="fx-text">${escAttr(e.text || "")}</div>
-            ${roll0 ? `<button type="button" class="roll-btn cyan" data-act="roll" data-kind="fx" data-id="${ab.id}" data-fx="${e.id}" data-rid="${roll0.id}">${escAttr(roll0.label || "ROLL")} ${escAttr(String(roll0.expr))}</button>` : ""}
+            <div class="fx-text">${escAttr(e.text || "")}${rolls}</div>
           </div>
         </div>`;
       }).join("");
@@ -4740,28 +5678,26 @@
     function playAttackHtml(ab) {
       if (!ab.hasAttack || !ab.attack) return "";
       const atk = ab.attack;
-      const hit = atk.autoHit
-        ? "Autohit"
-        : `d20${atk.toHit && atk.toHit.boons ? ` +${atk.toHit.boons}b` : ""}`;
-      const doc = atk.damageOnCrit ? packetLabel(atk.damageOnCrit) : (atk.damageOnHit ? "2× DoH" : "—");
-      const roll = (kind) => `<button type="button" class="roll-btn" data-act="roll" data-kind="${kind}" data-id="${ab.id}">ROLL</button>`;
-      return `<div class="atk-block compact">
-        <strong>ATTACK</strong>
-        <div class="atk-row compact"><span class="lbl">ATK</span><span>${escAttr(hit)}</span>${atk.autoHit ? "" : roll("toHit")}</div>
-        <div class="atk-row compact"><span class="lbl">DoH</span><span>${escAttr(packetLabel(atk.damageOnHit))}</span>${roll("DoH")}</div>
-        ${atk.autoHit ? "" : `<div class="atk-row compact"><span class="lbl">DoM</span><span>${escAttr(packetLabel(atk.damageOnMiss))}</span>${roll("DoM")}</div>`}
-        <div class="atk-row compact"><span class="lbl">DoC</span><span>${escAttr(doc)}</span>${roll("DoC")}</div>
-      </div>`;
+      const slots = [
+        { kind: "light", lbl: "Light Damage", view: packetViewLabel(atk.damageOnHit) },
+        { kind: "heavy", lbl: "Heavy Damage", view: atk.damageOnCrit ? packetViewLabel(atk.damageOnCrit) : (atk.damageOnHit ? "2× " + packetViewLabel(atk.damageOnHit) : "—") },
+      ];
+      if (!atk.autoHit) {
+        slots.push({ kind: "miss", lbl: "Miss", view: packetViewLabel(atk.damageOnMiss) });
+      }
+      const ap = ab.aoe ? (atk.damageAoe || atk.damageOnHit) : null;
+      if (ap) {
+        const parsed = parseAoe(ab.aoe);
+        const code = parsed ? parsed.code + parsed.size : "AoE";
+        slots.push({ kind: "aoe", lbl: "AoE · " + code, view: packetViewLabel(ap) });
+      }
+      const n = slots.length;
+      const chip = atk.autoHit ? `<div class="top"><span class="auto-chip">AUTOHIT</span></div>` : "";
+      const cells = slots.map((sl) => `<div class="pkt ${sl.kind}"><span class="dmg-lbl">${escAttr(sl.lbl)}</span><span class="dmg-num">${escAttr(sl.view)}</span></div>`).join("");
+      return `<div class="atk-tickets">${chip}<div class="row ${n === 3 ? "n3" : n === 2 ? "n2" : ""}">${cells}</div></div>`;
     }
     function playBody(ab, opts) {
-      const o = opts || {};
-      const flavor = o.scope === "tr" ? (ab.body || ab.description || "") : (ab.description || "");
-      return `<div class="play-body">
-        <div class="desc-view">${escAttr(flavor) || "<span style='opacity:.4'>—</span>"}</div>
-        ${o.scope === "tr" ? "" : playEffectsHtml(ab)}
-        ${o.noAttack || o.scope === "tr" ? "" : playAttackHtml(ab)}
-        ${o.scope === "tr" ? "" : upgradesHtml(ab, !!o.lbOnly, false)}
-      </div>`;
+      return kitCardBody(ab, opts || {});
     }
 
     function abilityCard(ab, inactive) {
@@ -4774,7 +5710,7 @@
       return `
         <div class="card tone-${tone} ${inactive ? "inactive" : ""} ${open ? "open" : ""}" data-card="ab" data-id="${ab.id}">
           <div class="card-hd" data-act="toggle">
-            <span class="core-slot">${vpackHtml(ab, false, editing)}</span>
+            <span class="core-slot">${editing ? vpackEditHtml(ab, false) : vpackHtml(ab, false, false)}</span>
             <span class="title" data-tip="${ab.id}" title="${escAttr(ab.title)}">${titleCluster(ab, editing)}</span>
             <div class="meta">${metaPills(ab)}</div>
             <div class="hd-tools">
@@ -4796,19 +5732,18 @@
       const titleInner = editing && isSel(pfx + ":title")
         ? `<input class="micro-inp wide" data-cfg="title" data-scope="tr" data-id="${tr.id}" value="${escAttr(tr.title)}" data-stop/>`
         : escAttr(tr.title);
-      const modeChip = editing
-        ? cyberSelHtml({ cfg: "mode", scope: "tr", id: tr.id, value: mode, options: MODE_SEL })
-        : `<span class="tchip ${mode}">${mode.toUpperCase()}</span>`;
+      const modeChip = editing ? modeEditHtml(tr) : tchipHtml(mode);
       const titleAct = editing ? ` data-act="pick-field" data-field="${pfx}:title"` : "";
-      const metaPop = traitMetaPop(tr, editing);
+      const railAct = editing ? ` data-act="cycle-mode" data-id="${tr.id}" data-stop` : "";
       return `
         <div class="card trait mode-${mode} ${play ? "" : "no-play"} ${open ? "open" : ""}" data-card="tr" data-id="${tr.id}">
           <div class="card-hd" data-act="toggle">
-            <div class="rail" title="traitMode">${TRAIT_RAIL[mode] || TRAIT_RAIL.passive}</div>
+            <div class="rail"${railAct} title="${editing ? "Click to cycle traitMode" : "traitMode"}">${TRAIT_RAIL[mode] || TRAIT_RAIL.passive}</div>
             <div class="mid">
               <span class="nm field-cell${editing ? selClass(pfx + ":title") : ""}"${titleAct} data-tip-tr="${tr.id}">${titleInner}</span>
               ${modeChip}
-              ${metaPop}
+              ${traitVpackHtml(tr, editing)}
+              ${metaPillsTr(tr)}
             </div>
             <div class="hd-tools">
               ${actionBtns(tr.id, { hidePlay: !play })}
@@ -4827,11 +5762,17 @@
         ? `<input class="micro-inp wide" data-cfg="title" data-scope="lb" data-id="${lb.id}" value="${escAttr(lb.title)}" data-stop/>`
         : escAttr(lb.title);
       const titleAct = editing ? ` data-act="pick-field" data-field="lb:title"` : "";
+      const atk = !!lb.hasAttack;
+      const kindSvg = atk ? KIT_SVG.cross : KIT_SVG.pulse;
+      const kindTip = atk ? "Attack · click to toggle" : "Standard · click to toggle";
+      const kindAct = editing ? ` data-act="pick-field" data-field="lb:kind"` : "";
+      const kindMark = `<span class="atk-mark tap" title="${kindTip}"${kindAct}>${kindSvg}</span>`;
       return `
         <div class="card lb-card ${locked ? "locked" : ""} ${open ? "open" : ""}" data-card="lb" data-id="${lb.id}">
           <div class="card-hd" data-act="toggle">
             <div class="lb1-top">
               <span class="lb-mark" title="${locked ? "Locked" : "Limit Break"}">${locked ? LB_X : LB_STAR}</span>
+              ${kindMark}
               <span class="nm field-cell${editing ? selClass("lb:title") : ""}"${titleAct} data-tip-lb="1">${titleInner}</span>
               ${locked ? `<span class="lb-lock-chip">LOCKED</span>` : `<span class="lb-ready-chip">READY</span>`}
               <div class="hd-tools">
@@ -4840,7 +5781,7 @@
               </div>
             </div>
             <div class="lb1-bot">
-              ${locked ? `<span style="font-size:0.7rem;color:var(--muted)">Aún no desbloqueado</span>` : `${vpackHtml(lb, true, editing)}${metaPillsLb(lb)}`}
+              ${locked ? `<span style="font-size:0.7rem;color:var(--muted)">Aún no desbloqueado</span>` : `${editing ? vpackEditHtml(lb, true) : vpackHtml(lb, true, false)}${metaPillsLb(lb)}`}
             </div>
           </div>
           <div class="card-bd">${editing ? studioBody(lb, { scope: "lb", lbOnly: true, editing: true }) : playBody(lb, { scope: "lb", lbOnly: true })}</div>
@@ -5298,7 +6239,7 @@
       const owner = kitOwner(scope, id);
       if (!owner) return;
       if (cfg === "cost") {
-        owner.actionCost = value === "1" || value === "2" ? Number(value) : value;
+        owner.actionCost = value === "" ? null : (value === "1" || value === "2" ? Number(value) : value);
       } else if (cfg === "range") {
         owner.range = value || null;
       } else if (cfg === "aoe") {
@@ -5328,7 +6269,60 @@
       renderBodies();
     }
 
+
+    function kitOwnerFromEl(el) {
+      const card = el.closest("[data-card]");
+      if (!card) return null;
+      const kind = card.getAttribute("data-card");
+      const id = card.getAttribute("data-id");
+      if (kind === "lb") return currentJob().lb;
+      if (kind === "tr") return trById(id);
+      return abById(id);
+    }
+    function applyB2Field(el) {
+      const owner = kitOwnerFromEl(el);
+      if (!owner) return;
+      const field = el.getAttribute("data-field");
+      if (field === "description") { owner.description = el.value; return; }
+      if (field === "fx-text") {
+        const efx = (owner.effects || []).find((x) => x.id === el.getAttribute("data-id"));
+        if (efx) efx.text = el.value;
+        return;
+      }
+      if (field === "formula" && owner.attack) {
+        const pkt = ensurePkt(owner.attack, el.getAttribute("data-pkt"));
+        pkt.formula = el.value;
+        return;
+      }
+      const up = upgradeRef(owner, el.getAttribute("data-up"));
+      if (!up) return;
+      if (field === "up-label") { up.label = el.value; return; }
+      if (field === "up-detail") up.detail = el.value;
+    }
+    function insertTok(tok) {
+      const el = state.lastFocus;
+      if (!el || (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA")) return;
+      const start = el.selectionStart != null ? el.selectionStart : el.value.length;
+      const end = el.selectionEnd != null ? el.selectionEnd : start;
+      el.value = el.value.slice(0, start) + tok + el.value.slice(end);
+      const pos = start + tok.length;
+      el.selectionStart = el.selectionEnd = pos;
+      el.focus();
+      applyB2Field(el);
+    }
+
     function bindDialog(dialog) {
+      dialog.addEventListener("focusin", (e) => {
+        const el = e.target.closest(".macro-inp, .fx-ta, .desc-ta, .up-label-inp, .up-detail-ta");
+        if (el) state.lastFocus = el;
+      });
+      dialog.addEventListener("input", (e) => {
+        const el = e.target.closest("[data-field]");
+        if (el) applyB2Field(el);
+      });
+      dialog.addEventListener("mousedown", (e) => {
+        if (e.target.closest("[data-act=ins-tok]")) e.preventDefault();
+      });
       dialog.addEventListener("click", (e) => {
         if (e.target.closest("[data-stop]")) e.stopPropagation();
         const btn = e.target.closest("[data-act]");
@@ -5384,7 +6378,7 @@
           if (!owner) return;
           if (!owner.effects) owner.effects = [];
           const nid = "e" + (owner.effects.length + 1);
-          owner.effects.push({ id: nid, kind: "text", label: "EFFECT", text: "" });
+          owner.effects.push({ id: nid, lane: "plain", kind: "text", label: "", text: "New effect." });
           const pfx = scope === "lb" ? "lb" : `ab:${owner.id}`;
           state.open[scope === "lb" ? "lb" : pfx] = true;
           state.selectedField = `${pfx}:fx:${nid}:text`;
@@ -5402,6 +6396,76 @@
           renderBodies();
           return;
         }
+        if (act === "tog-aoe") {
+          e.stopPropagation();
+          if (!kitEditing()) return;
+          const owner = kitOwnerFromEl(btn);
+          if (!owner || !owner.attack) return;
+          if (owner.attack.damageAoe) delete owner.attack.damageAoe;
+          else owner.attack.damageAoe = { formula: "[damageDie]" };
+          renderBodies();
+          return;
+        }
+        if (act === "tog-auto") {
+          e.stopPropagation();
+          if (!kitEditing()) return;
+          const owner = kitOwnerFromEl(btn);
+          if (!owner || !owner.attack) return;
+          owner.attack.autoHit = !owner.attack.autoHit;
+          if (!owner.attack.autoHit && !owner.attack.damageOnMiss) owner.attack.damageOnMiss = { formula: "[fray]" };
+          renderBodies();
+          return;
+        }
+        if (act === "fx-lane") {
+          e.stopPropagation();
+          const owner = kitOwnerFromEl(btn);
+          if (!owner) return;
+          const efx = (owner.effects || []).find((x) => x.id === btn.getAttribute("data-id"));
+          if (!efx) return;
+          applyLane(efx, nextLane(fxLane(efx)));
+          renderBodies();
+          return;
+        }
+        if (act === "ins-tok") {
+          e.preventDefault();
+          e.stopPropagation();
+          insertTok(btn.getAttribute("data-tok"));
+          return;
+        }
+        if (act === "add-up") {
+          e.stopPropagation();
+          if (!kitEditing()) return;
+          const owner = kitOwnerFromEl(btn);
+          if (!owner) return;
+          const key = btn.getAttribute("data-up");
+          const badge = key === "m" ? "M" : key === "t0" ? "T1" : "T2";
+          const kind = key === "m" ? "m" : "t";
+          const up = defaultUpgrade(kind, badge);
+          if (key === "m") owner.mastery = up;
+          else {
+            owner.talents = owner.talents || [];
+            owner.talents[key === "t0" ? 0 : 1] = up;
+          }
+          renderBodies();
+          return;
+        }
+        if (act === "tog-up-unlock") {
+          e.stopPropagation();
+          if (!kitEditing()) return;
+          const owner = kitOwnerFromEl(btn);
+          const up = owner && upgradeRef(owner, btn.getAttribute("data-up"));
+          if (up) { up.unlocked = !up.unlocked; renderBodies(); }
+          return;
+        }
+        if (act === "tog-up") {
+          e.stopPropagation();
+          const owner = kitOwnerFromEl(btn);
+          if (!owner) return;
+          const key = upOpenKey(owner, btn.getAttribute("data-up"));
+          state.upOpen[key] = !state.upOpen[key];
+          renderBodies();
+          return;
+        }
         if (act === "tag-del") {
           e.stopPropagation();
           const scope = btn.getAttribute("data-scope");
@@ -5412,12 +6476,34 @@
           renderBodies();
           return;
         }
+        if (act === "tag-add-one") {
+          e.stopPropagation();
+          const scope = btn.getAttribute("data-scope");
+          const owner = kitOwner(scope, btn.getAttribute("data-id"));
+          if (!owner) return;
+          const tag = btn.getAttribute("data-tag");
+          if (!tag) return;
+          if (!owner.tags) owner.tags = [];
+          if (!owner.tags.includes(tag)) owner.tags.push(tag);
+          renderBodies();
+          return;
+        }
         if (act === "tog-kit-edit") {
           e.stopPropagation();
           state.kitEdit = !state.kitEdit;
           state.selectedField = null;
           document.querySelectorAll(".cyber-sel.open").forEach((el) => el.classList.remove("open"));
           toast(state.kitEdit ? "EDIT ON · KIT" : "EDIT OFF · KIT");
+          renderBodies();
+          return;
+        }
+        if (act === "cycle-mode") {
+          e.stopPropagation();
+          if (!kitEditing()) return;
+          const tr = trById(id);
+          if (!tr) return;
+          tr.traitMode = cycle(TRAIT_MODE_CYCLE, tr.traitMode || "passive");
+          toast("MODE · " + String(tr.traitMode).toUpperCase());
           renderBodies();
           return;
         }
@@ -5432,8 +6518,21 @@
           const wrap = btn.closest(".cyber-sel");
           if (!wrap) return;
           const was = wrap.classList.contains("open");
-          document.querySelectorAll(".cyber-sel.open").forEach((el) => el.classList.remove("open"));
-          if (!was) wrap.classList.add("open");
+          document.querySelectorAll(".cyber-sel.open").forEach((el) => {
+            el.classList.remove("open");
+            const p = el.querySelector(".vchip-panel");
+            if (p) { p.style.left = ""; p.style.top = ""; }
+          });
+          if (!was) {
+            wrap.classList.add("open");
+            const panel = wrap.querySelector(".vchip-panel");
+            const trigger = wrap.querySelector(".vchip-sel-btn") || wrap.querySelector(".cyber-sel-btn");
+            if (panel && trigger) {
+              const r = trigger.getBoundingClientRect();
+              panel.style.left = Math.round(r.left) + "px";
+              panel.style.top = Math.round(r.bottom + 3) + "px";
+            }
+          }
           return;
         }
         if (act === "cyber-pick") {
@@ -5806,6 +6905,7 @@
       observeCardMetaTags(document);
     }
     function renderBodies() {
+      document.body.classList.toggle("kit-edit", kitEditing());
       document.querySelectorAll(".dialog[data-size] .body-mount").forEach((el) => {
         el.innerHTML = bodyHtml();
       });

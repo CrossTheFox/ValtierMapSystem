@@ -1,6 +1,14 @@
 /**
- * Unified design tokens for pixi-map (VTT + Archive + HUD).
- * Source palette: UI_COLORS. Typography via CyberTitle / CyberText in components.
+ * Unified design tokens for pixi-map (VTT HUD + Archive + sheets).
+ *
+ * Artistic source of truth (2026 HUD generation — NOT legacy BaseTabbedDialog):
+ * - Floating glass over the map (`VTT_HUD.glassBg` / `glassBorder`)
+ * - Thin 1px frames, soft neon glow only when active
+ * - Magenta = interaction · Cyan = data · Danger red = peril · Boon green = fortune
+ * - Orbitron titles · Fira Code tech labels · Fira Sans body
+ * - Prefer Popover / glass chips over heavy modal Dialogs for combat actions
+ *
+ * Source palette: UI_COLORS. Typography via CyberTitle / CyberText.
  */
 import { UI_COLORS } from "./uiColors";
 import { VTT_HUD, VTT_DIALOG_HEADER } from "./vttHudTokens";
@@ -34,12 +42,33 @@ export const SIZE = {
     btnMd: "0.8rem",
 };
 
+/** Opaque legacy panel (menus, archive). Prefer HUD_SURFACE for map overlays. */
 export const PANEL = {
     glassBg: VTT_HUD.glassBg,
     glassBorder: VTT_HUD.glassBorder,
     borderRadius: VTT_HUD.borderRadius,
     backgroundSecondary: UI_COLORS.backgroundSecondary,
     border: UI_COLORS.border,
+};
+
+/**
+ * Canonical floating HUD surface — combat card, stat popover, pin chips.
+ * Matches CharacterCombatHud / BurdenMark generation.
+ */
+export const HUD_SURFACE = {
+    bgcolor: VTT_HUD.glassBg,
+    border: `1px solid ${VTT_HUD.glassBorder}`,
+    borderRadius: `${VTT_HUD.borderRadius}px`,
+    backdropFilter: "blur(14px)",
+    boxShadow: "0 0 18px rgba(255,102,255,0.08)",
+    color: UI_COLORS.textPrimary,
+    backgroundImage: "none",
+};
+
+/** MUI Popover / Menu paper that sits on the battle map. */
+export const hudPopoverPaperSx = {
+    ...HUD_SURFACE,
+    overflow: "visible",
 };
 
 export const WIKI_DENSITY = WIKI_OVERLAY_DENSITY;
