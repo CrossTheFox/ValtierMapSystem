@@ -15,29 +15,135 @@ service cloud.firestore {
         get(/databases/$(database)/documents/players/$(request.auth.uid)).data.role == "dm";
     }
 
+    function playerExists() {
+      return exists(/databases/$(database)/documents/players/$(request.auth.uid));
+    }
+
+    function playerData() {
+      return get(/databases/$(database)/documents/players/$(request.auth.uid)).data;
+    }
+
+    function characterData(charId) {
+      return get(/databases/$(database)/documents/characters/$(charId)).data;
+    }
+
+    /** Same idea as canControlToken — owner, roster, or explicit control list. */
+    function controlsCharacter(charId) {
+      return isAuthenticated()
+        && charId is string
+        && charId.size() > 0
+        && exists(/databases/$(database)/documents/characters/$(charId))
+        && (
+          characterData(charId).ownerPlayerId == request.auth.uid
+          || (
+            playerExists()
+            && "activeCharacterId" in playerData()
+            && playerData().activeCharacterId == charId
+          )
+          || (
+            playerExists()
+            && "characterIds" in playerData()
+            && playerData().characterIds is list
+            && charId in playerData().characterIds
+          )
+          || (
+            "controlledByPlayerIds" in characterData(charId)
+            && characterData(charId).controlledByPlayerIds is list
+            && request.auth.uid in characterData(charId).controlledByPlayerIds
+          )
+        );
+    }
+
+    function wikiLinkedCharacterId(data) {
+      return ("linkedVttCharacterId" in data)
+        && data.linkedVttCharacterId is string
+        && data.linkedVttCharacterId.size() > 0
+        ? data.linkedVttCharacterId
+        : "";
+    }
+
+    function canCreateLinkedPersonaje() {
+      return request.resource.data.entityType == "personaje"
+        && request.resource.data.visibility == "players"
+        && wikiLinkedCharacterId(request.resource.data) != ""
+        && controlsCharacter(wikiLinkedCharacterId(request.resource.data));
+    }
+
+    /**
+     * Player may update a PERSONAJE they control: already linked, or claim an
+     * unlinked ficha by setting linkedVttCharacterId to their character.
+     * Visibility / entityType must not change.
+     */
+    function canPlayerUpdatePersonaje() {
+      let nextLink = wikiLinkedCharacterId(request.resource.data);
+      let prevLink = wikiLinkedCharacterId(resource.data);
+      return nextLink != ""
+        && controlsCharacter(nextLink)
+        && resource.data.entityType == "personaje"
+        && request.resource.data.entityType == "personaje"
+        && request.resource.data.visibility == resource.data.visibility
+        && (prevLink == "" || prevLink == nextLink);
+    }
+
     // ── Campaigns ─────────────────────────────────────────────────────────────
 
     match /campaigns/{campaignId} {
-      // Membership-only: eval/test missions stay off other players' radar.
-      allow read: if isAuthenticated() && (
-        resource.data.ownerId == request.auth.uid ||
-        request.auth.uid in resource.data.playerIds
-      );
+      // Authenticated read (UI filters membership). Tight list queries + client
+      // filter keep eval missions (access/owner_only) off other players' selectors.
+      allow read: if isAuthenticated();
       allow write: if isDM() || (
         isAuthenticated() && resource.data.ownerId == request.auth.uid
       );
 
-      // wikiEntities: players can only read "players" visibility; DMs read all + write all
+      // wikiEntities: players read "players" visibility; may update/create own linked PERSONAJE
       match /wikiEntities/{entityId} {
         allow read: if isDM() ||
           (isAuthenticated() && resource.data.visibility == "players");
-        allow write: if isDM();
+
+        allow create: if isDM() || canCreateLinkedPersonaje();
+
+        allow update: if isDM() || canPlayerUpdatePersonaje();
+
+        allow delete: if isDM();
+      }
+
+      // DM-only secret notes for AI / prep — never readable by players
+      match /entityDmNotes/{entityId} {
+        allow read, write: if isDM();
       }
 
       // entityRelations: all authenticated users read; only DMs write
       match /entityRelations/{relationId} {
         allow read: if isAuthenticated();
         allow write: if isDM();
+      }
+
+      // Campaign missions (generic + personal). Authenticated list/listen is
+      // allowed (same pattern as entityRelations); UI hides status=hidden and
+      // scopes personal missions to the open dossier character.
+      match /missions/{missionId} {
+        allow read: if isAuthenticated();
+        allow create, update, delete: if isDM();
+      }
+
+      // Unique RE4 items. List/listen must be query-safe (no resource.data
+      // filters on collection queries — same pattern as missions). Vault stays
+      // DM-write; players may only rearrange gx/gy/rot on items they control.
+      match /items/{itemId} {
+        allow read: if isAuthenticated();
+
+        allow create, delete: if isDM();
+
+        allow update: if isDM() || (
+          isAuthenticated()
+          && resource.data.ownerType == "character"
+          && request.resource.data.ownerType == "character"
+          && resource.data.ownerCharacterId is string
+          && request.resource.data.ownerCharacterId == resource.data.ownerCharacterId
+          && controlsCharacter(resource.data.ownerCharacterId)
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(["gx", "gy", "rot", "equippedSlot", "updatedAt", "updatedBy"])
+        );
       }
 
       match /aiThreads/{threadId} {

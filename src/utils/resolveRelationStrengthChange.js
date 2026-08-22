@@ -4,14 +4,17 @@
  * Semantics:
  *   relation_add    → strengthDelta is the absolute proposed strength (or default if omitted)
  *   relation_update → strengthDelta is an additive delta on the existing edge
+ *
+ * Structural edges never carry affinity: proposedStrength is always 0 and strengthDelta is ignored.
  */
 
 import {
-    defaultStrengthForRelationType,
+    defaultStrengthForRelation,
+    isAffinityRelation,
+    isStructuralRelation,
+    resolveRelationStrength,
+    WIKI_RELATION_TYPES,
 } from "../constants/wikiRelationTypes.js";
-import {
-    clampRelationStrength,
-} from "../../firebase/services/wikiRelationService.js";
 
 /**
  * Find an existing campaign relation matching endpoints + type.
@@ -41,6 +44,13 @@ export function findMatchingRelation(relations = [], fromEntityId, toEntityId, r
     return null;
 }
 
+function entityTypesFromChange(change) {
+    return {
+        fromEntityType: change.fromEntity?.entityType ?? null,
+        toEntityType: change.toEntity?.entityType ?? null,
+    };
+}
+
 /**
  * Enrich a validated change with strength visualization fields.
  *
@@ -62,31 +72,48 @@ export function enrichRelationStrengthChange(change, relations = []) {
     const fromId = change.resolvedEndpoints?.fromEntityId ?? change.fromEntity?.id;
     const toId = change.resolvedEndpoints?.toEntityId ?? change.toEntity?.id;
     const relType = change.relationType;
+    const { fromEntityType, toEntityType } = entityTypesFromChange(change);
     const match = findMatchingRelation(relations, fromId, toId, relType);
     const existing = match?.relation ?? null;
     const matchedReversed = Boolean(match?.reversed);
     const currentStrength = existing != null ? Number(existing.strength ?? 0) : null;
     const rawDelta = change.strengthDelta;
+    const structural = isStructuralRelation({
+        relationType: relType,
+        fromEntityType,
+        toEntityType,
+    });
 
     let proposedStrength = null;
     let strengthDeltaResolved = null;
 
     if (change.kind === "relation_remove") {
         proposedStrength = null;
+    } else if (structural) {
+        proposedStrength = 0;
+        strengthDeltaResolved = currentStrength != null ? -currentStrength : 0;
     } else if (change.kind === "relation_update") {
-        const base = currentStrength ?? defaultStrengthForRelationType(relType);
+        const base = currentStrength ?? defaultStrengthForRelation(relType, fromEntityType, toEntityType);
         const delta = rawDelta != null && !Number.isNaN(Number(rawDelta)) ? Number(rawDelta) : 0;
         strengthDeltaResolved = delta;
-        proposedStrength = clampRelationStrength(base + delta);
+        proposedStrength = resolveRelationStrength({
+            relationType: relType,
+            fromEntityType,
+            toEntityType,
+            strength: base + delta,
+        });
     } else {
         // relation_add: absolute strength (delta field misnamed historically).
-        // If an edge already exists (exact or reverse), still treat as absolute target
-        // and applyProposedImpact will UPDATE instead of creating a duplicate.
         const absolute = rawDelta != null && !Number.isNaN(Number(rawDelta))
             ? Number(rawDelta)
-            : defaultStrengthForRelationType(relType);
+            : defaultStrengthForRelation(relType, fromEntityType, toEntityType);
         strengthDeltaResolved = absolute - (currentStrength ?? 0);
-        proposedStrength = clampRelationStrength(absolute);
+        proposedStrength = resolveRelationStrength({
+            relationType: relType,
+            fromEntityType,
+            toEntityType,
+            strength: absolute,
+        });
     }
 
     const canonicalEndpoints = existing
@@ -101,6 +128,8 @@ export function enrichRelationStrengthChange(change, relations = []) {
         proposedStrength,
         strengthDeltaResolved,
         matchedReversed,
+        isAffinity: isAffinityRelation({ relationType: relType, fromEntityType, toEntityType }),
+        isStructural: structural,
         resolvedEndpoints: canonicalEndpoints ?? change.resolvedEndpoints,
     };
 }
@@ -114,10 +143,14 @@ export function formatStrengthChangeLabel({
     proposedStrength,
     strengthDeltaResolved,
     existingRelationId,
+    isStructural,
 }) {
     if (kind === "relation_remove") {
         if (currentStrength == null) return "eliminar";
         return `elimina (peso ${currentStrength})`;
+    }
+    if (isStructural) {
+        return kind === "relation_add" && !existingRelationId ? "hecho estructural" : "hecho (sin afinidad)";
     }
     if (kind === "relation_add" && !existingRelationId && currentStrength == null) {
         return `nueva · peso ${proposedStrength ?? 0}`;
@@ -130,4 +163,9 @@ export function formatStrengthChangeLabel({
     }
     if (proposedStrength != null) return `peso ${proposedStrength}`;
     return null;
+}
+
+/** Reject AI proposals that touch idioma / habla. */
+export function isForbiddenLanguageRelation(relationType) {
+    return relationType === WIKI_RELATION_TYPES.HABLA;
 }

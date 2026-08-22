@@ -160,7 +160,7 @@ describe("validateNarrativeImpactResponse", () => {
         };
         const r = validateNarrativeImpactResponse(raw, [idioma, oni]);
         assert.equal(r.proposedRelations[0].valid, false);
-        assert.match(r.proposedRelations[0].validationError, /no válida/i);
+        assert.match(r.proposedRelations[0].validationError, /estructural|no válida/i);
     });
 
     it("accepts valid personaje → personaje relacionado_con", () => {
@@ -207,7 +207,74 @@ describe("validateNarrativeImpactResponse", () => {
 // ── CASCADE ──────────────────────────────────────────────────────────────────
 
 describe("validateCascadeResponse", () => {
-    it("flags unknown reaction archetype", () => {
+    it("prefers ficha reactionArchetype over LLM echo", () => {
+        const oniWithArch = {
+            ...oni,
+            customFields: { personaje: { reactionArchetype: "rival" } },
+        };
+        const raw = {
+            ...cascadeBase,
+            impacts: [{
+                wave: 1,
+                entityTitle: "Oni Margalous",
+                reactionArchetype: "Guardia",
+                emotionalReaction: "x",
+                narrativeHook: "x",
+                changes: [],
+                justificationPath: "x",
+                confidence: "alta",
+            }],
+        };
+        const r = validateCascadeResponse(raw, [oniWithArch, zorgun, felicia]);
+        assert.equal(r.impacts[0].valid, true);
+        assert.equal(r.impacts[0].reactionArchetype, "rival");
+        assert.equal(r.impacts[0].entityId, "o1");
+    });
+
+    it("soft-drops unparseable personalityShift.to", () => {
+        const raw = {
+            ...cascadeBase,
+            impacts: [{
+                wave: 1,
+                entityTitle: "Oni Margalous",
+                reactionArchetype: "intimo",
+                emotionalReaction: "x",
+                narrativeHook: "x",
+                personalityShift: { from: "estable", to: "totalmente destruida emocionalmente", reason: "shock" },
+                changes: [],
+                justificationPath: "x",
+                confidence: "alta",
+            }],
+        };
+        const r = validateCascadeResponse(raw, contextEntities);
+        assert.equal(r.impacts[0].valid, true);
+        assert.equal(r.impacts[0].personalityShift, null);
+        assert.equal(r.impacts[0].personalityShiftRepaired, true);
+        assert.equal(r.impacts[0].confidence, "media");
+    });
+
+    it("normalizes truncated Guardia to guardian", () => {
+        const raw = {
+            ...cascadeBase,
+            impacts: [{
+                wave: 1,
+                entityTitle: "Oni Margalous",
+                reactionArchetype: "Guardia",
+                emotionalReaction: "x",
+                narrativeHook: "x",
+                changes: [],
+                justificationPath: "x",
+                confidence: "alta",
+            }],
+        };
+        const r = validateCascadeResponse(raw, contextEntities);
+        assert.equal(r.impacts[0].valid, true);
+        assert.equal(r.impacts[0].reactionArchetype, "guardian");
+        assert.equal(r.impacts[0].archetypeRepaired, undefined);
+        assert.equal(r.impacts[0].confidence, "alta");
+    });
+
+    it("soft-drops unknown reaction archetype instead of failing the impact", () => {
         const raw = {
             ...cascadeBase,
             impacts: [{
@@ -222,8 +289,11 @@ describe("validateCascadeResponse", () => {
             }],
         };
         const r = validateCascadeResponse(raw, contextEntities);
-        assert.equal(r.impacts[0].valid, false);
-        assert.match(r.impacts[0].validationErrors[0], /Arquetipo desconocido/i);
+        assert.equal(r.impacts[0].valid, true);
+        assert.equal(r.impacts[0].reactionArchetype, null);
+        assert.equal(r.impacts[0].archetypeRepaired, true);
+        assert.equal(r.impacts[0].confidence, "media");
+        assert.equal((r.impacts[0].validationErrors ?? []).length, 0);
     });
 
     it("normalizes Spanish reaction archetype labels", () => {
@@ -485,6 +555,19 @@ describe("validateCascadeResponse – personalityShift", () => {
         assert.ok(r.impacts[0].personalityShift);
         assert.equal(r.impacts[0].personalityShift.to, "corrupta_zarken");
     });
+
+    it("normalizes short Spanish narrativeState labels like Quebrada", () => {
+        const raw = {
+            ...cascadeBase,
+            impacts: [{
+                ...cascadeBase.impacts[0],
+                personalityShift: { from: "Estable", to: "Quebrada", reason: "trauma" },
+            }],
+        };
+        const r = validateCascadeResponse(raw, contextEntities);
+        assert.equal(r.impacts[0].personalityShift.to, "quebrada");
+        assert.equal(r.impacts[0].personalityShift.from, "estable");
+    });
 });
 
 // ── collectiveImpacts ─────────────────────────────────────────────────────────
@@ -643,5 +726,81 @@ describe("validateCascadeResponse – repair omissions", () => {
         assert.equal(ch.relationType, "descendiente_de");
         assert.equal(ch.repaired, true);
         assert.deepEqual(r.invalidChangeTitles, []);
+    });
+
+    it("rejects structural relation changes in cascade impacts", () => {
+        const evento = {
+            id: "ev1",
+            entityType: "evento_historico",
+            title: "Masacre de Valdris",
+        };
+        const raw = {
+            ...cascadeBase,
+            impacts: [{
+                ...cascadeBase.impacts[0],
+                changes: [{
+                    kind: "relation_add",
+                    fromEntityTitle: "Oni Margalous",
+                    toEntityTitle: "Masacre de Valdris",
+                    relationType: "participo_en",
+                    strengthDelta: 0,
+                    reason: "Presencia.",
+                }],
+            }],
+        };
+        const r = validateCascadeResponse(raw, [...contextEntities, evento]);
+        const ch = r.impacts[0].resolvedChanges[0];
+        assert.equal(ch.valid, false);
+        assert.match(ch.validationError, /estructural/i);
+        assert.deepEqual(r.invalidChangeTitles, ["Oni Margalous"]);
+    });
+
+    it("rejects relation changes that touch dead characters", () => {
+        const dead = {
+            id: "d1",
+            entityType: "personaje",
+            title: "Engel Caído",
+            customFields: { personaje: { deathDate: "120.3.4" } },
+        };
+        const raw = {
+            ...cascadeBase,
+            impacts: [{
+                ...cascadeBase.impacts[0],
+                changes: [{
+                    kind: "relation_update",
+                    fromEntityTitle: "Oni Margalous",
+                    toEntityTitle: "Engel Caído",
+                    relationType: "aliado_de",
+                    strengthDelta: -3,
+                    reason: "Luto.",
+                }],
+            }],
+        };
+        const r = validateCascadeResponse(raw, [...contextEntities, dead], null, {
+            aiRules: { excludeDeadFromImpacts: true },
+        });
+        const ch = r.impacts[0].resolvedChanges[0];
+        assert.equal(ch.valid, false);
+        assert.match(ch.validationError, /fallecido/i);
+    });
+});
+
+describe("validateNarrativeImpactResponse structural/dead", () => {
+    it("rejects structural proposedRelations", () => {
+        const raw = {
+            summary: "x",
+            proposedRelations: [{
+                action: "add",
+                fromEntityTitle: "Oni Margalous",
+                toEntityTitle: "Arvek",
+                relationType: "habla",
+                strength: 0,
+                reason: "Idioma.",
+                confidence: "alta",
+            }],
+        };
+        const r = validateNarrativeImpactResponse(raw, [...contextEntities, idioma]);
+        assert.equal(r.proposedRelations[0].valid, false);
+        assert.match(r.proposedRelations[0].validationError, /idioma|estructural|habla/i);
     });
 });

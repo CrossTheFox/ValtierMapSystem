@@ -1,3 +1,11 @@
+/**
+ * Location-scoped missions (legacy).
+ *
+ * BACKLOG: Replace this tab with the campaign missions system used in
+ * NAR → MISIONES (`campaigns/{id}/missions`, DossierMissionsView). Do not
+ * migrate `location.missions[]` until that redesign ships.
+ */
+
 import { useState, useMemo } from "react";
 import {
     Box,

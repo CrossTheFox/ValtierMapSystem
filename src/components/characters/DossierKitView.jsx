@@ -38,6 +38,10 @@ import {
     sanitizeTagKeys,
 } from "../../constants/abilityKinds";
 import { resolveCombatStats } from "../../utils/resolveCombatStats";
+import {
+    isAbilityCut,
+    isTraitTorn,
+} from "../../utils/characterBurdens";
 import AbilityCommandToolbar from "../abilities/AbilityCommandToolbar";
 import TagSearchSelect from "../admin/TagSearchSelect";
 import MacroPinButton from "./MacroPinButton";
@@ -46,6 +50,9 @@ import { MACRO_SLOT_TYPES } from "../../constants/macroBar";
 import { useCampaignTags } from "../../hooks/useCampaignTags";
 import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
 import CyberTooltip from "../customs/CyberTooltip";
+import DossierInventoryView from "./DossierInventoryView";
+import { MaletinChromeButton } from "./CharacterSheetTabs";
+import { subscribeCharacterItems } from "../../../firebase/services/itemService";
 
 /* ── colour tokens ────────────────────────────────────────────────── */
 const C = {
@@ -61,6 +68,7 @@ const C = {
 };
 
 const MAX_LOADOUT = 6;
+const CORE_COMBAT_KEYS = COMBAT_STAT_KEYS.filter((k) => k !== "vigor");
 
 const STAT_META = {
     vit: { label: "VIT", accent: "#00f2ea" },
@@ -223,10 +231,12 @@ function CombatStatCell({
     editMode,
     isOverride,
     onChange,
+    layout = "cell",
 }) {
     const meta = STAT_META[statKey] || { label: statKey, accent: C.cyan };
     const accent = isOverride ? C.pink : (meta.accent || C.cyan);
     const [editing, setEditing] = useState(false);
+    const track = layout === "track";
 
     useEffect(() => {
         if (!editMode) setEditing(false);
@@ -240,7 +250,17 @@ function CombatStatCell({
             onClick={() => {
                 if (editMode && !editing) setEditing(true);
             }}
-            sx={{
+            sx={track ? {
+                display: "flex",
+                alignItems: "center",
+                gap: 1,
+                p: "8px 12px",
+                borderRadius: "6px",
+                border: `1px solid ${showEditor ? C.cyan : `${accent}99`}`,
+                bgcolor: isOverride ? "rgba(255,102,255,0.1)" : `${accent}14`,
+                minWidth: 0,
+                cursor: editMode ? "pointer" : "default",
+            } : {
                 p: "10px 8px",
                 borderRadius: "6px",
                 border: `1px solid ${showEditor ? C.cyan : `${accent}99`}`,
@@ -259,11 +279,13 @@ function CombatStatCell({
                 fontSize: "0.52rem",
                 letterSpacing: "0.14em",
                 color: accent,
-                mb: "6px",
+                mb: track ? 0 : "6px",
+                flexShrink: 0,
                 textShadow: `0 0 8px ${accent}44`,
             }}>
                 {meta.label}
             </Box>
+            {track ? <Box sx={{ flex: 1, minWidth: 8 }} /> : null}
             {showEditor ? (
                 statKey === "damageDie" ? (
                     <Box
@@ -315,7 +337,7 @@ function CombatStatCell({
                             }
                         }}
                         sx={{
-                            width: "100%",
+                            width: track ? 72 : "100%",
                             background: "transparent",
                             border: "none",
                             outline: "none",
@@ -323,7 +345,7 @@ function CombatStatCell({
                             fontFamily: "Orbitron, sans-serif",
                             fontSize: "1.1rem",
                             fontWeight: 700,
-                            textAlign: "center",
+                            textAlign: track ? "right" : "center",
                             "&::placeholder": { color: "rgba(255,255,255,0.4)", opacity: 1 },
                         }}
                     />
@@ -331,11 +353,12 @@ function CombatStatCell({
             ) : (
                 <Box sx={{
                     fontFamily: "Orbitron, sans-serif",
-                    fontSize: "1.15rem",
+                    fontSize: track ? "1rem" : "1.15rem",
                     fontWeight: 700,
                     color: C.text,
                     lineHeight: 1.1,
                     textShadow: "0 1px 2px rgba(0,0,0,0.8)",
+                    flexShrink: 0,
                 }}>
                     {shown}
                 </Box>
@@ -555,6 +578,108 @@ function ClassResourceCell({
                     </Box>
                 )}
             </Box>
+            {max != null && max > 0 ? (
+                <Box sx={{
+                    gridColumn: "1 / -1",
+                    height: 4,
+                    border: `1px solid ${UI_COLORS.border}`,
+                    bgcolor: "rgba(0,0,0,0.35)",
+                }}>
+                    <Box sx={{
+                        width: `${Math.min(100, Math.round((Number(display) / max) * 100))}%`,
+                        height: "100%",
+                        bgcolor: C.cyan,
+                        boxShadow: `0 0 8px ${C.cyan}55`,
+                    }} />
+                </Box>
+            ) : null}
+        </Box>
+    );
+}
+
+/* ── Shared fold chrome (Job / Special / LB) ─────────────────────── */
+function KitFold({ tag, tagColor = C.cyan, title, onCall, children }) {
+    const [open, setOpen] = useState(true);
+    return (
+        <Box
+            sx={{
+                border: `1px solid ${C.border}`,
+                borderRadius: "6px",
+                bgcolor: "rgba(0,0,0,0.25)",
+                overflow: "hidden",
+                minWidth: 0,
+                height: "100%",
+                display: "flex",
+                flexDirection: "column",
+            }}
+        >
+            <Box
+                onClick={() => setOpen((v) => !v)}
+                sx={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 1,
+                    px: "10px",
+                    py: "8px",
+                    cursor: "pointer",
+                    userSelect: "none",
+                }}
+            >
+                <Box sx={{
+                    fontFamily: "Orbitron, sans-serif",
+                    fontSize: "0.52rem",
+                    letterSpacing: "0.1em",
+                    color: tagColor,
+                    flexShrink: 0,
+                    mt: "3px",
+                }}>
+                    {tag}
+                </Box>
+                <Box sx={{
+                    flex: 1,
+                    minWidth: 0,
+                    fontFamily: "Orbitron, sans-serif",
+                    fontSize: "0.82rem",
+                    letterSpacing: "0.06em",
+                    color: C.text,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    pt: "1px",
+                }}>
+                    {title}
+                </Box>
+                {typeof onCall === "function" ? (
+                    <Box sx={{ flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+                        <CallChatBtn onClick={onCall} />
+                    </Box>
+                ) : null}
+                <Box sx={{
+                    color: C.muted,
+                    fontFamily: "'Fira Code', monospace",
+                    fontSize: "0.7rem",
+                    transform: open ? "rotate(90deg)" : "none",
+                    transition: "transform 0.15s",
+                    mt: "2px",
+                    flexShrink: 0,
+                }}>
+                    ▸
+                </Box>
+            </Box>
+            {open ? (
+                <Box sx={{
+                    px: "12px",
+                    pb: "12px",
+                    flex: 1,
+                    minHeight: 0,
+                    overflowY: "auto",
+                    borderTop: `1px solid ${C.border}`,
+                    pt: "10px",
+                    ...CYBER_SCROLL_STYLE,
+                }}>
+                    {children}
+                </Box>
+            ) : null}
         </Box>
     );
 }
@@ -597,138 +722,69 @@ function JobIdentityPanel({
     const showEditor = canEdit && editing;
 
     return (
-        <Box
-            sx={{
-                position: "relative",
-                height: "100%",
-                minHeight: 220,
-                p: "14px 16px",
-                borderRadius: "8px",
-                border: `1px solid ${C.pink}66`,
-                bgcolor: "rgba(255,102,255,0.05)",
-                backgroundImage: `
-                    linear-gradient(135deg, rgba(255,102,255,0.07) 0%, transparent 42%),
-                    linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35))
-                `,
-                boxShadow: `inset 0 0 0 1px rgba(255,102,255,0.08), 0 0 22px rgba(255,102,255,0.06)`,
-                overflow: "hidden",
-                display: "flex",
-                flexDirection: "column",
-                gap: 1,
-                "&::before": {
-                    content: '""',
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: 3,
-                    height: "100%",
-                    background: `linear-gradient(180deg, ${C.pink}, ${C.cyan})`,
-                },
-            }}
+        <KitFold
+            tag="JOB"
+            tagColor={C.pink}
+            title={(jobName || "SIN JOB").toUpperCase()}
+            onCall={onCall}
         >
-            <Box sx={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 1,
-            }}>
-                <Box sx={{
-                    fontFamily: "Orbitron, sans-serif",
-                    fontSize: "0.48rem",
-                    letterSpacing: "0.16em",
-                    color: C.pink,
-                }}>
-                    JOB
-                </Box>
-                {typeof onCall === "function" && (
-                    <CallChatBtn onClick={onCall} />
-                )}
-            </Box>
-
             {showEditor ? (
-                <Box
-                    component="input"
-                    value={draftName}
-                    autoFocus
-                    onChange={(e) => setDraftName(e.target.value)}
-                    onBlur={commit}
-                    onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                            e.preventDefault();
-                            e.currentTarget.blur();
-                        } else if (e.key === "Escape") {
-                            setDraftName(jobName || "");
-                            setDraftDesc(description || "");
-                            setEditing(false);
-                        }
-                    }}
-                    placeholder="NOMBRE DEL JOB"
-                    sx={{
-                        width: "100%",
-                        boxSizing: "border-box",
-                        background: "transparent",
-                        border: "none",
-                        outline: "none",
-                        fontFamily: "Orbitron, sans-serif",
-                        fontSize: "1rem",
-                        letterSpacing: "0.08em",
-                        color: C.text,
-                        textTransform: "uppercase",
-                        p: 0,
-                        "&::placeholder": { color: "rgba(255,255,255,0.3)", opacity: 1 },
-                    }}
-                />
+                <>
+                    <Box
+                        component="input"
+                        value={draftName}
+                        autoFocus
+                        onChange={(e) => setDraftName(e.target.value)}
+                        onBlur={commit}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                                e.preventDefault();
+                                e.currentTarget.blur();
+                            } else if (e.key === "Escape") {
+                                setDraftName(jobName || "");
+                                setDraftDesc(description || "");
+                                setEditing(false);
+                            }
+                        }}
+                        placeholder="NOMBRE DEL JOB"
+                        sx={{
+                            width: "100%",
+                            boxSizing: "border-box",
+                            background: "transparent",
+                            border: "none",
+                            outline: "none",
+                            fontFamily: "Orbitron, sans-serif",
+                            fontSize: "0.88rem",
+                            letterSpacing: "0.08em",
+                            color: C.text,
+                            textTransform: "uppercase",
+                            p: 0,
+                            mb: 1,
+                            "&::placeholder": { color: "rgba(255,255,255,0.3)", opacity: 1 },
+                        }}
+                    />
+                    <Box
+                        component="textarea"
+                        value={draftDesc}
+                        onChange={(e) => setDraftDesc(e.target.value)}
+                        onBlur={commit}
+                        rows={5}
+                        placeholder="Descripción / flavor del job (Markdown)…"
+                        sx={{
+                            ...ABILITY_TEXTAREA_SX,
+                            minHeight: 96,
+                            borderColor: `${C.pink}44`,
+                            bgcolor: "rgba(0,0,0,0.28)",
+                            fontSize: "0.9rem",
+                            lineHeight: 1.6,
+                            color: C.text,
+                        }}
+                    />
+                </>
             ) : (
                 <Box
                     onClick={canEdit ? () => setEditing(true) : undefined}
-                    sx={{
-                        fontFamily: "Orbitron, sans-serif",
-                        fontSize: "1rem",
-                        letterSpacing: "0.08em",
-                        color: C.text,
-                        lineHeight: 1.2,
-                        cursor: canEdit ? "text" : "default",
-                    }}
-                >
-                    {(jobName || "SIN JOB").toUpperCase()}
-                </Box>
-            )}
-
-            <Box sx={{
-                height: "1px",
-                background: `linear-gradient(90deg, ${C.pink}88, transparent)`,
-                flexShrink: 0,
-            }} />
-
-            {showEditor ? (
-                <Box
-                    component="textarea"
-                    value={draftDesc}
-                    onChange={(e) => setDraftDesc(e.target.value)}
-                    onBlur={commit}
-                    rows={5}
-                    placeholder="Descripción / flavor del job (Markdown)…"
-                    sx={{
-                        ...ABILITY_TEXTAREA_SX,
-                        flex: 1,
-                        minHeight: 96,
-                        borderColor: `${C.pink}44`,
-                        bgcolor: "rgba(0,0,0,0.28)",
-                        fontSize: "0.9rem",
-                        lineHeight: 1.6,
-                        color: C.text,
-                    }}
-                />
-            ) : (
-                <Box
-                    onClick={canEdit ? () => setEditing(true) : undefined}
-                    sx={{
-                        flex: 1,
-                        minHeight: 0,
-                        overflowY: "auto",
-                        cursor: canEdit ? "text" : "default",
-                        ...CYBER_SCROLL_STYLE,
-                    }}
+                    sx={{ cursor: canEdit ? "text" : "default" }}
                 >
                     <KitMarkdown
                         content={description}
@@ -736,7 +792,7 @@ function JobIdentityPanel({
                     />
                 </Box>
             )}
-        </Box>
+        </KitFold>
     );
 }
 
@@ -773,33 +829,12 @@ function SpecialMechanicPanel({ mechanic, editMode, isDM, onChangeMeta, onCall }
     const showEditor = canEdit && editing;
 
     return (
-        <Box sx={{
-            p: "14px 16px",
-            borderRadius: "8px",
-            border: `1px solid ${C.pink}88`,
-            bgcolor: "rgba(255,102,255,0.05)",
-            minWidth: 0,
-            boxShadow: `inset 0 0 28px rgba(255,102,255,0.04)`,
-        }}>
-            <Box sx={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 1,
-                mb: 1,
-            }}>
-                <Box sx={{
-                    fontFamily: "Orbitron, sans-serif",
-                    fontSize: "0.48rem",
-                    letterSpacing: "0.14em",
-                    color: C.pink,
-                }}>
-                    SPECIAL MECHANIC
-                </Box>
-                {typeof onCall === "function" && !empty && (
-                    <CallChatBtn onClick={onCall} />
-                )}
-            </Box>
+        <KitFold
+            tag="SPECIAL"
+            tagColor={C.cyan}
+            title={name}
+            onCall={!empty && typeof onCall === "function" ? onCall : undefined}
+        >
             {showEditor ? (
                 <>
                     <Box
@@ -842,7 +877,7 @@ function SpecialMechanicPanel({ mechanic, editMode, isDM, onChangeMeta, onCall }
                         placeholder="Reglas del special mechanic (Markdown)…"
                         sx={{
                             ...ABILITY_TEXTAREA_SX,
-                            borderColor: `${C.pink}55`,
+                            borderColor: `${C.cyan}55`,
                             minHeight: 100,
                             color: C.text,
                             fontSize: "0.9rem",
@@ -868,19 +903,10 @@ function SpecialMechanicPanel({ mechanic, editMode, isDM, onChangeMeta, onCall }
                     onClick={canEdit ? () => setEditing(true) : undefined}
                     sx={{ cursor: canEdit ? "text" : "default" }}
                 >
-                    <Box sx={{
-                        fontFamily: "Orbitron, sans-serif",
-                        fontSize: "0.88rem",
-                        letterSpacing: "0.08em",
-                        color: C.text,
-                        mb: 0.75,
-                    }}>
-                        {name}
-                    </Box>
                     <KitMarkdown content={text} />
                 </Box>
             )}
-        </Box>
+        </KitFold>
     );
 }
 
@@ -931,6 +957,7 @@ function KitCard({
     tagColor,
     title,
     text,
+    hideTag = false,
     editMode,
     onSave,
     showCommands = false,
@@ -942,6 +969,8 @@ function KitCard({
     tagKeys = null,
     availableTags = null,
     onCall = null,
+    burdenDisabled = false,
+    burdenDisabledLabel = "CUT",
 }) {
     const [editing, setEditing] = useState(false);
     const [draftTitle, setDraftTitle] = useState(title || "");
@@ -973,16 +1002,31 @@ function KitCard({
             sx={{
                 position: "relative",
                 p: "12px 14px",
-                border: `1px solid ${editing ? C.cyan : C.border}`,
+                border: `1px solid ${burdenDisabled ? `${C.danger}88` : editing ? C.cyan : C.border}`,
                 borderRadius: "8px",
-                bgcolor: "rgba(0,0,0,0.28)",
+                bgcolor: burdenDisabled ? "rgba(255,51,85,0.06)" : "rgba(0,0,0,0.28)",
                 transition: "border-color 0.18s, box-shadow 0.18s",
                 cursor: editMode ? "pointer" : "default",
+                opacity: burdenDisabled ? 0.72 : 1,
                 boxShadow: editing ? `0 0 18px rgba(0,242,234,0.12)` : "none",
-                "&:hover": { borderColor: editMode ? "rgba(255,102,255,0.4)" : C.border },
+                "&:hover": { borderColor: burdenDisabled ? C.danger : (editMode ? "rgba(255,102,255,0.4)" : C.border) },
+                ...(burdenDisabled ? {
+                    "&::after": {
+                        content: '""',
+                        position: "absolute",
+                        left: 12,
+                        right: 12,
+                        top: "42%",
+                        height: "1px",
+                        bgcolor: `${C.danger}66`,
+                        pointerEvents: "none",
+                        zIndex: 1,
+                    },
+                } : {}),
             }}
         >
-            <Box sx={{ display: "flex", alignItems: "center", gap: "8px", mb: "6px" }}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: "8px", mb: "6px", flexWrap: "wrap" }}>
+                {!hideTag ? (
                 <Box component="span" sx={{
                     fontFamily: "Orbitron, sans-serif",
                     fontSize: "0.62rem",
@@ -993,6 +1037,19 @@ function KitCard({
                 }}>
                     {tag}
                 </Box>
+                ) : null}
+                {burdenDisabled && (
+                    <Box component="span" sx={{
+                        fontFamily: "Orbitron, sans-serif",
+                        fontSize: "0.48rem",
+                        letterSpacing: "0.1em",
+                        color: C.danger,
+                        border: `1px solid ${C.danger}88`,
+                        px: "5px", py: "1px", borderRadius: "2px",
+                    }}>
+                        {burdenDisabledLabel}
+                    </Box>
+                )}
                 {!editing && showTraitMeta && (
                     <Box component="span" sx={{
                         fontFamily: "Orbitron, sans-serif",
@@ -1048,7 +1105,13 @@ function KitCard({
                 )}
                 {typeof onCall === "function" && !editing && (
                     <Box sx={{ flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
-                        <CallChatBtn onClick={onCall} />
+                        <CallChatBtn
+                            disabled={burdenDisabled}
+                            onClick={() => {
+                                if (burdenDisabled) return;
+                                onCall();
+                            }}
+                        />
                     </Box>
                 )}
                 {pinEntry && character && !editing && (
@@ -1309,103 +1372,102 @@ function NewItemDraft({
 
 /* ── Limit Break panel ────────────────────────────────────────────── */
 function LimitBreakPanel({ limitBreak, unlocked, editMode, onSave, character, onCall }) {
+    const title = limitBreak?.label || "LIMIT BREAK";
+
     if (unlocked && limitBreak) {
         return (
-            <KitCard
-                tag="LIMIT"
-                tagColor={C.lb}
-                title={limitBreak.label}
-                text={limitBreak.blurb}
-                editMode={editMode}
-                showCommands={editMode}
-                onSave={onSave}
-                character={character}
-                onCall={onCall}
-                pinEntry={{
-                    type: MACRO_SLOT_TYPES.ULTIMATE,
-                    id: limitBreak.key || limitBreak.id,
-                    label: limitBreak.label || "LIMIT BREAK",
-                    blurb: limitBreak.blurb || "",
-                }}
-            />
+            <KitFold tag="LIMIT BREAK" tagColor={C.lb} title={title} onCall={onCall}>
+                <KitCard
+                    hideTag
+                    tag="LIMIT"
+                    tagColor={C.lb}
+                    title={limitBreak.label}
+                    text={limitBreak.blurb}
+                    editMode={editMode}
+                    showCommands={editMode}
+                    onSave={onSave}
+                    character={character}
+                    pinEntry={{
+                        type: MACRO_SLOT_TYPES.ULTIMATE,
+                        id: limitBreak.key || limitBreak.id,
+                        label: limitBreak.label || "LIMIT BREAK",
+                        blurb: limitBreak.blurb || "",
+                    }}
+                />
+            </KitFold>
         );
     }
 
     return (
-        <Box
-            sx={{
-                position: "relative",
-                minHeight: 160,
-                p: "16px 14px",
-                borderRadius: "8px",
-                border: `1px solid ${C.danger}88`,
-                bgcolor: "rgba(255,51,85,0.08)",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 1.25,
-                overflow: "hidden",
-            }}
-        >
+        <KitFold tag="LIMIT BREAK" tagColor={C.danger} title={title}>
             <Box
-                className="dossier-lb-locked-x"
                 sx={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: "50%",
-                    border: `2px solid ${C.danger}`,
-                    color: C.danger,
-                    display: "grid",
-                    placeItems: "center",
-                    fontFamily: "Orbitron, sans-serif",
-                    fontSize: "1.35rem",
-                    fontWeight: 700,
-                    boxShadow: `0 0 18px ${C.danger}44`,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 1.25,
+                    py: 1.5,
                 }}
             >
-                ✕
-            </Box>
-            <Box
-                className="dossier-lb-locked-label"
-                sx={{
-                    fontFamily: "Orbitron, sans-serif",
-                    fontSize: "0.62rem",
-                    color: C.danger,
-                    textTransform: "uppercase",
-                    textAlign: "center",
-                }}
-            >
-                Aún no Desbloqueado
-            </Box>
-            {limitBreak?.label && (
-                <Box sx={{
-                    fontFamily: "Orbitron, sans-serif",
-                    fontSize: "0.72rem",
-                    color: "rgba(255,255,255,0.55)",
-                    letterSpacing: "0.08em",
-                    textAlign: "center",
-                    px: 1,
-                }}>
-                    {limitBreak.label}
+                <Box
+                    className="dossier-lb-locked-x"
+                    sx={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: "50%",
+                        border: `2px solid ${C.danger}`,
+                        color: C.danger,
+                        display: "grid",
+                        placeItems: "center",
+                        fontFamily: "Orbitron, sans-serif",
+                        fontSize: "1.35rem",
+                        fontWeight: 700,
+                        boxShadow: `0 0 18px ${C.danger}44`,
+                    }}
+                >
+                    ✕
                 </Box>
-            )}
-        </Box>
+                <Box
+                    className="dossier-lb-locked-label"
+                    sx={{
+                        fontFamily: "Orbitron, sans-serif",
+                        fontSize: "0.62rem",
+                        color: C.danger,
+                        textTransform: "uppercase",
+                        textAlign: "center",
+                    }}
+                >
+                    Aún no Desbloqueado
+                </Box>
+            </Box>
+        </KitFold>
     );
 }
 
 /* ── Ability block ────────────────────────────────────────────────── */
-function AbilityBlock({ ability, isActive, onToggleLoadout, editMode, onSave, character, availableTags = null, onCall = null }) {
+function AbilityBlock({
+    ability,
+    isActive,
+    onToggleLoadout,
+    editMode,
+    onSave,
+    character,
+    availableTags = null,
+    onCall = null,
+    burdenDisabled = false,
+}) {
     const [open, setOpen] = useState(false);
     const { spawnPing } = useDossier();
 
     return (
         <Box sx={{
-            border: `1px solid ${isActive ? "rgba(0,242,234,0.45)" : C.border}`,
+            border: `1px solid ${burdenDisabled ? `${C.danger}88` : isActive ? "rgba(0,242,234,0.45)" : C.border}`,
             borderRadius: "8px",
-            bgcolor: "rgba(0,0,0,0.22)",
+            bgcolor: burdenDisabled ? "rgba(255,51,85,0.06)" : "rgba(0,0,0,0.22)",
             overflow: "hidden",
             alignSelf: "start",
+            opacity: burdenDisabled ? 0.72 : 1,
         }}>
             <Box
                 sx={{
@@ -1449,10 +1511,24 @@ function AbilityBlock({ ability, isActive, onToggleLoadout, editMode, onSave, ch
                         color: C.text,
                         cursor: "pointer",
                         minWidth: 0,
+                        textDecoration: burdenDisabled ? "line-through" : "none",
                     }}
                 >
                     {ability.label}
                 </Box>
+                {burdenDisabled && (
+                    <Box component="span" sx={{
+                        fontFamily: "Orbitron, sans-serif",
+                        fontSize: "0.45rem",
+                        letterSpacing: "0.08em",
+                        color: C.danger,
+                        border: `1px solid ${C.danger}88`,
+                        px: "4px",
+                        borderRadius: "2px",
+                    }}>
+                        CUT
+                    </Box>
+                )}
                 {ability.abilityKind === ABILITY_KINDS.ATTACK && (
                     <Box component="span" sx={{
                         fontFamily: "Orbitron, sans-serif",
@@ -1477,7 +1553,13 @@ function AbilityBlock({ ability, isActive, onToggleLoadout, editMode, onSave, ch
                     size="tiny"
                 />
                 {typeof onCall === "function" && (
-                    <CallChatBtn onClick={onCall} />
+                    <CallChatBtn
+                        disabled={burdenDisabled}
+                        onClick={() => {
+                            if (burdenDisabled) return;
+                            onCall();
+                        }}
+                    />
                 )}
                 <Box
                     onClick={() => setOpen((p) => !p)}
@@ -1692,7 +1774,7 @@ function CreateJobPanel({ isDM, onCreate, onCancel }) {
 }
 
 /* ── Main ─────────────────────────────────────────────────────────── */
-export default function DossierKitView({ character }) {
+export default function DossierKitView({ character, initialMaletinOpen = false }) {
     const dispatch = useDispatch();
     const { spawnPing, editMode, patchDraft } = useDossier();
     const profile = useSelector((s) => s.player.profile);
@@ -1711,7 +1793,23 @@ export default function DossierKitView({ character }) {
     const [traitFilter, setTraitFilter] = useState(null); // null | TRAIT_CATEGORIES.*
     const [draftAbility, setDraftAbility] = useState(false);
     const [savingExtra, setSavingExtra] = useState(false);
+    const [maletinOpen, setMaletinOpen] = useState(Boolean(initialMaletinOpen));
+    const [maletinCount, setMaletinCount] = useState(0);
     const didSeedLoadout = useRef(false);
+
+    useEffect(() => {
+        if (initialMaletinOpen) setMaletinOpen(true);
+    }, [initialMaletinOpen]);
+
+    useEffect(() => {
+        if (!campaignId || !character?.id) {
+            setMaletinCount(0);
+            return undefined;
+        }
+        return subscribeCharacterItems(campaignId, character.id, (list) => {
+            setMaletinCount(Array.isArray(list) ? list.length : 0);
+        });
+    }, [campaignId, character?.id]);
 
     useEffect(() => {
         setFocusClassId(activeClassId);
@@ -1792,13 +1890,7 @@ export default function DossierKitView({ character }) {
     const handleJobChip = (e, classId) => {
         spawnPing(e.clientX, e.clientY);
         setFocusClassId(classId);
-        if (editMode) {
-            patchDraft({ activeClassId: classId });
-            return;
-        }
-        if (character?.id) {
-            updateCharacterFields(character.id, { activeClassId: classId }).catch(console.error);
-        }
+        patchDraft({ activeClassId: classId });
     };
 
     const handleAssignJob = (jobId) => {
@@ -1839,13 +1931,7 @@ export default function DossierKitView({ character }) {
                 : {}),
             [jobId]: n,
         };
-        if (editMode) {
-            patchDraft({ jobResources: next });
-            return;
-        }
-        if (character?.id) {
-            updateCharacterFields(character.id, { jobResources: next }).catch(console.error);
-        }
+        patchDraft({ jobResources: next });
     };
 
     const setJobResourceMeta = async (partial) => {
@@ -2099,10 +2185,17 @@ export default function DossierKitView({ character }) {
     }
 
     return (
-        <Box sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, bgcolor: "rgba(8,8,14,0.55)" }}>
+        <Box sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, bgcolor: "rgba(8,8,14,0.55)", position: "relative" }}>
             <div className="dossier-trail" style={{ margin: "0 18px 0" }} />
+            <Box sx={{ position: "absolute", top: 10, right: 14, zIndex: 4 }}>
+                <MaletinChromeButton
+                    open={maletinOpen}
+                    count={maletinCount}
+                    onClick={() => setMaletinOpen((v) => !v)}
+                />
+            </Box>
 
-            <Box sx={{ ...SCROLL_SX, px: "18px", pb: "28px" }}>
+            <Box sx={{ ...SCROLL_SX, px: "18px", pr: "56px", pb: "28px" }}>
                 {/* JOBS */}
                 <SectionLabel limit="1 por sesión" sx={{ mt: "8px" }}>JOB ACTIVO</SectionLabel>
                 <Box sx={{ display: "flex", flexWrap: "wrap", gap: "6px", mb: "4px", alignItems: "center" }}>
@@ -2234,7 +2327,7 @@ export default function DossierKitView({ character }) {
                             gap: "8px",
                             alignContent: "start",
                         }}>
-                            {COMBAT_STAT_KEYS.map((key) => (
+                            {CORE_COMBAT_KEYS.map((key) => (
                                 <CombatStatCell
                                     key={key}
                                     statKey={key}
@@ -2246,18 +2339,38 @@ export default function DossierKitView({ character }) {
                                 />
                             ))}
                         </Box>
-                        <ClassResourceCell
-                            resource={jobResourceDef}
-                            value={jobResourceValue}
-                            editMode={editMode}
-                            isDM={isDM}
-                            onChangeValue={setJobResourceValue}
-                            onChangeMeta={setJobResourceMeta}
-                        />
+                        <Box sx={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr",
+                            gap: "8px",
+                            "@media (max-width:700px)": { gridTemplateColumns: "1fr" },
+                        }}>
+                            <CombatStatCell
+                                statKey="vigor"
+                                value={overrides.vigor ?? ""}
+                                display={combatStats?.vigor ?? 0}
+                                editMode={editMode}
+                                isOverride={overrides.vigor != null}
+                                onChange={(raw) => setOverride("vigor", raw)}
+                                layout="track"
+                            />
+                            <ClassResourceCell
+                                resource={jobResourceDef}
+                                value={jobResourceValue}
+                                editMode={editMode}
+                                isDM={isDM}
+                                onChangeValue={setJobResourceValue}
+                                onChangeMeta={setJobResourceMeta}
+                            />
+                        </Box>
                     </Box>
 
-                    {/* Special Mechanic — full row */}
-                    <Box sx={{ gridColumn: "1 / -1", minWidth: 0 }}>
+                    {/* Special Mechanic | Limit Break */}
+                    <Box sx={{
+                        gridColumn: "span 6",
+                        minWidth: 0,
+                        "@media (max-width:900px)": { gridColumn: "1 / -1" },
+                    }}>
                         <SpecialMechanicPanel
                             mechanic={jobSpecialMechanic}
                             editMode={editMode}
@@ -2271,18 +2384,11 @@ export default function DossierKitView({ character }) {
                             })}
                         />
                     </Box>
-
-                    {/* Limit Break — full row */}
-                    <Box sx={{ gridColumn: "1 / -1", minWidth: 0 }}>
-                        <Box sx={{
-                            fontFamily: "Orbitron, sans-serif",
-                            fontSize: "0.48rem",
-                            letterSpacing: "0.14em",
-                            color: lbUnlocked ? C.lb : C.danger,
-                            mb: 1,
-                        }}>
-                            LIMIT BREAK
-                        </Box>
+                    <Box sx={{
+                        gridColumn: "span 6",
+                        minWidth: 0,
+                        "@media (max-width:900px)": { gridColumn: "1 / -1" },
+                    }}>
                         <LimitBreakPanel
                             limitBreak={activeJob?.limitBreak || null}
                             unlocked={lbUnlocked}
@@ -2401,6 +2507,8 @@ export default function DossierKitView({ character }) {
                                             traitCategory={t.traitCategory}
                                             tagKeys={t.tagKeys || []}
                                             availableTags={campaignTags}
+                                            burdenDisabled={isTraitTorn(character?.burdens, t.key || t.id)}
+                                            burdenDisabledLabel="TORN"
                                             pinEntry={{
                                                 type: MACRO_SLOT_TYPES.TRAIT,
                                                 id: t.key || t.id,
@@ -2482,16 +2590,15 @@ export default function DossierKitView({ character }) {
                     <Box component="span" sx={{ ml: "auto" }}>✓ = loadout · click nombre = detalle</Box>
                 </Box>
 
-                {/* ABILITIES — 3 cols */}
-                <SectionLabel limit="+ 2 talentos · 1 mastery c/u">HABILIDADES</SectionLabel>
+                {/* ABILITIES — 2 cols, desplegadas */}
+                <SectionLabel limit={`${loadout.length}/${MAX_LOADOUT} loadout · + 2 talentos · 1 mastery c/u`}>HABILIDADES</SectionLabel>
                 <Box sx={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
                     gap: "10px",
                     mb: "4px",
                     alignItems: "start",
-                    "@media (max-width:900px)": { gridTemplateColumns: "1fr 1fr" },
-                    "@media (max-width:600px)": { gridTemplateColumns: "1fr" },
+                    "@media (max-width:700px)": { gridTemplateColumns: "1fr" },
                 }}>
                     {allAbilities.map((ab) => (
                         <AbilityBlock
@@ -2502,6 +2609,7 @@ export default function DossierKitView({ character }) {
                             editMode={editMode}
                             character={character}
                             availableTags={campaignTags}
+                            burdenDisabled={isAbilityCut(character?.burdens, ab.key || ab.id)}
                             onSave={({ label, blurb, abilityKind, tagKeys }) => saveAbilityToActiveJob({
                                 label, blurb, type: "ability", existingKey: ab.key || ab.id,
                                 abilityKind, tagKeys,
@@ -2549,6 +2657,12 @@ export default function DossierKitView({ character }) {
                     </Box>
                 )}
             </Box>
+
+            <DossierInventoryView
+                character={character}
+                open={Boolean(maletinOpen)}
+                onClose={() => setMaletinOpen(false)}
+            />
         </Box>
     );
 }

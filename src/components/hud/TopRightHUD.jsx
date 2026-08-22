@@ -1,21 +1,29 @@
-import { Badge, Box, IconButton, Tooltip } from "@mui/material";
+import { useState } from "react";
+import {
+    Badge, Box, IconButton, ListItemIcon, ListItemText, Menu, MenuItem,
+} from "@mui/material";
 import PersonPinCircleIcon from "@mui/icons-material/PersonPinCircle";
 import ChatIcon from "@mui/icons-material/Chat";
-import BadgeIcon from "@mui/icons-material/Badge";
+import GroupsIcon from "@mui/icons-material/Groups";
 import LogoutIcon from "@mui/icons-material/Logout";
+import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
 import { useDispatch } from "react-redux";
 
-import { openCharacterSheet } from "../../store/uiSlice";
 import { resetWorldState } from "../../store/worldSlice";
 import { logoutPlayer } from "../../../firebase/playersAuth";
 import { UI_COLORS } from "../../constants/uiColors";
 import { VTT_HUD } from "../../constants/vttHudTokens";
+import { cyberMenuItemSx, cyberMenuPaperSx } from "../../constants/designSystem";
+import CyberTooltip from "../customs/CyberTooltip";
 
 const DISCONNECT_RED = "#ff4d4d";
+/** Match combat HUD glass buttons — square, not circular. */
+const HUD_BTN_RADIUS = "3px";
 
 const hudIconBtnSx = (active, accent = UI_COLORS.anomaly) => ({
     width: VTT_HUD.hudBtnSize,
     height: VTT_HUD.hudBtnSize,
+    borderRadius: HUD_BTN_RADIUS,
     color: active ? UI_COLORS.accent : accent,
     border: `1px solid ${active ? UI_COLORS.accent : `${accent}55`}`,
     bgcolor: "rgba(10,10,15,0.9)",
@@ -28,6 +36,7 @@ const hudIconBtnSx = (active, accent = UI_COLORS.anomaly) => ({
 });
 
 export default function TopRightHUD({
+    profile = null,
     tokenPanelOpen = false,
     onToggleTokenPanel,
     showTokenToggle = false,
@@ -35,16 +44,29 @@ export default function TopRightHUD({
     chatPanelOpen = false,
     chatUnread = 0,
     onToggleChatPanel,
+    showRosterToggle = false,
+    rosterPanelOpen = false,
+    onToggleRosterPanel,
 }) {
     const dispatch = useDispatch();
+    const [sessionMenuAnchor, setSessionMenuAnchor] = useState(null);
+    const sessionMenuOpen = Boolean(sessionMenuAnchor);
+
+    const closeSessionMenu = () => setSessionMenuAnchor(null);
 
     const handleLogout = async () => {
+        closeSessionMenu();
         try {
             await logoutPlayer();
             dispatch(resetWorldState());
         } catch (err) {
             console.error("Logout error:", err);
         }
+    };
+
+    const handleChangeCampaign = () => {
+        closeSessionMenu();
+        dispatch(resetWorldState());
     };
 
     return (
@@ -62,16 +84,17 @@ export default function TopRightHUD({
             }}
         >
             {showChatToggle && (
-                <Tooltip title={chatPanelOpen ? "Cerrar chat" : "Chat"} placement="bottom">
+                <CyberTooltip title={chatPanelOpen ? "Cerrar chat" : "Chat"} placement="bottom">
                     <Badge
                         badgeContent={chatPanelOpen ? 0 : chatUnread}
                         color="error"
-                        overlap="circular"
+                        overlap="rectangular"
                         sx={{
                             "& .MuiBadge-badge": {
                                 fontSize: "0.55rem",
                                 minWidth: 16,
                                 height: 16,
+                                borderRadius: "3px",
                                 bgcolor: UI_COLORS.accent,
                                 color: "#fff",
                             },
@@ -87,11 +110,11 @@ export default function TopRightHUD({
                             <ChatIcon sx={{ fontSize: "1.1rem" }} />
                         </IconButton>
                     </Badge>
-                </Tooltip>
+                </CyberTooltip>
             )}
 
             {showTokenToggle && (
-                <Tooltip title={tokenPanelOpen ? "Cerrar tokens" : "Tokens del mapa"} placement="bottom">
+                <CyberTooltip title={tokenPanelOpen ? "Cerrar tokens" : "Tokens del mapa"} placement="bottom">
                     <IconButton
                         size="small"
                         onClick={() => onToggleTokenPanel?.()}
@@ -101,32 +124,40 @@ export default function TopRightHUD({
                     >
                         <PersonPinCircleIcon sx={{ fontSize: "1.15rem" }} />
                     </IconButton>
-                </Tooltip>
+                </CyberTooltip>
             )}
 
-            <Tooltip title="Abrir dossier" placement="bottom">
-                <IconButton
-                    size="small"
-                    onClick={() => dispatch(openCharacterSheet({ tab: "IDENTIDAD" }))}
-                    aria-label="Abrir dossier"
-                    sx={hudIconBtnSx(false, UI_COLORS.anomaly)}
-                >
-                    <BadgeIcon sx={{ fontSize: "1.1rem" }} />
-                </IconButton>
-            </Tooltip>
+            {showRosterToggle && (
+                <CyberTooltip title={rosterPanelOpen ? "Cerrar lista" : "Lista de personajes"} placement="bottom">
+                    <IconButton
+                        size="small"
+                        onClick={() => onToggleRosterPanel?.()}
+                        aria-label="Lista de personajes"
+                        aria-pressed={rosterPanelOpen}
+                        sx={hudIconBtnSx(rosterPanelOpen, UI_COLORS.anomaly)}
+                    >
+                        <GroupsIcon sx={{ fontSize: "1.15rem" }} />
+                    </IconButton>
+                </CyberTooltip>
+            )}
 
-            <Tooltip title="Desconectarse" placement="bottom">
+            <CyberTooltip title="Sesión" placement="bottom">
                 <IconButton
                     size="small"
-                    onClick={handleLogout}
-                    aria-label="Desconectarse"
+                    onClick={(e) => setSessionMenuAnchor(e.currentTarget)}
+                    aria-label="Sesión"
+                    aria-haspopup="menu"
+                    aria-expanded={sessionMenuOpen ? "true" : undefined}
+                    aria-controls={sessionMenuOpen ? "session-menu" : undefined}
                     sx={{
                         width: VTT_HUD.hudBtnSize,
                         height: VTT_HUD.hudBtnSize,
+                        borderRadius: HUD_BTN_RADIUS,
                         color: DISCONNECT_RED,
-                        border: `1px solid ${DISCONNECT_RED}88`,
-                        bgcolor: "rgba(10,10,15,0.9)",
+                        border: `1px solid ${sessionMenuOpen ? DISCONNECT_RED : `${DISCONNECT_RED}88`}`,
+                        bgcolor: sessionMenuOpen ? "rgba(255,77,77,0.14)" : "rgba(10,10,15,0.9)",
                         backdropFilter: "blur(8px)",
+                        boxShadow: sessionMenuOpen ? `0 0 12px ${DISCONNECT_RED}44` : "none",
                         "&:hover": {
                             borderColor: DISCONNECT_RED,
                             bgcolor: "rgba(255,77,77,0.14)",
@@ -136,7 +167,56 @@ export default function TopRightHUD({
                 >
                     <LogoutIcon sx={{ fontSize: "1.1rem" }} />
                 </IconButton>
-            </Tooltip>
+            </CyberTooltip>
+
+            <Menu
+                id="session-menu"
+                anchorEl={sessionMenuAnchor}
+                open={sessionMenuOpen}
+                onClose={closeSessionMenu}
+                anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+                transformOrigin={{ vertical: "top", horizontal: "right" }}
+                slotProps={{
+                    paper: {
+                        sx: {
+                            ...cyberMenuPaperSx,
+                            mt: 0.75,
+                            minWidth: 200,
+                        },
+                    },
+                }}
+            >
+                <MenuItem onClick={handleChangeCampaign} sx={cyberMenuItemSx}>
+                    <ListItemIcon sx={{ color: UI_COLORS.anomaly, minWidth: 32 }}>
+                        <SwapHorizIcon sx={{ fontSize: "1.05rem" }} />
+                    </ListItemIcon>
+                    <ListItemText
+                        primary="Cambiar de campaña"
+                        primaryTypographyProps={{
+                            sx: {
+                                color: UI_COLORS.textPrimary,
+                                fontFamily: "'Fira Code', monospace",
+                                fontSize: "0.72rem",
+                            },
+                        }}
+                    />
+                </MenuItem>
+                <MenuItem onClick={handleLogout} sx={cyberMenuItemSx}>
+                    <ListItemIcon sx={{ color: DISCONNECT_RED, minWidth: 32 }}>
+                        <LogoutIcon sx={{ fontSize: "1.05rem" }} />
+                    </ListItemIcon>
+                    <ListItemText
+                        primary="Desconectarse"
+                        primaryTypographyProps={{
+                            sx: {
+                                color: UI_COLORS.textPrimary,
+                                fontFamily: "'Fira Code', monospace",
+                                fontSize: "0.72rem",
+                            },
+                        }}
+                    />
+                </MenuItem>
+            </Menu>
         </Box>
     );
 }

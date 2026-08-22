@@ -16,8 +16,11 @@ import {
     normalizeRelationType,
     validateRelationCreate,
     resolveRelationEndpoints,
-    defaultStrengthForRelationType,
+    defaultStrengthForRelation,
+    isStructuralRelation,
+    resolveRelationStrength,
 } from "../constants/wikiRelationTypes.js";
+import { isForbiddenLanguageRelation } from "./resolveRelationStrengthChange.js";
 import { AI_MODES } from "../constants/wiki/narrativeAiSchemas.js";
 import {
     REACTION_ARCHETYPE,
@@ -30,18 +33,16 @@ import {
     isCharacterDead,
     resolveNarrativeAiConfig,
     shouldIncludeInAiImpacts,
+    getPersonajeMeta,
 } from "../constants/wiki/narrativeAiConfig.js";
+import { resolveEntityByTitle, buildEntityTitleIndex, foldTitleText } from "./resolveEntityByTitle.js";
 
 const KNOWN_NARRATIVE_STATE_VALUES = new Set(Object.values(NARRATIVE_STATE));
 const KNOWN_COLLECTIVE_ARCHETYPE_VALUES = new Set(Object.values(COLLECTIVE_ARCHETYPE));
 const KNOWN_REACTION_ARCHETYPE_VALUES = new Set(Object.values(REACTION_ARCHETYPE));
 
 function foldEnumText(value) {
-    return String(value ?? "")
-        .normalize("NFD")
-        .replace(/\p{M}/gu, "")
-        .toLowerCase()
-        .trim();
+    return foldTitleText(value);
 }
 
 /**
@@ -63,11 +64,13 @@ function normalizeReactionArchetypeValue(raw) {
         if (foldEnumText(label) === folded) return key;
     }
 
-    // Common LLM variants / English
+    // Common LLM variants / English / truncated Spanish ("Guardia" vs "Guardián")
     const ALIASES = {
         guardian: REACTION_ARCHETYPE.GUARDIAN,
         guardiana: REACTION_ARCHETYPE.GUARDIAN,
+        guardia: REACTION_ARCHETYPE.GUARDIAN,
         protector: REACTION_ARCHETYPE.GUARDIAN,
+        protectora: REACTION_ARCHETYPE.GUARDIAN,
         politico: REACTION_ARCHETYPE.POLITICO,
         political: REACTION_ARCHETYPE.POLITICO,
         intimo: REACTION_ARCHETYPE.INTIMO,
@@ -77,6 +80,18 @@ function normalizeReactionArchetypeValue(raw) {
         pragmatic: REACTION_ARCHETYPE.PRAGMATICO,
     };
     if (ALIASES[folded]) return ALIASES[folded];
+
+    // Prefix stems: "guard…" → guardian, "polit…" → politico, etc.
+    const STEMS = [
+        [/^guardi/, REACTION_ARCHETYPE.GUARDIAN],
+        [/^polit/, REACTION_ARCHETYPE.POLITICO],
+        [/^intim/, REACTION_ARCHETYPE.INTIMO],
+        [/^rival/, REACTION_ARCHETYPE.RIVAL],
+        [/^pragmat/, REACTION_ARCHETYPE.PRAGMATICO],
+    ];
+    for (const [re, key] of STEMS) {
+        if (re.test(folded)) return key;
+    }
 
     return null;
 }
@@ -89,15 +104,22 @@ function normalizeNarrativeStateValue(raw) {
     if (raw == null) return null;
     const s = String(raw).trim();
     if (!s) return null;
+    const folded = foldTitleText(s);
+    if (KNOWN_NARRATIVE_STATE_VALUES.has(folded)) return folded;
+    // Also accept raw lower before accent fold for snake_case enums
     const lower = s.toLowerCase();
     if (KNOWN_NARRATIVE_STATE_VALUES.has(lower)) return lower;
+
     for (const [key, label] of Object.entries(NARRATIVE_STATE_LABELS)) {
-        if (label.toLowerCase() === lower) return key;
+        if (foldTitleText(label) === folded) return key;
+        // Label may be "Deprimida / en duelo" — match first segment
+        const firstSeg = foldTitleText(String(label).split("/")[0]);
+        if (firstSeg && firstSeg === folded) return key;
     }
     // Gemini often returns prose instead of the enum ("Quebrantado por el dolor…").
     const KEYWORD_MAP = [
         [/zarken|corrupt/, NARRATIVE_STATE.CORRUPTA_ZARKEN],
-        [/quebrant|disociad|colapso/, NARRATIVE_STATE.QUEBRADA],
+        [/quebrant|quebrada|disociad|colapso/, NARRATIVE_STATE.QUEBRADA],
         [/furios|iracun|\bira\b/, NARRATIVE_STATE.FURIOSA],
         [/duelo|deprim|apat[ií]a|triste/, NARRATIVE_STATE.DEPRIMIDA],
         [/obses/, NARRATIVE_STATE.OBSESIVA],
@@ -106,7 +128,7 @@ function normalizeNarrativeStateValue(raw) {
         [/estable|equilibrad/, NARRATIVE_STATE.ESTABLE],
     ];
     for (const [re, key] of KEYWORD_MAP) {
-        if (re.test(lower)) return key;
+        if (re.test(folded)) return key;
     }
     return null;
 }
@@ -212,7 +234,10 @@ function validateCascadeChange(rawCh, j, {
     contextMap,
     relations = [],
     errorPrefix = `Cambio ${j}`,
+    aiRules = null,
+    explicitIds = new Set(),
 }) {
+    const rules = resolveNarrativeAiConfig({ aiRules }).rules;
     const { change: ch, repairs } = repairCascadeChange(rawCh, {
         impactEntityTitle,
         personalityShift,
@@ -236,6 +261,11 @@ function validateCascadeChange(rawCh, j, {
         ch.fromEntityTitle = titleHint || ch.fromEntityTitle;
         if (!targetEntity) {
             chErr = `${errorPrefix}: entidad "${titleHint}" no encontrada para state_update.`;
+        } else if (
+            isCharacterDead(targetEntity)
+            && !shouldIncludeInAiImpacts(targetEntity, rules, { explicitIds })
+        ) {
+            chErr = `${errorPrefix}: "${titleHint}" está fallecido/a — no se permiten cambios de estado.`;
         } else if (!nonempty(ch.field)) {
             chErr = `${errorPrefix}: entity_state_update requiere "field".`;
         } else if (!nonempty(ch.newValue)) {
@@ -270,6 +300,24 @@ function validateCascadeChange(rawCh, j, {
             relationType = normalizeRelationType(ch.relationType);
             if (!relationType) {
                 chErr = `${errorPrefix}: tipo de relación desconocido "${ch.relationType}".`;
+            } else if (isForbiddenLanguageRelation(relationType)) {
+                chErr = `${errorPrefix}: no proponer relaciones de idioma (habla).`;
+            } else if (isStructuralRelation({
+                relationType,
+                fromEntityType: fromEntity.entityType,
+                toEntityType: toEntity.entityType,
+            })) {
+                chErr = `${errorPrefix}: "${relationType}" es hecho estructural — `
+                    + "los impactos IA solo modifican vínculos de afinidad (Sync).";
+            } else if (
+                (isCharacterDead(fromEntity) && !shouldIncludeInAiImpacts(fromEntity, rules, { explicitIds }))
+                || (isCharacterDead(toEntity) && !shouldIncludeInAiImpacts(toEntity, rules, { explicitIds }))
+            ) {
+                const deadTitle = isCharacterDead(fromEntity) && !shouldIncludeInAiImpacts(fromEntity, rules, { explicitIds })
+                    ? fromEntity.title
+                    : toEntity.title;
+                chErr = `${errorPrefix}: "${deadTitle}" está fallecido/a — `
+                    + "no se permiten cambios de relación salvo mención explícita en el evento.";
             } else if (ch.kind !== "relation_remove") {
                 const isValid = validateRelationCreate(fromEntity, toEntity, relationType);
                 if (!isValid) {
@@ -345,73 +393,16 @@ function normalizeSituationPayload(value) {
 // ── Entity resolver ───────────────────────────────────────────────────────────
 
 /**
- * Build a multi-strategy title → entity resolver from a list of entities.
- *
- * Resolution order (stops at first unambiguous match):
- *   1. Exact title (case-insensitive)
- *   2. starts-with or ends-with prefix/suffix (existing behaviour, kept)
- *   3. First-token match ("Felicia" → "Felicia Margalous") — unique only
- *   4. Last-token match ("Margalous" → "Felicia Margalous") — unique only
- *   5. Tag match — unique only
- *
- * Returns null when ambiguous (2+ candidates) to avoid silent wrong matches.
+ * Title → entity map for AI validation.
+ * Uses shared resolveEntityByTitle (unique matches; prefers personaje over crónica).
+ * @param {object[]} entities
  */
 function buildTitleMap(entities) {
-    const exact     = new Map();
-    const byFirst   = new Map();
-    const byLast    = new Map();
-    const byTag     = new Map();
-
-    for (const e of entities) {
-        if (!e.title) continue;
-        const norm  = e.title.toLowerCase().trim();
-        exact.set(norm, e);
-
-        const parts = norm.split(/\s+/);
-        const first = parts[0];
-        const last  = parts[parts.length - 1];
-
-        if (!byFirst.has(first)) byFirst.set(first, []);
-        byFirst.get(first).push(e);
-
-        if (last !== first) {
-            if (!byLast.has(last)) byLast.set(last, []);
-            byLast.get(last).push(e);
-        }
-
-        for (const tag of e.tags ?? []) {
-            const t = tag.toLowerCase().trim();
-            if (!byTag.has(t)) byTag.set(t, []);
-            byTag.get(t).push(e);
-        }
-    }
-
+    const index = buildEntityTitleIndex(entities);
     return {
         resolve(title) {
-            if (!title) return null;
-            const key = title.toLowerCase().trim();
-
-            // 1 — exact
-            if (exact.has(key)) return exact.get(key);
-
-            // 2 — prefix / suffix (legacy)
-            for (const [k, v] of exact) {
-                if (k.startsWith(key) || key.startsWith(k)) return v;
-            }
-
-            // 3 — first token (unique)
-            const fm = byFirst.get(key) ?? [];
-            if (fm.length === 1) return fm[0];
-
-            // 4 — last token (unique)
-            const lm = byLast.get(key) ?? [];
-            if (lm.length === 1) return lm[0];
-
-            // 5 — tag (unique)
-            const tm = byTag.get(key) ?? [];
-            if (tm.length === 1) return tm[0];
-
-            return null;
+            const { entity } = resolveEntityByTitle(title, entities, { index });
+            return entity;
         },
     };
 }
@@ -505,7 +496,13 @@ export function validateSituationResponse(raw, contextEntities = [], allEntities
  *     fromEntity, toEntity,                        // resolved objects (if valid)
  *     resolvedEndpoints: { fromEntityId, toEntityId } | null }
  */
-export function validateNarrativeImpactResponse(raw, contextEntities = []) {
+export function validateNarrativeImpactResponse(raw, contextEntities = [], options = {}) {
+    const {
+        aiRules = null,
+        explicitMentionIds = [],
+    } = options;
+    const rules = resolveNarrativeAiConfig({ aiRules }).rules;
+    const explicitIds = new Set(explicitMentionIds);
     const errors = [];
     const { ok, value, error } = tryParseJson(raw);
     if (!ok) return {
@@ -548,6 +545,38 @@ export function validateNarrativeImpactResponse(raw, contextEntities = []) {
         if (!validationError && !relationType) {
             validationError = `Tipo de relación desconocido: "${rel.relationType}".`;
         }
+        if (!validationError && isForbiddenLanguageRelation(relationType)) {
+            validationError = "No proponer relaciones de idioma (habla).";
+        }
+        if (
+            !validationError
+            && fromEntity
+            && toEntity
+            && relationType
+            && isStructuralRelation({
+                relationType,
+                fromEntityType: fromEntity.entityType,
+                toEntityType: toEntity.entityType,
+            })
+        ) {
+            validationError = `"${relationType}" es hecho estructural — solo se proponen vínculos de afinidad.`;
+        }
+        if (
+            !validationError
+            && fromEntity
+            && isCharacterDead(fromEntity)
+            && !shouldIncludeInAiImpacts(fromEntity, rules, { explicitIds })
+        ) {
+            validationError = `"${fromEntity.title}" está fallecido/a — no modificar relaciones.`;
+        }
+        if (
+            !validationError
+            && toEntity
+            && isCharacterDead(toEntity)
+            && !shouldIncludeInAiImpacts(toEntity, rules, { explicitIds })
+        ) {
+            validationError = `"${toEntity.title}" está fallecido/a — no modificar relaciones.`;
+        }
 
         // 4. Semantic validation (only for add/update)
         let resolvedEndpoints = null;
@@ -569,9 +598,18 @@ export function validateNarrativeImpactResponse(raw, contextEntities = []) {
             }
         }
 
-        const strength = rel.strength !== undefined
-            ? rel.strength
-            : defaultStrengthForRelationType(relationType);
+        const strength = resolveRelationStrength({
+            relationType,
+            fromEntityType: fromEntity?.entityType,
+            toEntityType: toEntity?.entityType,
+            strength: rel.strength !== undefined
+                ? rel.strength
+                : defaultStrengthForRelation(
+                    relationType,
+                    fromEntity?.entityType,
+                    toEntity?.entityType
+                ),
+        });
 
         proposedRelations.push({
             ...rel,
@@ -662,22 +700,40 @@ export function validateCascadeResponse(raw, contextEntities = [], allEntities =
             );
         }
 
-        let reactionArchetype = imp.reactionArchetype ?? null;
-        if (reactionArchetype && reactionArchetype !== "sin_arquetipo") {
-            const normalizedArchetype = normalizeReactionArchetypeValue(reactionArchetype);
-            if (!normalizedArchetype) {
-                impErrors.push(`Arquetipo desconocido: "${imp.reactionArchetype}".`);
-            } else {
-                reactionArchetype = normalizedArchetype;
-            }
+        let reactionArchetype = null;
+        let archetypeRepaired = false;
+        const storedArch = entity
+            ? normalizeReactionArchetypeValue(getPersonajeMeta(entity).reactionArchetype)
+            : null;
+        const llmArch = normalizeReactionArchetypeValue(imp.reactionArchetype);
+        if (storedArch) {
+            // Ficha is source of truth for PANGeA badge; LLM may echo labels/variants.
+            reactionArchetype = storedArch;
+        } else if (llmArch) {
+            reactionArchetype = llmArch;
+        } else if (imp.reactionArchetype && imp.reactionArchetype !== "sin_arquetipo") {
+            archetypeRepaired = true;
         }
 
+        let personalityShiftRepaired = false;
         const personalityShift = (() => {
             const ps = imp.personalityShift;
-            if (!ps?.to) return ps ?? null;
-            const normalized = normalizeNarrativeStateValue(ps.to);
-            if (!normalized) return ps;
-            return { ...ps, to: normalized };
+            if (!ps?.to) return null;
+            const to = normalizeNarrativeStateValue(ps.to);
+            if (!to) {
+                personalityShiftRepaired = true;
+                return null;
+            }
+            const fromNorm = normalizeNarrativeStateValue(ps.from);
+            const fromStored = entity
+                ? normalizeNarrativeStateValue(getPersonajeMeta(entity).narrativeState)
+                : null;
+            return {
+                ...ps,
+                from: fromNorm || fromStored || (ps.from ? String(ps.from) : null),
+                to,
+                reason: typeof ps.reason === "string" ? ps.reason : "",
+            };
         })();
 
         const resolvedChanges = (imp.changes ?? []).map((ch, j) =>
@@ -688,19 +744,28 @@ export function validateCascadeResponse(raw, contextEntities = [], allEntities =
                 contextMap,
                 relations,
                 errorPrefix: `Cambio ${j}`,
+                aiRules: rules,
+                explicitIds,
             })
         );
 
         const hasChErrors   = resolvedChanges.some((c) => !c.valid);
         const allChInvalid  = resolvedChanges.length > 0 && resolvedChanges.every((c) => !c.valid);
-        const computedConf  = (!entity || allChInvalid) ? "baja"
+        let computedConf  = (!entity || allChInvalid) ? "baja"
             : hasChErrors ? "media"
             : (imp.confidence ?? "media");
+        // Soft repairs (bad archetype / unparseable shift) never hard-fail — nudge confidence.
+        if ((archetypeRepaired || personalityShiftRepaired) && computedConf === "alta") {
+            computedConf = "media";
+        }
 
         impacts.push({
             ...imp,
             reactionArchetype,
+            archetypeRepaired: archetypeRepaired || undefined,
+            personalityShiftRepaired: personalityShiftRepaired || undefined,
             confidence:      computedConf,
+            entityId:        entity?.id ?? imp.entityId ?? null,
             entityResolved:  entity ?? null,
             valid:           impErrors.length === 0,
             validationErrors: impErrors,
@@ -758,11 +823,14 @@ export function validateCascadeResponse(raw, contextEntities = [], allEntities =
                 contextMap,
                 relations,
                 errorPrefix: `collectiveImpact ${i} cambio ${j}`,
+                aiRules: rules,
+                explicitIds,
             })
         );
 
         collectiveImpacts.push({
             ...ci,
+            entityId:        entity?.id ?? ci.entityId ?? null,
             entityResolved:  entity ?? null,
             valid:           ciErrors.length === 0,
             validationErrors: ciErrors,
@@ -845,5 +913,5 @@ export function validateAiResponse(mode, raw, contextEntities, allEntities = nul
     if (mode === AI_MODES.CASCADE) {
         return validateCascadeResponse(raw, contextEntities, allEntities, options ?? {});
     }
-    return validateNarrativeImpactResponse(raw, contextEntities);
+    return validateNarrativeImpactResponse(raw, contextEntities, options ?? {});
 }

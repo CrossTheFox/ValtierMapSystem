@@ -14,17 +14,43 @@ import {
     MACRO_SLOT_TYPES,
     macroSlotShortLabel,
     macroTypeAccent,
+    macroTypeLabel,
     normalizeMacroBar,
     serializeMacroBar,
     setMacroSlot,
+    withHexAlpha,
 } from "../../constants/macroBar";
 import { ABILITY_KINDS, normalizeAbilityKind } from "../../constants/abilityKinds";
 import { getAbilitiesByIds } from "../../../firebase/services/characterService";
 import { updateCharacterFields } from "../../../firebase/services/characterService";
 import { callAbilityInChat } from "../../../firebase/services/chatService";
 import { setAbilityBarOpen, setMacroPage, showSnackbar } from "../../store/uiSlice";
+import { updateCharacterInList } from "../../store/characterSlice";
+import { updateCharacterInState } from "../../store/worldSlice";
+import { HudRichTooltipTitle, hudRichTooltipSlotProps } from "./hudRichTooltip";
+import WhatshotIcon from "@mui/icons-material/Whatshot";
+import { isMacroSlotDisabledByBurden, normalizeBurdens } from "../../utils/characterBurdens";
 
-/** Resolve live text for a pinned narrative shortcut from the character doc. */
+/** Fixed dock width so ACTIONS ↔ MACROS share one vertical slab (grow up/down, not sideways). */
+export const COMBAT_DOCK_WIDTH = 560;
+/** Match character life-sheet height only when Actions + Macros are both open. */
+export const COMBAT_DOCK_MIN_HEIGHT = 148;
+
+function MacroHoverTitle({ slot }) {
+    if (!slot) return <HudRichTooltipTitle title="Vacío" />;
+    const blurb = slot.blurb
+        ? (slot.blurb.length > 160 ? `${slot.blurb.slice(0, 160)}…` : slot.blurb)
+        : null;
+    return (
+        <HudRichTooltipTitle
+            title={slot.label || slot.id}
+            body={blurb}
+            meta={macroTypeLabel(slot.type)}
+            metaColor={macroTypeAccent(slot.type)}
+        />
+    );
+}
+
 function resolveNarrativeShortcut(character, key) {
     if (!key) return null;
     const bond = character?.bond || {};
@@ -60,50 +86,16 @@ function resolveNarrativeShortcut(character, key) {
     };
 }
 
-function MacroHoverTitle({ slot }) {
-    if (!slot) return "Vacío";
-    return (
-        <Box sx={{ textAlign: "left", maxWidth: 240 }}>
-            <Box sx={{
-                fontFamily: "Orbitron, sans-serif",
-                fontSize: "0.62rem",
-                letterSpacing: "0.08em",
-                color: "#ffffff",
-                textTransform: "uppercase",
-                mb: slot.blurb ? 0.4 : 0,
-            }}>
-                {slot.label || slot.id}
-            </Box>
-            {slot.blurb ? (
-                <Box sx={{
-                    fontFamily: "'Fira Sans', sans-serif",
-                    fontSize: "0.72rem",
-                    letterSpacing: 0,
-                    textTransform: "none",
-                    color: "rgba(255,255,255,0.85)",
-                    lineHeight: 1.35,
-                    whiteSpace: "pre-wrap",
-                }}>
-                    {slot.blurb.length > 160 ? `${slot.blurb.slice(0, 160)}…` : slot.blurb}
-                </Box>
-            ) : null}
-            <Box sx={{
-                mt: 0.4,
-                fontFamily: "'Fira Code', monospace",
-                fontSize: "0.5rem",
-                color: macroTypeAccent(slot.type),
-                letterSpacing: "0.08em",
-            }}>
-                {(slot.type || "").toUpperCase()}
-            </Box>
-        </Box>
-    );
-}
-
 /**
- * Macro bar: 9 pages × 10 slots. Stays open until bolt/X (Redux).
+ * Centered bottom combat dock: optional ACTIONS row + MACROS bar.
+ * Fixed to the horizontal center; grows upward when actions are shown.
  */
-export default function AbilityHotbar({ open, character }) {
+export default function AbilityHotbar({
+    open,
+    character,
+    actionsSlot = null,
+    actionsToolbar = null,
+}) {
     const dispatch = useDispatch();
     const campaignId = useSelector((s) => s.world.selectedCampaignId);
     const profile = useSelector((s) => s.player.profile);
@@ -113,6 +105,9 @@ export default function AbilityHotbar({ open, character }) {
 
     const bar = useMemo(() => normalizeMacroBar(character?.macroBar), [character?.macroBar]);
     const pageSlots = bar.pages[macroPage] || [];
+    const burdens = useMemo(() => normalizeBurdens(character?.burdens), [character?.burdens]);
+    const showDock = Boolean(open || actionsSlot);
+    const matchCharacterHudHeight = Boolean(open && actionsSlot);
 
     const handleClose = () => dispatch(setAbilityBarOpen(false));
 
@@ -136,6 +131,13 @@ export default function AbilityHotbar({ open, character }) {
 
     const handleCall = useCallback(async (slot) => {
         if (!campaignId || !character || !slot || busy) return;
+        if (isMacroSlotDisabledByBurden(burdens, slot)) {
+            dispatch(showSnackbar({
+                message: "Bloqueado por Burden activo",
+                severity: "warning",
+            }));
+            return;
+        }
 
         if (slot.type === MACRO_SLOT_TYPES.OBJECT || slot.type === MACRO_SLOT_TYPES.CUSTOM) {
             dispatch(showSnackbar({
@@ -154,6 +156,7 @@ export default function AbilityHotbar({ open, character }) {
                 content: slot.blurb || "",
                 characterId: character.id,
                 characterName: character.name,
+                characterAvatarUrl: character.tokenImageUrl || character.imageUrl || null,
                 abilityKind: ABILITY_KINDS.STANDARD,
                 tagKeys: [],
             };
@@ -198,7 +201,7 @@ export default function AbilityHotbar({ open, character }) {
             console.error(err);
             dispatch(showSnackbar({ message: "No se pudo lanzar la macro", severity: "error" }));
         }
-    }, [busy, campaignId, character, dispatch, launchAbility]);
+    }, [busy, campaignId, character, dispatch, launchAbility, burdens]);
 
     const handleAttackConfirm = useCallback(async ({ boons, curses }) => {
         const pending = attackPending;
@@ -213,31 +216,50 @@ export default function AbilityHotbar({ open, character }) {
         if (!character?.id) return;
         try {
             const next = setMacroSlot(bar, macroPage, slotIndex, null);
-            await updateCharacterFields(character.id, { macroBar: serializeMacroBar(next) });
+            const serialized = serializeMacroBar(next);
+            await updateCharacterFields(character.id, { macroBar: serialized });
+            dispatch(updateCharacterInList({
+                id: character.id,
+                data: { macroBar: serialized },
+            }));
+            dispatch(updateCharacterInState({
+                id: character.id,
+                locationId: character.locationId,
+                data: { macroBar: serialized },
+            }));
         } catch (err) {
             console.error(err);
         }
-    }, [bar, character?.id, macroPage]);
+    }, [bar, character?.id, character?.locationId, dispatch, macroPage]);
 
-    if (!open && !attackPending) return null;
+    if (!showDock && !attackPending) return null;
 
     return (
         <>
-        {open ? (
+        {showDock ? (
         <Paper
             elevation={0}
             data-no-token-drop
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
             sx={{
-                position: "relative",
+                position: "fixed",
+                bottom: VTT_HUD.inset,
+                left: "50%",
+                transform: "translateX(-50%)",
                 zIndex: 1210,
                 pointerEvents: "auto",
                 display: "flex",
-                alignItems: "center",
-                gap: 0.65,
+                flexDirection: "column",
+                alignItems: "stretch",
+                justifyContent: "flex-end",
+                gap: 0.55,
+                width: COMBAT_DOCK_WIDTH,
+                maxWidth: "calc(100vw - 32px)",
+                ...(matchCharacterHudHeight ? { minHeight: COMBAT_DOCK_MIN_HEIGHT } : {}),
+                boxSizing: "border-box",
                 px: 1,
-                py: 0.55,
+                py: 0.65,
                 borderRadius: `${VTT_HUD.borderRadius}px`,
                 border: `1px solid ${VTT_HUD.glassBorder}`,
                 bgcolor: VTT_HUD.glassBg,
@@ -245,6 +267,56 @@ export default function AbilityHotbar({ open, character }) {
                 boxShadow: "0 0 20px rgba(255,102,255,0.08)",
             }}
         >
+            {actionsSlot ? (
+                <Box
+                    sx={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 0.55,
+                        width: "100%",
+                        px: 0.25,
+                        pb: open ? 0.65 : 0.15,
+                        borderBottom: open ? `1px solid ${UI_COLORS.border}` : "none",
+                        boxSizing: "border-box",
+                    }}
+                >
+                    <Box
+                        sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 1,
+                            minHeight: 22,
+                        }}
+                    >
+                        <CyberText
+                            sx={{
+                                fontFamily: "monospace",
+                                fontSize: "0.42rem",
+                                letterSpacing: "0.12em",
+                                color: UI_COLORS.anomaly,
+                                lineHeight: 1,
+                                flexShrink: 0,
+                            }}
+                        >
+                            ACTIONS
+                        </CyberText>
+                        {actionsToolbar}
+                    </Box>
+                    {actionsSlot}
+                </Box>
+            ) : null}
+
+            {open ? (
+            <Box
+                sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 0.65,
+                    width: "100%",
+                    boxSizing: "border-box",
+                }}
+            >
             <Box
                 sx={{
                     display: "flex",
@@ -373,58 +445,81 @@ export default function AbilityHotbar({ open, character }) {
             <Box
                 sx={{
                     display: "grid",
-                    gridTemplateColumns: `repeat(${MACRO_SLOT_COUNT}, 40px)`,
+                    gridTemplateColumns: `repeat(${MACRO_SLOT_COUNT}, minmax(0, 1fr))`,
                     gap: 0.45,
                     py: 0.15,
+                    flex: 1,
+                    minWidth: 0,
                 }}
             >
                 {Array.from({ length: MACRO_SLOT_COUNT }, (_, i) => {
                     const slot = pageSlots[i];
                     const accent = slot ? macroTypeAccent(slot.type) : UI_COLORS.border;
+                    const burdenBlocked = Boolean(slot && isMacroSlotDisabledByBurden(burdens, slot));
+                    const tipTitle = burdenBlocked
+                        ? (
+                            <HudRichTooltipTitle
+                                title={slot.label || slot.id}
+                                body="Bloqueado por Burden activo"
+                                meta={macroTypeLabel(slot.type)}
+                                metaColor={UI_COLORS.danger}
+                            />
+                        )
+                        : <MacroHoverTitle slot={slot} />;
                     return (
                         <CyberTooltip
                             key={i}
-                            title={<MacroHoverTitle slot={slot} />}
+                            title={tipTitle}
                             placement="top"
-                            slotProps={{
-                                tooltip: {
-                                    sx: {
-                                        textTransform: "none",
-                                        maxWidth: 260,
-                                        bgcolor: "#0a0a14",
-                                        border: `1px solid ${UI_COLORS.border}`,
-                                        p: "8px 10px",
-                                    },
-                                },
-                            }}
+                            slotProps={hudRichTooltipSlotProps}
                         >
                             <IconButton
                                 size="small"
-                                disabled={busy || !slot}
-                                onClick={() => slot && handleCall(slot)}
+                                disabled={busy || !slot || burdenBlocked}
+                                onClick={() => slot && !burdenBlocked && handleCall(slot)}
                                 onContextMenu={(e) => slot && handleClearSlot(i, e)}
                                 sx={{
-                                    width: 40,
-                                    height: 36,
+                                    width: "100%",
+                                    height: 40,
                                     borderRadius: 1,
-                                    border: `1px solid ${accent}${slot ? "" : "88"}`,
-                                    color: slot ? accent : "rgba(255,255,255,0.25)",
+                                    border: `1px solid ${slot
+                                        ? (burdenBlocked ? UI_COLORS.danger : accent)
+                                        : "rgba(255,255,255,0.22)"}`,
+                                    color: burdenBlocked
+                                        ? UI_COLORS.danger
+                                        : (slot ? accent : UI_COLORS.textSecondary),
                                     fontFamily: "'Orbitron', sans-serif",
-                                    fontSize: "0.42rem",
+                                    fontSize: slot?.type === MACRO_SLOT_TYPES.ULTIMATE
+                                        ? "0.55rem"
+                                        : "0.42rem",
                                     letterSpacing: "0.02em",
-                                    bgcolor: slot ? `${accent}12` : "rgba(0,0,0,0.25)",
-                                    "&:hover": slot ? {
-                                        bgcolor: `${accent}22`,
+                                    bgcolor: slot
+                                        ? (burdenBlocked
+                                            ? `${UI_COLORS.danger}14`
+                                            : withHexAlpha(accent, "18"))
+                                        : "rgba(0,0,0,0.35)",
+                                    gap: 0.25,
+                                    opacity: burdenBlocked ? 0.55 : 1,
+                                    textDecoration: burdenBlocked ? "line-through" : "none",
+                                    "&:hover": slot && !burdenBlocked ? {
+                                        bgcolor: withHexAlpha(accent, "28"),
                                         borderColor: accent,
-                                        boxShadow: `0 0 10px ${accent}44`,
+                                        boxShadow: `0 0 10px ${withHexAlpha(accent, "55")}`,
                                     } : {},
                                     "&.Mui-disabled": {
-                                        border: `1px dashed ${UI_COLORS.border}`,
-                                        color: "rgba(255,255,255,0.2)",
+                                        border: burdenBlocked
+                                            ? `1px solid ${UI_COLORS.danger}66`
+                                            : "1px dashed rgba(255,255,255,0.18)",
+                                        color: burdenBlocked
+                                            ? UI_COLORS.danger
+                                            : UI_COLORS.textSecondary,
+                                        opacity: burdenBlocked ? 0.55 : undefined,
                                     },
                                 }}
                             >
-                                {slot ? macroSlotShortLabel(slot) : "·"}
+                                {slot?.type === MACRO_SLOT_TYPES.ULTIMATE ? (
+                                    <WhatshotIcon sx={{ fontSize: "1.15rem", color: accent }} />
+                                ) : (slot ? macroSlotShortLabel(slot) : "·")}
                             </IconButton>
                         </CyberTooltip>
                     );
@@ -446,6 +541,8 @@ export default function AbilityHotbar({ open, character }) {
             >
                 <CloseIcon sx={{ fontSize: "0.9rem" }} />
             </IconButton>
+            </Box>
+            ) : null}
         </Paper>
         ) : null}
         <AttackBoonDialog

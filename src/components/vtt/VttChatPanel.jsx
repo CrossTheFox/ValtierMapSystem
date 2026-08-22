@@ -18,12 +18,14 @@ import {
     CHAT_MESSAGE_TYPES,
 } from "../../../firebase/services/chatService";
 import { useAssetUrl } from "../../hooks/useAssetUrl";
-import { listCampaignCharacters } from "../../utils/characterCombat";
+import { buildCampaignCharacterMap } from "../../utils/characterCombat";
 import { setActiveCharacterId, persistActiveCharacter } from "../../store/playerSlice";
 import { INLINE_ROLL_MARKER_RE } from "../../utils/abilityRollCommands";
 import { isDmRole } from "../../utils/tokenControl";
 import { showSnackbar } from "../../store/uiSlice";
 import ClearChatDialog from "./ClearChatDialog";
+import ItemSilhouette from "../characters/inventory/itemSilhouette";
+import { itemRarityMeta, itemTypeMeta } from "../../utils/campaignItems";
 
 const MSG_BODY_SX = {
     fontSize: "0.8rem",
@@ -648,6 +650,115 @@ function AbilityChatCard({ msg, avatarByCharacterId }) {
     );
 }
 
+function ItemChatCard({ msg, avatarByCharacterId }) {
+    const card = msg.itemCard && typeof msg.itemCard === "object" ? msg.itemCard : {};
+    const type = itemTypeMeta(card.type);
+    const rarity = itemRarityMeta(card.rarity);
+    const name = msg.characterName || msg.senderName || "???";
+    const livePath = msg.characterId ? avatarByCharacterId?.get(msg.characterId) : null;
+    const avatarPath = livePath || msg.characterAvatarUrl;
+    const cells = Array.isArray(card.cells) ? card.cells : [];
+    const loot = UI_COLORS.loot;
+
+    return (
+        <Box
+            sx={{
+                mb: 0.9,
+                borderRadius: "6px",
+                border: `1px solid ${loot}66`,
+                background: `linear-gradient(135deg, ${loot}14 0%, rgba(7,7,14,0.94) 42%, rgba(0,0,0,0.6) 100%)`,
+                overflow: "hidden",
+            }}
+        >
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 1, pt: 0.85, pb: 0.5 }}>
+                <Box
+                    sx={{
+                        width: 28,
+                        height: 28,
+                        flexShrink: 0,
+                        "& img, & span": {
+                            width: 28,
+                            height: 28,
+                            display: "grid",
+                            placeItems: "center",
+                            objectFit: "cover",
+                            borderRadius: "50%",
+                            fontFamily: FONT_BODY,
+                            fontSize: "0.6rem",
+                            bgcolor: `${loot}33`,
+                            border: `1px solid ${loot}66`,
+                            color: loot,
+                        },
+                    }}
+                >
+                    <RawAvatar path={avatarPath} name={name} />
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <CyberText sx={{ fontSize: "0.72rem", fontWeight: 700, color: UI_COLORS.textPrimary, lineHeight: 1.2 }}>
+                        {(card.name || "OBJETO").toUpperCase()}
+                        <ChatTime createdAt={msg.createdAt} />
+                    </CyberText>
+                    <CyberText sx={{ fontSize: "0.52rem", color: UI_COLORS.textSecondary, letterSpacing: "0.08em" }}>
+                        {name}
+                    </CyberText>
+                </Box>
+                <Box
+                    sx={{
+                        flexShrink: 0,
+                        height: 18,
+                        px: 0.75,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        borderRadius: "9px",
+                        fontFamily: FONT_BODY,
+                        fontSize: "0.5rem",
+                        letterSpacing: "1.2px",
+                        fontWeight: 700,
+                        bgcolor: `${loot}22`,
+                        color: loot,
+                        border: `1px solid ${loot}66`,
+                    }}
+                >
+                    ITEM
+                </Box>
+            </Box>
+            <Box sx={{ display: "flex", gap: 1, px: 1, pb: 0.85, alignItems: "flex-start" }}>
+                {cells.length ? (
+                    <ItemSilhouette cells={cells} type={card.type} itemId={card.id} cellSize={12} />
+                ) : null}
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <CyberText sx={{ fontSize: "0.62rem", color: type.color, mb: 0.35 }}>
+                        {type.label}
+                        <Box component="span" sx={{ color: rarity.color }}> · {rarity.label}</Box>
+                        {card.qty != null ? ` · ×${card.qty}` : ""}
+                    </CyberText>
+                    {(card.description || msg.text) ? (
+                        <CyberText sx={{ fontSize: "0.78rem", color: UI_COLORS.textPrimary, lineHeight: 1.45 }}>
+                            {card.description || msg.text}
+                        </CyberText>
+                    ) : null}
+                    {card.effectLabel ? (
+                        <Box
+                            sx={{
+                                mt: 0.5,
+                                display: "inline-block",
+                                border: `1px solid ${UI_COLORS.boon}66`,
+                                color: UI_COLORS.boon,
+                                fontFamily: "'Fira Code', monospace",
+                                fontSize: "0.58rem",
+                                px: 0.7,
+                                py: 0.2,
+                            }}
+                        >
+                            {card.effectLabel}
+                        </Box>
+                    ) : null}
+                </Box>
+            </Box>
+        </Box>
+    );
+}
+
 function ChatMessage({ msg, glossaryEntities, avatarByCharacterId }) {
     if (msg.type === CHAT_MESSAGE_TYPES.DICE) {
         return <DiceChatCard msg={msg} avatarByCharacterId={avatarByCharacterId} />;
@@ -655,6 +766,10 @@ function ChatMessage({ msg, glossaryEntities, avatarByCharacterId }) {
 
     if (msg.type === CHAT_MESSAGE_TYPES.ABILITY) {
         return <AbilityChatCard msg={msg} avatarByCharacterId={avatarByCharacterId} />;
+    }
+
+    if (msg.type === CHAT_MESSAGE_TYPES.ITEM) {
+        return <ItemChatCard msg={msg} avatarByCharacterId={avatarByCharacterId} />;
     }
 
     if (msg.isOOC) {
@@ -866,24 +981,25 @@ export default function VttChatPanel({
     const sheetCharacters = useSelector((s) => s.characters.list);
     const isDM = isDmRole(profile?.role);
 
-    const allCharactersById = useMemo(() => {
-        const byId = new Map();
-        // Sheet first; world roster overwrites (fresher imageUrl / placement).
-        (sheetCharacters || []).forEach((c) => { if (c?.id) byId.set(c.id, c); });
-        listCampaignCharacters(charactersById, locations).forEach((c) => {
-            if (c?.id) byId.set(c.id, c);
-        });
-        return byId;
-    }, [charactersById, locations, sheetCharacters]);
+    const allCharactersById = useMemo(
+        () => buildCampaignCharacterMap(charactersById, locations, sheetCharacters, campaignId),
+        [charactersById, locations, sheetCharacters, campaignId],
+    );
 
     const avatarByCharacterId = useMemo(() => {
         const map = new Map();
-        allCharactersById.forEach((c, id) => {
+        // Prefer campaign roster, but also keep a world-wide fallback so chat
+        // avatars still resolve when a character is missing from the scoped map.
+        const stamp = (c) => {
+            if (!c?.id) return;
             const path = c.tokenImageUrl || c.imageUrl;
-            if (path) map.set(id, path);
-        });
+            if (path && !map.has(c.id)) map.set(c.id, path);
+        };
+        allCharactersById.forEach((c) => stamp(c));
+        Object.values(charactersById || {}).forEach(stamp);
+        (sheetCharacters || []).forEach(stamp);
         return map;
-    }, [allCharactersById]);
+    }, [allCharactersById, charactersById, sheetCharacters]);
 
     const myCharacters = useMemo(() => {
         const all = [...allCharactersById.values()];

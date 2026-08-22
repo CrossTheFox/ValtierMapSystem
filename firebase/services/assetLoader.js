@@ -212,6 +212,18 @@ export const uploadCharacterImage = async (characterId, file) => {
     return { url: downloadURL, path: snapshot.ref.fullPath };
 };
 
+export const uploadItemImage = async (itemId, file) => {
+    const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/gi, "_").slice(0, 48) || `item.${ext}`;
+    const path = `characters/items/${itemId || "shared"}/${Date.now()}_${safeName}`;
+    const storageRef = ref(storage, path);
+    const snapshot = await uploadBytes(storageRef, file);
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    rememberUrl(path, downloadURL);
+    await preloadImage(downloadURL, path).catch(() => null);
+    return { url: downloadURL, path: snapshot.ref.fullPath };
+};
+
 export const uploadLocationImage = async (locationId, file) => {
     const storageRef = ref(storage, `locations/${locationId}_${file.name}`);
     const snapshot = await uploadBytes(storageRef, file);

@@ -71,6 +71,11 @@ const uiSlice = createSlice({
             vttContext: null,     // { linkedVttLocationId?, linkedVttCharacterId?, prefillType? }
             areaFilter: null,     // WikiAreaId | null — set when opening from drawer area nav
         },
+        /** Campaign Neural Lab (circuit) — separate from Narrative Archive. */
+        neuralLabOverlay: {
+            open: false,
+            focusEntityId: null,
+        },
         openDialogs: {
             characters: false,   // legacy key (roster moved into VTT Configs / settings)
             sheet: false,        // CharactersSettingsDialog (dossier)
@@ -80,11 +85,15 @@ const uiSlice = createSlice({
         },
         /**
          * Deep-link target when opening the character dossier.
-         * tab: "IDENTIDAD" | "KIT"; kitView: "list" | "tree"
+         * tab: "IDENTIDAD" | "KIT" | "MESH" | "NARRATIVA"; kitView: "list" | "tree"
+         * openMaletin: KIT briefcase drawer (legacy INVENTARIO / INV).
          */
         sheetFocus: {
             tab: "IDENTIDAD",
             kitView: "tree",
+            /** Optional: open dossier for this id (DM roster). Else activeCharacterId. */
+            characterId: null,
+            openMaletin: false,
             nonce: 0,
         },
         /**
@@ -370,6 +379,22 @@ const uiSlice = createSlice({
             state.wikiOverlay.areaFilter = action.payload;
         },
 
+        // ── Campaign Neural Lab ───────────────────────────────────
+        openNeuralLabOverlay(state, action) {
+            const { focusEntityId = null } = action.payload || {};
+            state.neuralLabOverlay.open = true;
+            state.neuralLabOverlay.focusEntityId = focusEntityId ? String(focusEntityId) : null;
+        },
+        closeNeuralLabOverlay(state) {
+            state.neuralLabOverlay.open = false;
+            state.neuralLabOverlay.focusEntityId = null;
+        },
+        setNeuralLabFocusEntity(state, action) {
+            state.neuralLabOverlay.focusEntityId = action.payload
+                ? String(action.payload)
+                : null;
+        },
+
         // ── Dialog Stack ──────────────────────────────────────────
         openDialog(state, action) {
             const name = action.payload;
@@ -381,19 +406,30 @@ const uiSlice = createSlice({
             }
         },
         /**
-         * Open player dossier for the active character.
-         * Optional deep-link: { tab: "IDENTIDAD"|"KIT"|"MESH", kitView: "list"|"tree" }
+         * Open player dossier.
+         * Optional deep-link: { tab, kitView, characterId } — characterId lets DM open any roster sheet.
          */
         openCharacterSheet(state, action) {
-            const { tab = "IDENTIDAD", kitView = "tree" } = action.payload || {};
-            const validTabs = ["IDENTIDAD", "KIT", "MESH"];
-            const nextTab = validTabs.includes(tab) ? tab : "IDENTIDAD";
+            const {
+                tab = "IDENTIDAD",
+                kitView = "tree",
+                characterId = null,
+                openMaletin = false,
+            } = action.payload || {};
+            const validTabs = ["IDENTIDAD", "KIT", "MESH", "NARRATIVA"];
+            const maletinTabs = new Set(["INVENTARIO", "INV", "INVENTORY", "BRIEFCASE"]);
+            const wantMaletin = Boolean(openMaletin) || maletinTabs.has(tab);
+            const nextTab = wantMaletin
+                ? "KIT"
+                : (validTabs.includes(tab) ? tab : "IDENTIDAD");
             const nextKit = kitView === "list" ? "list" : "tree";
             state.openDialogs.sheet = true;
             state.minimizedDialogs[DIALOG_IDS.SHEET] = false;
             state.sheetFocus = {
                 tab: nextTab,
                 kitView: nextKit,
+                characterId: characterId ? String(characterId) : null,
+                openMaletin: wantMaletin,
                 nonce: (state.sheetFocus?.nonce || 0) + 1,
             };
         },
@@ -552,6 +588,9 @@ export const {
     setWikiOverlayMode,
     setWikiOverlayEntity,
     setWikiOverlayAreaFilter,
+    openNeuralLabOverlay,
+    closeNeuralLabOverlay,
+    setNeuralLabFocusEntity,
     openDialog,
     openCharacterSheet,
     openSettingsFocus,

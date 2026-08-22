@@ -40,6 +40,8 @@ export const VTT_RIGHT_DOCK = {
     /** mapControls inset + control row (~40) + gap */
     bottom: 64,
     tokenPanelMaxHeight: 220,
+    /** DM character list — sits above tokens/chat in the dock column. */
+    rosterPanelMaxHeight: 280,
 };
 
 export const VTT_DIALOG_SIZE = {
@@ -51,13 +53,13 @@ export const VTT_DIALOG_SIZE = {
     },
     /** Near full-bleed on 1080p / 1440p / ultrawide (no hard 1100–1280 caps). */
     lg: {
-        width: "min(96vw, 100%)",
-        height: "min(90vh, 100%)",
+        width: "min(97vw, 100%)",
+        height: "min(94vh, 100%)",
         borderRadius: 3,
     },
     xl: {
-        width: "min(97vw, 100%)",
-        height: "min(92vh, 100%)",
+        width: "min(98vw, 100%)",
+        height: "min(96vh, 100%)",
         borderRadius: 2,
     },
     fullscreen: {

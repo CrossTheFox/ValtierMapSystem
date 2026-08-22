@@ -1,7 +1,6 @@
 import { Box, IconButton } from "@mui/material";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
 import TimelineIcon from "@mui/icons-material/Timeline";
-import HubIcon from "@mui/icons-material/Hub";
 import SettingsIcon from "@mui/icons-material/Settings";
 import LibraryBooksIcon from "@mui/icons-material/LibraryBooks";
 import { CyberText } from "../customs/CustomTexts";
@@ -23,9 +22,9 @@ const AREA_VISUALS = {
         Icon: TimelineIcon,
         color: "#00e5ff",
     },
-    [WIKI_AREA_IDS.NEURAL_LAB]: {
-        Icon: HubIcon,
-        color: UI_COLORS.anomaly,
+    [WIKI_AREA_IDS.SESSIONS]: {
+        Icon: LibraryBooksIcon,
+        color: UI_COLORS.textSecondary,
     },
 };
 
@@ -53,7 +52,7 @@ function tooltipTitle(label, hint) {
 }
 
 /**
- * Icon-only segmented navigation for archive surfaces (CODEX / TIMELINE / NEURAL_LAB).
+ * Icon-only segmented navigation for archive surfaces (CODEX / TIMELINE / SESSIONS).
  */
 export default function WikiAreaNav({
     areaFilter,

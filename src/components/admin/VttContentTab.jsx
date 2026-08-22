@@ -5,7 +5,6 @@ import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "../../../firebase/firebaseConfig";
 import { UI_COLORS } from "../../constants/uiColors";
 import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
-import { CyberTitle, CyberText } from "../customs/CustomTexts";
 import { setDialogMinimized } from "../../store/uiSlice";
 import { DIALOG_IDS } from "../../constants/dialogIds";
 import AdminSidebarNav from "./AdminSidebarNav";
@@ -13,37 +12,14 @@ import LocationsSubTab from "../tabs/subtabs/LocationsSubTab";
 import AbilityEditorPanel from "./AbilityEditorPanel";
 import TagsEditorPanel from "./TagsEditorPanel";
 import { DEFAULT_RULE_SYSTEM } from "../../constants/ruleSystems";
+import CampaignVaultPanel from "./CampaignVaultPanel";
 
 const SUB_ITEMS = [
     { id: "LOCATIONS", label: "LOCACIONES", hint: "Marcadores del mapa" },
     { id: "JOBS", label: "JOBS / ABILITIES", hint: "Combat stats + comandos" },
     { id: "TAGS", label: "TAGS", hint: "Pierce, statuses, efectos" },
-    { id: "OBJECTS", label: "OBJETOS", hint: "Inventario / ítems (próx.)" },
+    { id: "OBJECTS", label: "OBJETOS", hint: "Bóveda / maletín RE4" },
 ];
-
-function ObjectsPlaceholder() {
-    return (
-        <Box
-            sx={{
-                p: 3,
-                border: `1px dashed ${UI_COLORS.border}`,
-                borderRadius: 1.5,
-                bgcolor: `${UI_COLORS.backgroundPrimary}88`,
-                maxWidth: 480,
-            }}
-        >
-            <CyberTitle sx={{ fontSize: "0.85rem", color: UI_COLORS.accent, letterSpacing: "0.12em", mb: 1 }}>
-                OBJETOS
-            </CyberTitle>
-            <CyberText sx={{ fontSize: "0.78rem", color: UI_COLORS.textPrimary, mb: 1, lineHeight: 1.5 }}>
-                Placeholder para el catálogo de objetos, ítems y equipo de campaña.
-            </CyberText>
-            <CyberText sx={{ fontSize: "0.7rem", color: UI_COLORS.textSecondary, fontFamily: "'Fira Code', monospace" }}>
-                // PENDING — inventario · loot · reliquias VTT
-            </CyberText>
-        </Box>
-    );
-}
 
 /** Contendido VTT: Locaciones, Jobs/Abilities, Objetos (placeholder). */
 export default function VttContentTab({ campaignId, initialSub = null, initialJobId = null }) {
@@ -122,7 +98,7 @@ export default function VttContentTab({ campaignId, initialSub = null, initialJo
                     {activeSub === "TAGS" && (
                         <TagsEditorPanel campaignId={campaignId} rulesSystem={rulesSystem} />
                     )}
-                    {activeSub === "OBJECTS" && <ObjectsPlaceholder />}
+                    {activeSub === "OBJECTS" && <CampaignVaultPanel campaignId={campaignId} />}
                 </Box>
             </Box>
         </Box>

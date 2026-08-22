@@ -48,14 +48,30 @@ const characterSlice = createSlice({
             const index = state.list.findIndex((c) => c.id === id);
             if (index !== -1) {
                 const prev = state.list[index];
-                state.list[index] = {
+                const next = {
                     ...prev,
                     ...data,
-                    stats: data.stats ? { ...(prev.stats || {}), ...data.stats } : prev.stats,
-                    bond: data.bond ? { ...(prev.bond || {}), ...data.bond } : prev.bond,
                 };
+                if (data.stats) {
+                    next.stats = { ...(prev.stats || {}), ...data.stats };
+                } else {
+                    next.stats = prev.stats;
+                }
+                if (data.bond) {
+                    // Merge bond fields; don't let accidental empty strings wipe richer prev values
+                    // unless the patch explicitly includes that key (user cleared it).
+                    const merged = { ...(prev.bond || {}), ...data.bond };
+                    next.bond = merged;
+                } else {
+                    next.bond = prev.bond;
+                }
+                state.list[index] = next;
             } else {
-                state.list.push({ id, ...data });
+                // Never seed the list with a partial media/burdens-only stub — it would
+                // overwrite richer world data when the sheet merges list+world.
+                if (data.stats || data.bond || data.name || data.bondPowers) {
+                    state.list.push({ id, ...data });
+                }
             }
         }
     },

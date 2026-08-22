@@ -19,7 +19,23 @@ export function buildWikiVttLinkIndex(wikiEntities = []) {
     return { byCharacterId, byLocationId };
 }
 
-export function getWikiEntityForCharacter(index, characterId) {
+/**
+ * Resolve wiki PERSONAJE for a VTT character.
+ * Prefer character.narrativeEntityId when `entitiesById` is provided; else index by linkedVttCharacterId.
+ *
+ * @param {{ byCharacterId: Map }} index
+ * @param {string} characterId
+ * @param {{ narrativeEntityId?: string|null }|null} [character]
+ * @param {Map<string, object>|Record<string, object>|null} [entitiesById]
+ */
+export function getWikiEntityForCharacter(index, characterId, character = null, entitiesById = null) {
+    const narId = character?.narrativeEntityId;
+    if (narId && entitiesById) {
+        const fromMap = typeof entitiesById.get === "function"
+            ? entitiesById.get(narId)
+            : entitiesById[narId];
+        if (fromMap) return fromMap;
+    }
     if (!index || !characterId) return null;
     return index.byCharacterId.get(characterId) || null;
 }

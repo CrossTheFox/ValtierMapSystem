@@ -7,8 +7,6 @@ import AutoStoriesIcon from "@mui/icons-material/AutoStories";
 import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import FullscreenExitIcon from "@mui/icons-material/FullscreenExit";
 import RemoveIcon from "@mui/icons-material/Remove";
-import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
-import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { useDispatch, useSelector } from "react-redux";
@@ -32,6 +30,7 @@ import {
     setWikiOverlayAreaFilter,
     setDialogMinimized,
     openWikiOverlay,
+    openNeuralLabOverlay,
     openLocation,
     restoreDialog,
     showSnackbar,
@@ -39,17 +38,14 @@ import {
 import { DIALOG_IDS } from "../../constants/dialogIds";
 import WikiSearchBar from "./WikiSearchBar";
 import WikiAreaNav from "./WikiAreaNav";
-import WikiEntityAutocomplete from "./WikiEntityAutocomplete";
 import WikiEntityList from "./WikiEntityList";
 import WikiEntityDetail from "./WikiEntityDetail";
 import WikiEntityEditor from "./WikiEntityEditor";
 import WikiRelationPanel from "./WikiRelationPanel";
 import WikiTimelineView from "./WikiTimelineView";
-import WikiAiLabPanel from "./WikiAiLabPanel";
 import WikiSessionLogPanel from "./WikiSessionLogPanel";
 import WikiAiConfigDialog from "./WikiAiConfigDialog";
 import SystemGlossaryDialog from "./SystemGlossaryDialog";
-import WikiGraphCanvas from "../../pixi/wikiGraph/WikiGraphCanvas";
 import { filterEntitiesByLegend } from "./WikiGraphHud";
 import { useWikiSearch } from "../../hooks/useWikiSearch";
 import { WIKI_ENTITY_TYPES, compareEntitiesByArchiveOrder } from "../../constants/wikiEntityTypes";
@@ -471,12 +467,9 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
     const handleOpenInNeuralLab = useCallback(
         (entity) => {
             if (!entity) return;
-            captureNavReturn();
-            dispatch(setWikiOverlayAreaFilter(WIKI_AREA_IDS.NEURAL_LAB));
-            dispatch(setWikiOverlayEntity(entity.id));
-            setFichaDialogOpen(true);
+            dispatch(openNeuralLabOverlay({ focusEntityId: entity.id }));
         },
-        [dispatch, captureNavReturn]
+        [dispatch]
     );
 
     // NEURAL_LAB: explicit "go to the entity's native area page" action
@@ -678,7 +671,7 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
     }
 
     const isTimelineView = effectiveAreaFilter === WIKI_AREA_IDS.TIMELINE;
-    const isNeuralLabView = effectiveAreaFilter === WIKI_AREA_IDS.NEURAL_LAB;
+    const isNeuralLabView = false; // Neural Lab is a separate VTT overlay
     const isSessionsView = effectiveAreaFilter === WIKI_AREA_IDS.SESSIONS;
     const timelineEditing = isTimelineView && (mode === "edit" || mode === "create");
     // Players can only be in list/detail modes
@@ -949,155 +942,6 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
                         </Box>
                     )}
 
-                    {/* NEURAL_LAB: graph center | LAB_IA right; ficha via Dialog */}
-                    {isNeuralLabView && (
-                        <>
-                            <Box
-                                sx={{
-                                    flex: 1,
-                                    minWidth: 0,
-                                    minHeight: 0,
-                                    overflow: "hidden",
-                                    borderRight: !readOnly && neuralLabRightOpen
-                                        ? `1px solid ${UI_COLORS.border}`
-                                        : "none",
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    position: "relative",
-                                    alignSelf: "stretch",
-                                }}
-                            >
-                                <WikiEntityAutocomplete
-                                    entities={visibleGraphEntities}
-                                    onSelect={handleSelectEntityNeuralLab}
-                                    compact={compact}
-                                    placeholder="Buscar nodo visible…"
-                                />
-
-                                {!readOnly && (
-                                    <CyberTooltip title={neuralLabRightOpen ? "Ocultar LAB_IA" : "Mostrar LAB_IA"}>
-                                        <IconButton
-                                            size="small"
-                                            onClick={() => setNeuralLabRightOpen((v) => !v)}
-                                            sx={NEURAL_LAB_PANEL_TOGGLE_SX}
-                                        >
-                                            {neuralLabRightOpen ? (
-                                                <ChevronRightIcon sx={{ fontSize: "1.1rem" }} />
-                                            ) : (
-                                                <ChevronLeftIcon sx={{ fontSize: "1.1rem" }} />
-                                            )}
-                                        </IconButton>
-                                    </CyberTooltip>
-                                )}
-
-                                <WikiGraphCanvas
-                                    entities={visibleGraphEntities}
-                                    relations={visibleGraphRelations}
-                                    legendEntities={graphEntities}
-                                    selectedEntityId={entityId}
-                                    selectedEntity={selectedEntity}
-                                    onSelectEntity={handleSelectEntityNeuralLab}
-                                    onClearSelection={() => dispatch(setWikiOverlayEntity(null))}
-                                    onOpenEntityDetail={() => {
-                                        if (selectedEntity) setFichaDialogOpen(true);
-                                    }}
-                                    detailPanelOpen={false}
-                                    labPanelOpen={neuralLabRightOpen}
-                                    propagationState={propagationState}
-                                    hiddenTypes={labHiddenTypes}
-                                    soloType={labSoloType}
-                                    onToggleType={handleToggleLabType}
-                                    onSoloType={handleSoloLabType}
-                                    onClearSolo={handleClearLabSolo}
-                                />
-                            </Box>
-
-                            {!readOnly && (
-                                <Box
-                                    sx={{
-                                        width: neuralLabRightOpen ? density.panelLab : 0,
-                                        flexShrink: 0,
-                                        minHeight: 0,
-                                        height: "100%",
-                                        alignSelf: "stretch",
-                                        overflow: "hidden",
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        position: "relative",
-                                        zIndex: 10,
-                                        transition: "width 0.25s ease",
-                                        borderLeft: neuralLabRightOpen ? `1px solid ${UI_COLORS.border}` : "none",
-                                    }}
-                                >
-                                    {neuralLabRightOpen && (
-                                        <WikiAiLabPanel
-                                            selectedEntity={selectedEntity}
-                                            entities={graphEntities}
-                                            relations={graphRelations}
-                                            campaignId={campaignId}
-                                            narrativeSettings={narrativeSettings}
-                                            onPropagationStart={handlePropagationStart}
-                                            onPropagationEnd={handlePropagationEnd}
-                                        />
-                                    )}
-                                </Box>
-                            )}
-
-                            <Dialog
-                                open={fichaDialogOpen && !!selectedEntity}
-                                onClose={() => setFichaDialogOpen(false)}
-                                fullWidth
-                                maxWidth={false}
-                                sx={{ zIndex: Z_INDEX.wikiDialog }}
-                                slotProps={{
-                                    paper: { sx: NEURAL_LAB_FICHA_DIALOG_PAPER_SX },
-                                }}
-                            >
-                                {selectedEntity && (
-                                    <Box sx={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
-                                        <Box
-                                            sx={{
-                                                display: "flex",
-                                                alignItems: "center",
-                                                justifyContent: "flex-end",
-                                                px: 1,
-                                                py: 0.5,
-                                                borderBottom: `1px solid ${UI_COLORS.border}`,
-                                                flexShrink: 0,
-                                            }}
-                                        >
-                                            <IconButton
-                                                size="small"
-                                                onClick={() => setFichaDialogOpen(false)}
-                                                sx={{ color: UI_COLORS.textSecondary }}
-                                            >
-                                                <CloseIcon fontSize="small" />
-                                            </IconButton>
-                                        </Box>
-                                        <Box sx={{ flex: 1, minHeight: 0, overflow: "auto" }}>
-                                            <WikiEntityDetail
-                                                compact={compact}
-                                                entity={selectedEntity}
-                                                entities={entities}
-                                                locations={locations}
-                                                onEntityClick={handleNavigateToEntity}
-                                                onGoToPage={() => handleGoToEntityPage(selectedEntity)}
-                                                onOpenVttLocation={(id) => openVttLocation(id, 0)}
-                                                onOpenVttCharacter={(characterId) => {
-                                                    const locId = Object.values(locations).find((loc) =>
-                                                        loc.characters?.some((c) => c.id === characterId)
-                                                    )?.id;
-                                                    if (locId) openVttLocation(locId, 1);
-                                                }}
-                                            />
-                                        </Box>
-                                    </Box>
-                                )}
-                            </Dialog>
-                        </>
-                    )}
-
-                    {/* Center (standard/timeline views) */}
                     {!isNeuralLabView && (
                     <Box
                         sx={{

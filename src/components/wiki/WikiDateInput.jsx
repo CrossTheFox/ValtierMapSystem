@@ -33,8 +33,22 @@ const FIELD_LIMITS = { d: 2, m: 2, y: 4 };
  * Segmented Día / Mes / Año (calendario D.Z.). Campos de texto numérico con
  * estado local para evitar pérdida de dígitos al escribir. Emite strings
  * year-first: "YYYY" | "YYYY-MM" | "YYYY-MM-DD".
+ *
+ * @param {{
+ *   value?: string,
+ *   onChange?: (v: string) => void,
+ *   required?: boolean,
+ *   showHint?: boolean,
+ *   compact?: boolean,
+ * }} props
  */
-export default function WikiDateInput({ value = "", onChange, required = false }) {
+export default function WikiDateInput({
+    value = "",
+    onChange,
+    required = false,
+    showHint = true,
+    compact = false,
+}) {
     const [seg, setSeg] = useState(() => formatDateForInput(value));
     const emittedRef = useRef(value ?? "");
 
@@ -64,9 +78,20 @@ export default function WikiDateInput({ value = "", onChange, required = false }
         if (field === "y" && seg.m) commit({ ...seg, m: "" });
     };
 
+    const segW = compact ? { d: 52, m: 52, y: 78 } : { d: 58, m: 58, y: 88 };
+
     return (
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, minWidth: 220 }}>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+        <Box
+            sx={{
+                display: "flex",
+                flexDirection: "column",
+                gap: showHint ? 0.5 : 0,
+                minWidth: compact ? 0 : 220,
+                justifyContent: "center",
+            }}
+            aria-label="Fecha de nacimiento"
+        >
+            <Box sx={{ display: "flex", alignItems: "center", gap: compact ? 0.5 : 0.75 }}>
                 <TextField
                     label="Día"
                     value={seg.d}
@@ -77,9 +102,9 @@ export default function WikiDateInput({ value = "", onChange, required = false }
                     inputMode="numeric"
                     inputProps={{ maxLength: 2, "aria-label": "Día" }}
                     placeholder="DD"
-                    sx={{ ...segmentSx, width: 58 }}
+                    sx={{ ...segmentSx, width: segW.d }}
                 />
-                <CyberText sx={{ color: UI_COLORS.textSecondary, fontSize: "1rem", userSelect: "none" }}>/</CyberText>
+                <CyberText sx={{ color: UI_COLORS.textSecondary, fontSize: compact ? "0.85rem" : "1rem", userSelect: "none" }}>/</CyberText>
                 <TextField
                     label="Mes"
                     value={seg.m}
@@ -90,9 +115,9 @@ export default function WikiDateInput({ value = "", onChange, required = false }
                     inputMode="numeric"
                     inputProps={{ maxLength: 2, "aria-label": "Mes" }}
                     placeholder="MM"
-                    sx={{ ...segmentSx, width: 58 }}
+                    sx={{ ...segmentSx, width: segW.m }}
                 />
-                <CyberText sx={{ color: UI_COLORS.textSecondary, fontSize: "1rem", userSelect: "none" }}>/</CyberText>
+                <CyberText sx={{ color: UI_COLORS.textSecondary, fontSize: compact ? "0.85rem" : "1rem", userSelect: "none" }}>/</CyberText>
                 <TextField
                     label={required ? "Año *" : "Año"}
                     value={seg.y}
@@ -103,12 +128,14 @@ export default function WikiDateInput({ value = "", onChange, required = false }
                     inputMode="numeric"
                     inputProps={{ maxLength: 4, "aria-label": "Año" }}
                     placeholder="AAAA"
-                    sx={{ ...segmentSx, width: 88 }}
+                    sx={{ ...segmentSx, width: segW.y }}
                 />
             </Box>
-            <CyberText sx={{ color: UI_COLORS.textSecondary, fontSize: "0.65rem", lineHeight: 1.45 }}>
-                Calendario D.Z. · año obligatorio · mes y día opcionales
-            </CyberText>
+            {showHint && (
+                <CyberText sx={{ color: UI_COLORS.textSecondary, fontSize: "0.65rem", lineHeight: 1.45 }}>
+                    Calendario D.Z. · año obligatorio · mes y día opcionales
+                </CyberText>
+            )}
         </Box>
     );
 }

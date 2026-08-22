@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-    Box, IconButton, Popover, TextField, InputAdornment, Badge, CircularProgress,
+    Box, IconButton, Popover, TextField, InputAdornment, CircularProgress,
     Menu, MenuItem, ListItemIcon, ListItemText,
 } from "@mui/material";
 import { useDispatch, useSelector } from "react-redux";
@@ -12,15 +12,15 @@ import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
 import QueryStatsIcon from "@mui/icons-material/QueryStats";
 import CasinoIcon from "@mui/icons-material/Casino";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
-import DirectionsRunIcon from "@mui/icons-material/DirectionsRun";
-import VisibilityIcon from "@mui/icons-material/Visibility";
-import MenuBookIcon from "@mui/icons-material/MenuBook";
-import FavoriteIcon from "@mui/icons-material/Favorite";
-import CampaignIcon from "@mui/icons-material/Campaign";
-import BuildIcon from "@mui/icons-material/Build";
-import GpsFixedIcon from "@mui/icons-material/GpsFixed";
-import FitnessCenterIcon from "@mui/icons-material/FitnessCenter";
-import ShieldIcon from "@mui/icons-material/Shield";
+import HikingIcon from "@mui/icons-material/Hiking";
+import SensorsIcon from "@mui/icons-material/Sensors";
+import AutoStoriesIcon from "@mui/icons-material/AutoStories";
+import HandshakeIcon from "@mui/icons-material/Handshake";
+import RecordVoiceOverIcon from "@mui/icons-material/RecordVoiceOver";
+import HandymanIcon from "@mui/icons-material/Handyman";
+import BalanceIcon from "@mui/icons-material/Balance";
+import SportsMartialArtsIcon from "@mui/icons-material/SportsMartialArts";
+import HealthAndSafetyIcon from "@mui/icons-material/HealthAndSafety";
 import PersonOffIcon from "@mui/icons-material/PersonOff";
 import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
 import CheckIcon from "@mui/icons-material/Check";
@@ -28,7 +28,7 @@ import HealingIcon from "@mui/icons-material/Healing";
 import { CyberText, CyberTitle } from "../customs/CustomTexts";
 import CyberTooltip from "../customs/CyberTooltip";
 import { UI_COLORS } from "../../constants/uiColors";
-import { cyberMenuItemSx, cyberMenuPaperSx } from "../../constants/designSystem";
+import { cyberMenuItemSx, cyberMenuPaperSx, TYPO } from "../../constants/designSystem";
 import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
 import { VTT_HUD } from "../../constants/vttHudTokens";
 import { useStatSystem } from "../../hooks/useStatSystem";
@@ -37,11 +37,11 @@ import { usePinnedCharacters } from "../../hooks/usePinnedCharacters";
 import { useAssetUrl } from "../../hooks/useAssetUrl";
 import { useResolvedCombatStats } from "../../hooks/useResolvedCombatStats";
 import { setActiveCharacterId, persistActiveCharacter } from "../../store/playerSlice";
-import { showSnackbar } from "../../store/uiSlice";
+import { showSnackbar, openCharacterSheet } from "../../store/uiSlice";
 import { canControlToken, isDmRole } from "../../utils/tokenControl";
 import {
     DEFAULT_VIT,
-    listCampaignCharacters,
+    buildCampaignCharacterMap,
     resolveHpMax,
     resolveVit,
     resolveSessionHpMax,
@@ -51,20 +51,178 @@ import {
 import { normalizeTokenCrop, tokenCropCss } from "../../utils/tokenImageFit";
 import { getSessionPools } from "../../utils/characterSessionPools";
 import { rollStatInChat } from "../../../firebase/services/chatService";
-import AbilityHotbar from "./AbilityHotbar";
+import AbilityHotbar, { COMBAT_DOCK_MIN_HEIGHT } from "./AbilityHotbar";
+import BurdenMark from "../characters/BurdenMark";
+import {
+    normalizeBurdens,
+    formatBurdenEffectSummary,
+    getActionPenance,
+    effectiveActionDice,
+    listActiveBurdens,
+    BURDEN_EFFECT_TYPES,
+} from "../../utils/characterBurdens";
+import { mergeMacroBarPreferFilled } from "../../constants/macroBar";
+import { HudRichTooltipTitle, hudRichTooltipSlotProps } from "./hudRichTooltip";
 
+/** Prefer filled slots from either sheet or world doc (avoids empty sheet stub wiping world). */
+function mergeBurdensPreferFilled(primary, fallback) {
+    const a = normalizeBurdens(primary);
+    const b = normalizeBurdens(fallback);
+    return [0, 1, 2].map((i) => a[i] || b[i] || null);
+}
+
+function burdenEffectTargetLabel(effect, character) {
+    if (!effect?.targetId) return "";
+    if (effect.type === BURDEN_EFFECT_TYPES.ACTION_PENANCE) {
+        return String(effect.targetId).toUpperCase();
+    }
+    if (effect.type === BURDEN_EFFECT_TYPES.BOND_NULLIFY) {
+        const list = Array.isArray(character?.bondPowers) ? character.bondPowers : [];
+        const bp = list.find((p, i) => {
+            const id = p?.id != null && String(p.id).trim() !== ""
+                ? String(p.id)
+                : (p?.key != null && String(p.key).trim() !== "" ? String(p.key) : `bp_idx_${i}`);
+            return id === effect.targetId;
+        });
+        return bp?.title || bp?.name || bp?.label || effect.targetId;
+    }
+    return effect.targetId;
+}
+
+/** Single “has burdens” mark — tooltip lists every active burden + effect. */
+function ActiveBurdenIcons({ burdens, character }) {
+    const active = listActiveBurdens(burdens);
+    if (!active.length) return null;
+
+    const tip = (
+        <Box sx={{ display: "flex", flexDirection: "column", gap: "8px", textTransform: "none", maxWidth: 280 }}>
+            <Box
+                component="span"
+                sx={{
+                    fontFamily: "Orbitron, sans-serif",
+                    fontSize: "0.55rem",
+                    letterSpacing: "0.1em",
+                    color: UI_COLORS.danger,
+                    textTransform: "uppercase",
+                }}
+            >
+                Burdens · {active.length}
+            </Box>
+            {active.map((b, i) => {
+                const title = (b.title || "").trim() || `Burden ${i + 1}`;
+                const effectLine = formatBurdenEffectSummary(b.effect, {
+                    targetLabel: burdenEffectTargetLabel(b.effect, character),
+                });
+                const note = (b.consequence || b.text || "").trim();
+                return (
+                    <Box key={b.id || i} sx={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                        <Box
+                            component="span"
+                            sx={{
+                                fontFamily: "Orbitron, sans-serif",
+                                fontSize: "0.62rem",
+                                letterSpacing: "0.06em",
+                                color: UI_COLORS.textPrimary,
+                                textTransform: "uppercase",
+                            }}
+                        >
+                            {title}
+                            <Box component="span" sx={{
+                                ml: 0.75,
+                                fontFamily: "'Fira Code', monospace",
+                                fontSize: "0.5rem",
+                                color: UI_COLORS.danger,
+                                textTransform: "none",
+                            }}>
+                                {b.clockFilled}/{b.clockSize}
+                            </Box>
+                        </Box>
+                        {effectLine ? (
+                            <Box
+                                component="span"
+                                sx={{
+                                    fontFamily: "'Fira Code', monospace",
+                                    fontSize: "0.58rem",
+                                    color: UI_COLORS.danger,
+                                }}
+                            >
+                                {effectLine}
+                            </Box>
+                        ) : null}
+                        {note ? (
+                            <Box
+                                component="span"
+                                sx={{
+                                    fontFamily: "'Fira Sans', sans-serif",
+                                    fontSize: "0.7rem",
+                                    color: UI_COLORS.textSecondary,
+                                    lineHeight: 1.35,
+                                    whiteSpace: "pre-wrap",
+                                }}
+                            >
+                                {note}
+                            </Box>
+                        ) : null}
+                    </Box>
+                );
+            })}
+        </Box>
+    );
+
+    return (
+        <Box
+            sx={{
+                display: "flex",
+                alignItems: "flex-start",
+                flexShrink: 0,
+                ml: 0.5,
+                pt: "2px",
+            }}
+        >
+            <CyberTooltip
+                title={tip}
+                placement="top"
+                slotProps={{
+                    tooltip: {
+                        sx: {
+                            maxWidth: 300,
+                            textTransform: "none",
+                            letterSpacing: "normal",
+                        },
+                    },
+                }}
+            >
+                <BurdenMark
+                    filled
+                    size={22}
+                    showClock={false}
+                    aria-label={`Burdens activos: ${active.length}`}
+                />
+            </CyberTooltip>
+        </Box>
+    );
+}
+
+/** Icons tuned to what each ICON action *does* (not generic placeholders). */
 const STAT_ICONS = {
     sneak: VisibilityOffIcon,
-    traverse: DirectionsRunIcon,
-    sense: VisibilityIcon,
-    study: MenuBookIcon,
-    charm: FavoriteIcon,
-    command: CampaignIcon,
-    tinker: BuildIcon,
-    excel: GpsFixedIcon,
-    smash: FitnessCenterIcon,
-    endure: ShieldIcon,
+    traverse: HikingIcon,
+    sense: SensorsIcon,
+    study: AutoStoriesIcon,
+    charm: HandshakeIcon,
+    command: RecordVoiceOverIcon,
+    tinker: HandymanIcon,
+    excel: BalanceIcon,
+    smash: SportsMartialArtsIcon,
+    endure: HealthAndSafetyIcon,
 };
+
+const ACTION_MOD_OPTS = [
+    { key: "b1", delta: 1, label: "+1", accent: "boon" },
+    { key: "b2", delta: 2, label: "+2", accent: "boon" },
+    { key: "c1", delta: -1, label: "−1", accent: "curse" },
+    { key: "c2", delta: -2, label: "−2", accent: "curse" },
+];
 
 function TrackRow({ label, children, valueLabel }) {
     return (
@@ -119,7 +277,8 @@ function segToVit(segIndex, vitMax) {
 }
 
 /**
- * Segmented VIT ring only — portrait is display-only (no activate).
+ * Segmented VIT ring + portrait.
+ * Ring quarters adjust VIT. Portrait opens the character picker (lista).
  * Always 4 quarters. Filled = proportion of current VIT (bright).
  * Lost quarters stay crimson (damaged). Hover brightens a segment (clickable cue).
  */
@@ -129,6 +288,8 @@ function VitRingAvatar({
     vitCur = 0,
     vitMax = 4,
     onVitChange,
+    onPortraitClick,
+    portraitActive = false,
     dead = false,
 }) {
     const vmax = Math.max(1, Math.floor(Number(vitMax) || DEFAULT_VIT));
@@ -144,6 +305,7 @@ function VitRingAvatar({
     const gapDeg = 14;
     const sweep = (360 - gapDeg * VIT_RING_SEGMENTS) / VIT_RING_SEGMENTS;
     const startBase = -90;
+    const canPick = typeof onPortraitClick === "function";
 
     const handleSegClick = (e, segIndex) => {
         if (typeof onVitChange !== "function") return;
@@ -184,22 +346,22 @@ function VitRingAvatar({
     }
 
     return (
-        <CyberTooltip
-            title={dead ? "BREAK · VIT 0" : "Clic en un tramo del anillo"}
-            placement="top"
+        <Box
+            sx={{
+                position: "relative",
+                width: outer,
+                height: outer,
+                flexShrink: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                opacity: dead ? 0.72 : 1,
+                filter: dead ? "grayscale(0.55)" : "none",
+            }}
         >
-            <Box
-                sx={{
-                    position: "relative",
-                    width: outer,
-                    height: outer,
-                    flexShrink: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    opacity: dead ? 0.72 : 1,
-                    filter: dead ? "grayscale(0.55)" : "none",
-                }}
+            <CyberTooltip
+                title={dead ? "BREAK · VIT 0" : "Clic en un tramo del anillo · VIT"}
+                placement="top"
             >
                 <Box
                     component="svg"
@@ -256,19 +418,50 @@ function VitRingAvatar({
                         );
                     })}
                 </Box>
-                <Box
-                    sx={{
-                        position: "relative",
-                        zIndex: 1,
-                        pointerEvents: "none",
-                        borderRadius: "50%",
-                        overflow: "hidden",
-                    }}
-                >
-                    <CharAvatarButton char={char} active={!dead} size={size} />
-                </Box>
+            </CyberTooltip>
+            <Box
+                sx={{
+                    position: "relative",
+                    zIndex: 1,
+                    borderRadius: "50%",
+                    ...(canPick
+                        ? {
+                            animation: portraitActive
+                                ? "none"
+                                : "portraitHintPulse 2.8s ease-in-out infinite",
+                            "@keyframes portraitHintPulse": {
+                                "0%, 100%": {
+                                    boxShadow: `0 0 0 0 ${UI_COLORS.anomaly}00`,
+                                },
+                                "50%": {
+                                    boxShadow: `0 0 10px 1px ${UI_COLORS.anomaly}33`,
+                                },
+                            },
+                            "@media (prefers-reduced-motion: reduce)": {
+                                animation: "none",
+                            },
+                        }
+                        : {}),
+                }}
+            >
+                <CharAvatarButton
+                    char={char}
+                    active={!dead || portraitActive}
+                    size={size}
+                    title={
+                        dead
+                            ? "BREAK · clic para cambiar personaje"
+                            : "Cambiar personaje"
+                    }
+                    onClick={canPick
+                        ? (e) => {
+                            e.stopPropagation();
+                            onPortraitClick(e.currentTarget);
+                        }
+                        : undefined}
+                />
             </Box>
-        </CyberTooltip>
+        </Box>
     );
 }
 
@@ -976,61 +1169,238 @@ const glassBtnSx = (active) => ({
     },
 });
 
-function StatIconButton({ statDef, value, busy, onRoll }) {
+function ActionModChip({ label, active, accent, onClick }) {
+    return (
+        <Box
+            component="button"
+            type="button"
+            onClick={onClick}
+            aria-pressed={active}
+            sx={{
+                minWidth: 28,
+                height: 22,
+                px: 0.45,
+                borderRadius: "3px",
+                border: `1px solid ${active ? accent : UI_COLORS.border}`,
+                bgcolor: active ? `${accent}22` : "transparent",
+                color: active ? UI_COLORS.textPrimary : UI_COLORS.textSecondary,
+                fontFamily: TYPO.mono,
+                fontSize: "0.62rem",
+                lineHeight: 1,
+                cursor: "pointer",
+                transition: "border-color 0.12s, background-color 0.12s, color 0.12s",
+                "&:hover": {
+                    borderColor: accent,
+                    color: UI_COLORS.textPrimary,
+                },
+            }}
+        >
+            {label}
+        </Box>
+    );
+}
+
+/** Compact Boon / Curse strip + live pool preview for the Actions dock. */
+function ActionModsToolbar({ delta, onDelta, poolPreview }) {
+    return (
+        <Box
+            sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: 0.65,
+                minWidth: 0,
+                flexWrap: "wrap",
+                justifyContent: "flex-end",
+            }}
+        >
+            <CyberText
+                sx={{
+                    fontFamily: TYPO.mono,
+                    fontSize: "0.52rem",
+                    color: poolPreview?.isLowest ? UI_COLORS.danger : UI_COLORS.anomaly,
+                    letterSpacing: "0.02em",
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                }}
+            >
+                {poolPreview?.summary || "—"}
+            </CyberText>
+            <Box
+                role="group"
+                aria-label="Boon o Curse"
+                sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                }}
+            >
+                <CyberText
+                    sx={{
+                        fontFamily: TYPO.mono,
+                        fontSize: "0.4rem",
+                        letterSpacing: "0.1em",
+                        color: UI_COLORS.boon,
+                        userSelect: "none",
+                    }}
+                >
+                    BOON
+                </CyberText>
+                {ACTION_MOD_OPTS.slice(0, 2).map((opt) => (
+                    <ActionModChip
+                        key={opt.key}
+                        label={opt.label}
+                        active={delta === opt.delta}
+                        accent={UI_COLORS.boon}
+                        onClick={() => onDelta(opt.delta)}
+                    />
+                ))}
+                <CyberText
+                    sx={{
+                        fontFamily: TYPO.mono,
+                        fontSize: "0.42rem",
+                        color: UI_COLORS.textSecondary,
+                        px: 0.25,
+                        userSelect: "none",
+                    }}
+                >
+                    |
+                </CyberText>
+                <CyberText
+                    sx={{
+                        fontFamily: TYPO.mono,
+                        fontSize: "0.4rem",
+                        letterSpacing: "0.1em",
+                        color: UI_COLORS.danger,
+                        userSelect: "none",
+                    }}
+                >
+                    CURSE
+                </CyberText>
+                {ACTION_MOD_OPTS.slice(2).map((opt) => (
+                    <ActionModChip
+                        key={opt.key}
+                        label={opt.label}
+                        active={delta === opt.delta}
+                        accent={UI_COLORS.danger}
+                        onClick={() => onDelta(opt.delta)}
+                    />
+                ))}
+            </Box>
+        </Box>
+    );
+}
+
+/**
+ * Larger action tile: icon + short name + rating.
+ * Click rolls with the dock's current Boon/Curse.
+ */
+function ActionTile({ statDef, value, penance = 0, busy, onRoll }) {
     const Icon = STAT_ICONS[statDef.key] || CasinoIcon;
-    const n = Math.max(0, Math.floor(Number(value) || 0));
-    const tip = [
-        `${statDef.label || statDef.key}: ${n}`,
-        statDef.description,
-        n <= 0 ? "Click: 2d6 → mínimo" : `Click: ${n}d6 → máximo`,
-    ].filter(Boolean).join(" · ");
+    const base = Math.max(0, Math.floor(Number(value) || 0));
+    const pen = Math.max(0, Math.floor(Number(penance) || 0));
+    const n = effectiveActionDice(base, pen);
+    const label = String(statDef.label || statDef.key || "?").toUpperCase();
+    const purpose = (statDef.description || "").trim();
+    const tipBody = pen > 0
+        ? `${purpose || label}\n\nAction Penalty −${pen} (base ${base} → ${n})`.trim()
+        : purpose;
 
     return (
-        <CyberTooltip title={tip} placement="top">
-            <Badge
-                badgeContent={n}
-                color="default"
-                overlap="circular"
+        <CyberTooltip
+            title={
+                tipBody
+                    ? <HudRichTooltipTitle body={tipBody} />
+                    : <HudRichTooltipTitle title={label} />
+            }
+            placement="top"
+            slotProps={hudRichTooltipSlotProps}
+        >
+            <Box
+                component="button"
+                type="button"
+                disabled={busy}
+                onClick={() => onRoll?.(statDef)}
+                aria-label={`Tirar ${label}`}
                 sx={{
-                    "& .MuiBadge-badge": {
-                        fontFamily: "'Fira Code', monospace",
-                        fontSize: "0.55rem",
-                        minWidth: 16,
-                        height: 16,
-                        bgcolor: n <= 0 ? UI_COLORS.accentStrong : UI_COLORS.anomaly,
-                        color: "#0a0a12",
-                        border: `1px solid ${UI_COLORS.backgroundSecondary}`,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 0.25,
+                    minWidth: 0,
+                    width: "100%",
+                    height: 62,
+                    px: 0.35,
+                    py: 0.4,
+                    borderRadius: "4px",
+                    border: `1px solid ${UI_COLORS.border}`,
+                    bgcolor: "rgba(0,0,0,0.28)",
+                    color: UI_COLORS.textSecondary,
+                    cursor: busy ? "default" : "pointer",
+                    opacity: busy ? 0.55 : 1,
+                    transition: "border-color 0.12s, background-color 0.12s, color 0.12s, box-shadow 0.12s",
+                    "&:hover": busy ? {} : {
+                        color: UI_COLORS.textPrimary,
+                        borderColor: UI_COLORS.accent,
+                        bgcolor: `${UI_COLORS.accent}14`,
+                        boxShadow: `0 0 10px ${UI_COLORS.accent}33`,
+                    },
+                    "&:focus-visible": {
+                        outline: `1px solid ${UI_COLORS.anomaly}`,
+                        outlineOffset: 1,
                     },
                 }}
             >
-                <IconButton
-                    size="small"
-                    disabled={busy}
-                    onClick={onRoll}
+                <Box sx={{ position: "relative", lineHeight: 0 }}>
+                    {busy ? (
+                        <CircularProgress size={18} sx={{ color: UI_COLORS.anomaly }} />
+                    ) : (
+                        <Icon sx={{ fontSize: "1.35rem", color: "inherit" }} />
+                    )}
+                    <Box
+                        component="span"
+                        sx={{
+                            position: "absolute",
+                            top: -7,
+                            right: -10,
+                            minWidth: 15,
+                            height: 15,
+                            px: "3px",
+                            borderRadius: "8px",
+                            bgcolor: (n <= 0 || pen > 0) ? UI_COLORS.danger : UI_COLORS.anomaly,
+                            color: "#0a0a12",
+                            fontFamily: TYPO.mono,
+                            fontSize: "0.52rem",
+                            fontWeight: 700,
+                            lineHeight: "15px",
+                            textAlign: "center",
+                            border: `1px solid ${UI_COLORS.backgroundSecondary}`,
+                        }}
+                    >
+                        {n}
+                    </Box>
+                </Box>
+                <CyberText
                     sx={{
-                        width: 34,
-                        height: 34,
-                        borderRadius: 1,
-                        border: `1px solid ${UI_COLORS.border}`,
-                        bgcolor: VTT_HUD.glassBg,
-                        color: busy ? UI_COLORS.anomaly : UI_COLORS.textSecondary,
-                        backdropFilter: "blur(10px)",
-                        "&:hover": {
-                            color: UI_COLORS.accent,
-                            borderColor: UI_COLORS.accent,
-                            bgcolor: `${UI_COLORS.accent}16`,
-                        },
-                        "&.Mui-disabled": { opacity: 0.55 },
+                        fontFamily: TYPO.title,
+                        fontSize: "0.42rem",
+                        letterSpacing: "0.06em",
+                        color: "inherit",
+                        lineHeight: 1.1,
+                        maxWidth: "100%",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
                     }}
                 >
-                    {busy ? <CircularProgress size={14} sx={{ color: UI_COLORS.anomaly }} /> : <Icon sx={{ fontSize: "1.05rem" }} />}
-                </IconButton>
-            </Badge>
+                    {label}
+                </CyberText>
+            </Box>
         </CyberTooltip>
     );
 }
 
-/** Bottom dock: session life sheet + pins + dossier/mesh deep-links + macros. */
+/** Bottom-left: session life sheet + pin rail + dossier/actions/macros column. */
 export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbilityBar }) {
     const dispatch = useDispatch();
     const profile = useSelector((s) => s.player.profile);
@@ -1040,27 +1410,31 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
     const sheetCharacters = useSelector((s) => s.characters.list);
     const remotePools = useSelector((s) => s.game.sessionPools ?? {});
     const initiative = useSelector((s) => s.game.initiative);
+    const sheetOpen = useSelector((s) => !!s.ui.openDialogs?.sheet);
     const { resourceTracks, stats: statDefs } = useStatSystem(campaignId);
 
     const isDM = isDmRole(profile?.role);
     const [statsOpen, setStatsOpen] = useState(false);
     const [activateAnchor, setActivateAnchor] = useState(null);
     const [charMenu, setCharMenu] = useState(null); // { anchorEl, char }
+    /** Exclusive action mod: 0 | +1 | +2 | −1 | −2 */
+    const [actionDelta, setActionDelta] = useState(0);
+    const [statRolling, setStatRolling] = useState(false);
     const surfaceRef = useRef(null);
     // Ref lock — avoid setState flash on every icon while a roll is in flight.
     const rollingRef = useRef(null);
 
     const roster = useMemo(() => {
-        const byId = new Map(
-            listCampaignCharacters(charactersById, locations).map((c) => [c.id, c]),
+        const byId = buildCampaignCharacterMap(
+            charactersById,
+            locations,
+            sheetCharacters,
+            campaignId,
         );
-        (sheetCharacters || []).forEach((c) => {
-            if (c?.id && !byId.has(c.id)) byId.set(c.id, c);
-        });
         const all = [...byId.values()];
         const visible = isDM ? all : all.filter((c) => canControlToken(c, profile));
         return visible.sort((a, b) => (a.name || "").localeCompare(b.name || "", "es"));
-    }, [charactersById, locations, sheetCharacters, isDM, profile]);
+    }, [charactersById, locations, sheetCharacters, campaignId, isDM, profile]);
 
     const selectedId = profile?.activeCharacterId && roster.some((c) => c.id === profile.activeCharacterId)
         ? profile.activeCharacterId
@@ -1070,7 +1444,17 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         const base = roster.find((c) => c.id === selectedId) || null;
         if (!base) return null;
         const sheet = (sheetCharacters || []).find((c) => c.id === base.id);
-        return sheet ? { ...base, ...sheet } : base;
+        if (!sheet) return { ...base, burdens: normalizeBurdens(base.burdens) };
+        return {
+            ...base,
+            ...sheet,
+            // Don't let a sparse sheet stub wipe map/HUD token media.
+            imageUrl: sheet.imageUrl || base.imageUrl || null,
+            tokenImageUrl: sheet.tokenImageUrl || base.tokenImageUrl || null,
+            tokenCrop: sheet.tokenCrop || base.tokenCrop || null,
+            burdens: mergeBurdensPreferFilled(sheet.burdens, base.burdens),
+            macroBar: mergeMacroBarPreferFilled(sheet.macroBar, base.macroBar),
+        };
     }, [roster, selectedId, sheetCharacters]);
 
     const activeInitEntry = useMemo(() => {
@@ -1092,19 +1476,34 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         return true;
     }, [activeInitEntry, charactersById, roster, profile, isDM, selectedId]);
 
-    const { pinnedIds, togglePin, pinCharacter } = usePinnedCharacters(profile?.uid, campaignId);
+    const { pinnedIds, togglePin } = usePinnedCharacters(profile?.uid, campaignId);
 
-    const pinnedChars = useMemo(() => {
-        return pinnedIds
-            .map((id) => roster.find((c) => c.id === id))
-            .filter(Boolean);
-    }, [pinnedIds, roster]);
+    /**
+     * Session-activated characters (≠ pins). Stay visible above the HUD when
+     * another character is active so switching never "eats" the rest.
+     */
+    const [activatedIds, setActivatedIds] = useState([]);
 
-    /** Pinned characters that are not the active HUD selection — shown above the surface. */
-    const extraPinnedChars = useMemo(
-        () => pinnedChars.filter((c) => c.id !== selectedId),
-        [pinnedChars, selectedId],
-    );
+    useEffect(() => {
+        if (!selectedId) return;
+        setActivatedIds((prev) => (prev.includes(selectedId) ? prev : [...prev, selectedId]));
+    }, [selectedId]);
+
+    /** Above the surface: activated and/or pinned, excluding the one in the main HUD. */
+    const stripChars = useMemo(() => {
+        const order = [];
+        const seen = new Set();
+        const push = (id) => {
+            if (!id || id === selectedId || seen.has(id)) return;
+            const c = roster.find((x) => x.id === id);
+            if (!c) return;
+            seen.add(id);
+            order.push(c);
+        };
+        activatedIds.forEach(push);
+        pinnedIds.forEach(push);
+        return order;
+    }, [activatedIds, pinnedIds, roster, selectedId]);
 
     const openCharMenu = (e, char) => {
         if (!char) return;
@@ -1117,6 +1516,10 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
 
     const openActivatePicker = (anchor) => {
         setActivateAnchor(anchor || surfaceRef.current);
+    };
+
+    const toggleActivatePicker = (anchor) => {
+        setActivateAnchor((prev) => (prev ? null : (anchor || surfaceRef.current)));
     };
 
     const { combatStats } = useResolvedCombatStats(selected);
@@ -1179,7 +1582,7 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         if (!profile?.uid || !charId) return;
         dispatch(setActiveCharacterId(charId));
         dispatch(persistActiveCharacter({ uid: profile.uid, characterId: charId }));
-        pinCharacter(charId);
+        setActivatedIds((prev) => (prev.includes(charId) ? prev : [...prev, charId]));
     };
 
     const handleDeactivate = () => {
@@ -1236,19 +1639,35 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         setTrack("effort", { current: next, exhausted: next >= effortMax });
     };
 
-    const handleStatRoll = async (statDef) => {
+    const handleActionDelta = (next) => {
+        setActionDelta((prev) => (prev === next ? 0 : next));
+    };
+
+    const handleActionRoll = async (statDef) => {
         if (!campaignId || !selected || !statDef?.key || rollingRef.current) return;
-        const value = selected.stats?.[statDef.key] ?? 0;
+        const base = selected.stats?.[statDef.key] ?? 0;
+        const penance = getActionPenance(selected.burdens, statDef.key);
+        const value = effectiveActionDice(base, penance);
+        const boons = actionDelta > 0 ? actionDelta : 0;
+        const curses = actionDelta < 0 ? -actionDelta : 0;
         rollingRef.current = statDef.key;
+        setStatRolling(true);
         try {
-            await rollStatInChat(campaignId, profile, selected, statDef, value);
+            await rollStatInChat(campaignId, profile, selected, statDef, value, { boons, curses });
         } catch (err) {
             console.error(err);
             dispatch(showSnackbar({ message: "No se pudo publicar la tirada", severity: "error" }));
         } finally {
             rollingRef.current = null;
+            setStatRolling(false);
         }
     };
+
+    const actionModsPreview = useMemo(() => {
+        if (actionDelta === 0) return { summary: "base", isLowest: false };
+        if (actionDelta > 0) return { summary: `+${actionDelta} boon`, isLowest: false };
+        return { summary: `${actionDelta} curse`, isLowest: true };
+    }, [actionDelta]);
 
     if (!profile || roster.length === 0) return null;
 
@@ -1256,6 +1675,7 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
     const hasStats = (statDefs || []).length > 0;
 
     return (
+        <>
         <Box
             data-no-token-drop
             sx={{
@@ -1266,7 +1686,7 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                 pointerEvents: "auto",
                 display: "flex",
                 alignItems: "flex-end",
-                gap: 0.75,
+                gap: 0.55,
                 maxWidth: "calc(100vw - 32px)",
             }}
         >
@@ -1316,7 +1736,7 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                         </CyberTitle>
                     </Box>
                 )}
-                {(extraPinnedChars.length > 0 || !selected) && (
+                {(stripChars.length > 0 || !selected) && (
                 <Box
                     sx={{
                         display: "flex",
@@ -1327,8 +1747,9 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                         flexWrap: "wrap",
                     }}
                 >
-                    {extraPinnedChars.map((c) => {
+                    {stripChars.map((c) => {
                         const hp = resolvePinHp(c);
+                        const isPinned = pinnedIds.includes(c.id);
                         return (
                             <Box
                                 key={c.id}
@@ -1343,7 +1764,7 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                                 <CharAvatarButton
                                     char={c}
                                     active={false}
-                                    pinned
+                                    pinned={isPinned}
                                     size={34}
                                     title={`${c.name || "—"} · clic activar · menú contextual`}
                                     onClick={() => handleSelect(c.id)}
@@ -1385,13 +1806,22 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
 
                 {selected && (
                 <Box
+                    sx={{
+                        display: "flex",
+                        alignItems: "stretch",
+                        gap: 0.55,
+                        minWidth: 0,
+                    }}
+                >
+                <Box
                     ref={surfaceRef}
                     onContextMenu={(e) => openCharMenu(e, selected)}
                     sx={{
                         position: "relative",
-                        minWidth: 260,
-                        maxWidth: 320,
-                        p: "10px 12px",
+                        minWidth: 280,
+                        maxWidth: 340,
+                        minHeight: COMBAT_DOCK_MIN_HEIGHT,
+                        p: "12px 14px",
                         borderRadius: `${VTT_HUD.borderRadius}px`,
                         border: `1px solid ${isBroken ? VIT_RED : vitCur <= 1 ? UI_COLORS.accentStrong : VTT_HUD.glassBorder}`,
                         bgcolor: VTT_HUD.glassBg,
@@ -1403,19 +1833,23 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                                 : "0 0 20px rgba(255,102,255,0.06)",
                         display: "flex",
                         flexDirection: "column",
-                        gap: 0.75,
+                        justifyContent: "center",
+                        gap: 1,
                         flexShrink: 0,
                         overflow: "hidden",
+                        boxSizing: "border-box",
                     }}
                 >
                     <SurfaceCrackOverlay vitCur={vitCur} vitMax={vitMax} />
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1, position: "relative", zIndex: 1 }}>
                         <VitRingAvatar
                             char={selected}
-                            size={46}
+                            size={50}
                             vitCur={vitCur}
                             vitMax={vitMax}
                             onVitChange={handleVitChange}
+                            onPortraitClick={toggleActivatePicker}
+                            portraitActive={Boolean(activateAnchor)}
                             dead={isDead}
                         />
                         <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -1471,6 +1905,7 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                                 </Box>
                             )}
                         </Box>
+                        <ActiveBurdenIcons burdens={selected.burdens} character={selected} />
                     </Box>
 
                     <Box sx={{ position: "relative", zIndex: 1 }}>
@@ -1508,6 +1943,63 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                     </TrackRow>
                     </Box>
                 </Box>
+
+                <Box
+                    sx={{
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        alignSelf: "stretch",
+                        flexShrink: 0,
+                        py: "2px",
+                    }}
+                >
+                    <CyberTooltip title="Abrir dossier" placement="right">
+                        <IconButton
+                            size="small"
+                            onClick={() => dispatch(openCharacterSheet({ tab: "IDENTIDAD" }))}
+                            aria-pressed={sheetOpen}
+                            aria-label="Abrir dossier"
+                            sx={glassBtnSx(sheetOpen)}
+                        >
+                            <BadgeIcon sx={{ fontSize: "1.1rem" }} />
+                        </IconButton>
+                    </CyberTooltip>
+                    {hasStats && (
+                        <CyberTooltip
+                            title={statsOpen ? "Ocultar actions" : "Actions (tiradas)"}
+                            placement="right"
+                        >
+                            <IconButton
+                                size="small"
+                                onClick={() => setStatsOpen((v) => !v)}
+                                aria-pressed={statsOpen}
+                                aria-label="Panel de actions"
+                                sx={glassBtnSx(statsOpen)}
+                            >
+                                <QueryStatsIcon sx={{ fontSize: "1.15rem" }} />
+                            </IconButton>
+                        </CyberTooltip>
+                    )}
+                    {canToggleAbilities && (
+                        <CyberTooltip
+                            title={abilityBarOpen ? "Cerrar macros" : "Macros / habilidades"}
+                            placement="right"
+                        >
+                            <IconButton
+                                size="small"
+                                onClick={onToggleAbilityBar}
+                                aria-pressed={abilityBarOpen}
+                                aria-label="Barra de macros y habilidades"
+                                sx={glassBtnSx(abilityBarOpen)}
+                            >
+                                <BoltIcon sx={{ fontSize: "1.15rem" }} />
+                            </IconButton>
+                        </CyberTooltip>
+                    )}
+                </Box>
+                </Box>
                 )}
 
                 <CharHudContextMenu
@@ -1524,122 +2016,46 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                     onCureBreak={handleCureBreak}
                 />
             </Box>
+        </Box>
 
-            {selected && (
-            <Box
-                sx={{
-                    display: "flex",
-                    alignItems: "flex-end",
-                    gap: 0.65,
-                    minWidth: 0,
-                    pb: 0.15,
-                }}
-            >
-                {hasStats && (
-                    <Box
-                        sx={{
-                            display: "flex",
-                            flexDirection: "column",
-                            alignItems: "flex-start",
-                            gap: 0.55,
-                        }}
-                    >
-                        {statsOpen && (
+        {selected && (abilityBarOpen || statsOpen) && (
+            <AbilityHotbar
+                open={abilityBarOpen}
+                character={selected}
+                actionsToolbar={
+                    statsOpen && hasStats ? (
+                        <ActionModsToolbar
+                            delta={actionDelta}
+                            onDelta={handleActionDelta}
+                            poolPreview={actionModsPreview}
+                        />
+                    ) : null
+                }
+                actionsSlot={
+                    statsOpen && hasStats ? (
                             <Box
                                 sx={{
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    gap: 0.45,
-                                    p: 0.65,
-                                    borderRadius: `${VTT_HUD.borderRadius}px`,
-                                    border: `1px solid ${VTT_HUD.glassBorder}`,
-                                    bgcolor: VTT_HUD.glassBg,
-                                    backdropFilter: "blur(14px)",
-                                    boxShadow: "0 0 18px rgba(255,102,255,0.08)",
-                                    animation: "charStatsPanelIn 0.18s ease",
-                                    "@keyframes charStatsPanelIn": {
-                                        from: { opacity: 0, transform: "translateY(6px)" },
-                                        to: { opacity: 1, transform: "translateY(0)" },
-                                    },
-                                    "@media (prefers-reduced-motion: reduce)": {
-                                        animation: "none",
-                                    },
+                                    display: "grid",
+                                    gridTemplateColumns: "repeat(10, minmax(0, 1fr))",
+                                    gap: 0.55,
+                                    width: "100%",
                                 }}
                             >
-                                <CyberText
-                                    sx={{
-                                        fontFamily: "monospace",
-                                        fontSize: "0.48rem",
-                                        letterSpacing: "0.12em",
-                                        color: UI_COLORS.anomaly,
-                                    }}
-                                >
-                                    STATS
-                                </CyberText>
-                                <Box
-                                    sx={{
-                                        // 10 ICON stats → 4+4+2 across 3 rows
-                                        display: "grid",
-                                        gridTemplateColumns: "repeat(4, auto)",
-                                        gridTemplateRows: "repeat(3, auto)",
-                                        gap: 0.4,
-                                        justifyContent: "start",
-                                    }}
-                                >
-                                    {(statDefs || []).map((def) => (
-                                        <StatIconButton
-                                            key={def.key}
-                                            statDef={def}
-                                            value={selected.stats?.[def.key] ?? 0}
-                                            busy={false}
-                                            onRoll={() => handleStatRoll(def)}
-                                        />
-                                    ))}
-                                </Box>
-                            </Box>
-                        )}
-                        <CyberTooltip
-                            title={statsOpen ? "Cerrar stats" : "Stats del personaje"}
-                            placement="top"
-                        >
-                            <IconButton
-                                size="small"
-                                onClick={() => setStatsOpen((v) => !v)}
-                                aria-pressed={statsOpen}
-                                aria-label="Panel de stats"
-                                sx={glassBtnSx(statsOpen)}
-                            >
-                                <QueryStatsIcon sx={{ fontSize: "1.15rem" }} />
-                            </IconButton>
-                        </CyberTooltip>
-                    </Box>
-                )}
-                {canToggleAbilities && (
-                    <>
-                        <CyberTooltip
-                            title={abilityBarOpen ? "Cerrar macros" : "Macros / habilidades"}
-                            placement="top"
-                        >
-                            <IconButton
-                                size="small"
-                                onClick={onToggleAbilityBar}
-                                aria-pressed={abilityBarOpen}
-                                aria-label="Barra de macros y habilidades"
-                                sx={glassBtnSx(abilityBarOpen)}
-                            >
-                                <BoltIcon sx={{ fontSize: "1.15rem" }} />
-                            </IconButton>
-                        </CyberTooltip>
-                        {abilityBarOpen && (
-                            <AbilityHotbar
-                                open={abilityBarOpen}
-                                character={selected}
-                            />
-                        )}
-                    </>
-                )}
-            </Box>
-            )}
-        </Box>
+                            {(statDefs || []).map((def) => (
+                                <ActionTile
+                                    key={def.key}
+                                    statDef={def}
+                                    value={selected.stats?.[def.key] ?? 0}
+                                    penance={getActionPenance(selected.burdens, def.key)}
+                                    busy={statRolling && rollingRef.current === def.key}
+                                    onRoll={handleActionRoll}
+                                />
+                            ))}
+                        </Box>
+                    ) : null
+                }
+            />
+        )}
+        </>
     );
 }

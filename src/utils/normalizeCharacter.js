@@ -5,6 +5,9 @@ import {
 } from "../constants/statSystem";
 import { normalizeMacroBar } from "../constants/macroBar";
 import { normalizeTokenCrop } from "./tokenImageFit";
+import { normalizeBurdens } from "./characterBurdens";
+import { resolveCharacterTypeTag } from "./characterRosterKind";
+import { normalizeBriefcase } from "./briefcaseGrid";
 
 /**
  * Convierte Timestamp de Firestore (SDK web u objeto {seconds,nanoseconds}) a ISO string
@@ -80,11 +83,20 @@ export function normalizeCharacterDoc(char) {
                 ? { ...emptyBond(), ...char.bond }
                 : { ...emptyBond() },
         bondPowers: Array.isArray(char.bondPowers) ? char.bondPowers : [],
+        burdens: normalizeBurdens(char.burdens),
+        briefcase: normalizeBriefcase(char.briefcase),
         relations: char.relations && typeof char.relations === "object" ? char.relations : {},
         speciesEntityId: typeof char.speciesEntityId === "string" && char.speciesEntityId ? char.speciesEntityId : null,
+        /** 1:1 FK to campaigns/{id}/wikiEntities PERSONAJE (narrative facet). */
+        narrativeEntityId:
+            typeof char.narrativeEntityId === "string" && char.narrativeEntityId
+                ? char.narrativeEntityId
+                : null,
         organizationMemberships: Array.isArray(char.organizationMemberships) ? char.organizationMemberships : [],
         unlockedAbilities: rawUnl,
         allAbilities,
         macroBar: normalizeMacroBar(char.macroBar),
+        // Persistable roster tag from canonical PJ list + explicit type.
+        type: resolveCharacterTypeTag(char),
     };
 }

@@ -12,10 +12,11 @@ import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import CheckIcon from "@mui/icons-material/Check";
 import SettingsIcon from "@mui/icons-material/Settings";
 import AutoStoriesIcon from "@mui/icons-material/AutoStories";
+import MenuBookIcon from "@mui/icons-material/MenuBook";
 import HubIcon from "@mui/icons-material/Hub";
 import SportsKabaddiIcon from "@mui/icons-material/SportsKabaddi";
 import { switchMap, setGridConfig, persistMapGridConfig } from "../../store/worldSlice";
-import { openDialog, openWikiOverlay, restoreDialog, showSnackbar } from "../../store/uiSlice";
+import { openDialog, openWikiOverlay, openNeuralLabOverlay, restoreDialog, showSnackbar } from "../../store/uiSlice";
 import { setActiveMapForPlayers, updateInitiative, normalizeInitiative } from "../../../firebase/services/gameService";
 import { CyberText, CyberTitle } from "../customs/CustomTexts";
 import { UI_COLORS } from "../../constants/uiColors";
@@ -52,7 +53,7 @@ export default function MapSelectorHUD({ children = null }) {
     const role = useSelector((s) => s.player.profile?.role);
     const gridConfig = useSelector((s) => s.world.gridConfig);
     const gameActiveMapId = useSelector((s) => s.game.activeMapId);
-    const { openDialogs, wikiOverlay } = useSelector((s) => s.ui);
+    const { openDialogs, wikiOverlay, neuralLabOverlay } = useSelector((s) => s.ui);
     const initiative = useSelector((s) => s.game.initiative);
 
     const [gridAnchor, setGridAnchor] = useState(null);
@@ -190,6 +191,17 @@ export default function MapSelectorHUD({ children = null }) {
                                     dispatch(openWikiOverlay({ mode: "list" }));
                                 }}
                                 sx={navIconSx(wikiOverlay.open)}
+                            >
+                                <MenuBookIcon sx={{ fontSize: "1.05rem" }} />
+                            </IconButton>
+                        </Tooltip>
+                    )}
+                    {isDM && (
+                        <Tooltip title="Neural Lab" placement="bottom">
+                            <IconButton
+                                size="small"
+                                onClick={() => dispatch(openNeuralLabOverlay())}
+                                sx={navIconSx(!!neuralLabOverlay?.open)}
                             >
                                 <HubIcon sx={{ fontSize: "1.05rem" }} />
                             </IconButton>

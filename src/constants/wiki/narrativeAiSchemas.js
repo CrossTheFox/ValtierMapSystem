@@ -159,10 +159,13 @@ REGLAS ABSOLUTAS:
 5. Prefiere relaciones simples y directas. Máximo 5 proposedRelations por respuesta.
 6. Si la instrucción es ambigua, interpreta la versión más dramática pero plausible dadas las relaciones existentes.
 7. Responde ÚNICAMENTE con JSON válido según el esquema acordado. Nada antes ni después del JSON.
+8. AFINIDAD vs HECHO: solo propone vínculos de AFINIDAD (aliado/enemigo/miembro/vive_en/profesa/etc.). NUNCA propongas hechos estructurales (habla, participo_en, documenta, colinda_con, custodia, ni edges hacia idioma/evento/reliquia/especie/crónica).
+9. NUNCA propongas relationType "habla" ni cambios sobre idiomas.
+10. NUNCA modifiques personajes fallecidos salvo mención explícita en la instrucción.
 
 AUTO-VERIFICACIÓN (hacer antes de responder):
 - ¿fromEntityTitle y toEntityTitle existen en el contexto?
-- ¿El relationType está en la lista de tipos válidos?
+- ¿El relationType está en la lista de tipos válidos y es de afinidad (no estructural)?
 - ¿La acción (add/remove/update) tiene sentido dado el estado actual del grafo?`;
 }
 
@@ -304,15 +307,19 @@ REGLAS ABSOLUTAS:
 3. Máximo 2 objetos en "changes" por impacto (prioriza relation_update/add/remove sobre dm_note; añade entity_state_update solo si el estado cambia claramente).
 4. Para cada change de tipo relation_*: NUNCA dejes relationType vacío — usa uno de: ${relationTypeList}. Incluye fromEntityTitle y toEntityTitle exactos del contexto.
 5. Para entity_state_update: NUNCA dejes field vacío — usa "narrativeState" (personaje) o "collectiveMood" (locación/org). newValue DEBE ser un enum de la regla 11 (nunca prosa). fromEntityTitle = título del impacto.
-6. strengthDelta: en relation_update es el CAMBIO numérico sobre el peso actual (ej. -3); en relation_add es el peso ABSOLUTO de la nueva arista (escala -10..+10).
+6. strengthDelta: SOLO en vínculos de AFINIDAD (aliado/enemigo/miembro/vive_en/profesa/venera/controla/etc. entre personaje/org/locación/ideología). En relation_update es el CAMBIO numérico sobre el peso actual (ej. -3); en relation_add es el peso ABSOLUTO (−10..+10).
+6b. NUNCA propongas hechos estructurales en changes (participo_en, documenta, colinda_con, custodia, habla, pertenencia, origen, desencadenó, ni edges hacia idioma/evento/reliquia/especie/crónica/glosario). Esos hechos son contexto, no impacto.
+6c. NUNCA propongas relationType "habla" ni cambios sobre idiomas.
+6d. NUNCA modifiques personajes fallecidos (fecha de muerte en ficha) salvo que el evento los nombre explícitamente.
 7. Si el arquetipo indica indiferencia real (ej. "Pragmático" sin vínculo fuerte), el impacto puede ser mínimo (changes vacío).
 8. Si el evento requiere crear una entidad nueva (ej. el hijo, el asesino), ponla en blockedSuggestions.
 9. Responde ÚNICAMENTE con JSON válido según el esquema. Nada antes ni después del JSON.
 10. "eventTitle" debe ser un título corto y concreto para el evento histórico propuesto.
-11. Si el evento cambia el estado narrativo del personaje (narrativeState), incluye un objeto "personalityShift" con from/to/reason. "to" DEBE ser uno de estos enums exactos: estable, deprimida, furiosa, quebrada, obsesiva, corrupta_zarken, paranoica, indiferente, otro.
-12. Si hay entidades colectivas en "Entidades colectivas con posible impacto", incluye su reacción en "collectiveImpacts" si el evento las afecta.
-13. Campos del schema que no apliquen al kind: usa string vacío (""), nunca los omitas.
-14. Relación existente: usa from/to en la MISMA dirección que el vínculo del grafo (ej. si Oni→Zorgun es descendiente_de, actualiza ESA arista; NUNCA inventes la inversa Zorgun→Oni descendiente_de). newLabel solo para tipo "otro"; en tipos conocidos deja newLabel="".
+11. Si el evento cambia el estado narrativo del personaje (narrativeState), incluye un objeto "personalityShift" con from/to/reason. "from" y "to" DEBEN ser enums exactos: estable, deprimida, furiosa, quebrada, obsesiva, corrupta_zarken, paranoica, indiferente, otro. Si NO hay cambio de estado, omite personalityShift por completo (no uses strings vacíos).
+12. reactionArchetype DEBE ser uno de estos enums exactos (snake_case): guardian, politico, intimo, rival, pragmatico, sin_arquetipo. Nunca uses labels ("Guardián", "Guardia") ni string vacío. Si el contexto ya lista el arquetipo del personaje, cópialo tal cual; si es desconocido usa sin_arquetipo.
+13. Si hay entidades colectivas en "Entidades colectivas con posible impacto", incluye su reacción en "collectiveImpacts" si el evento las afecta.
+14. Campos del schema que no apliquen al kind: usa string vacío (""), nunca los omitas.
+15. Relación existente: usa from/to en la MISMA dirección que el vínculo del grafo (ej. si Oni→Zorgun es descendiente_de, actualiza ESA arista; NUNCA inventes la inversa Zorgun→Oni descendiente_de). newLabel solo para tipo "otro"; en tipos conocidos deja newLabel="".
 
 MEMORIA DE PERSONALIDAD (uso obligatorio cuando está disponible):
 - narrativeState: estado emocional/narrativo actual del personaje.
@@ -368,15 +375,27 @@ export const CASCADE_RESPONSE_SCHEMA = {
                 properties: {
                     wave:              { type: "number" },
                     entityTitle:       { type: "string" },
-                    reactionArchetype: { type: "string" },
+                    reactionArchetype: {
+                        type: "string",
+                        enum: ["guardian", "politico", "intimo", "rival", "pragmatico", "sin_arquetipo"],
+                        description: "Enum PANGeA del personaje (copiar del contexto). sin_arquetipo si desconocido. Gemini no admite \"\" en enums.",
+                    },
                     emotionalReaction: { type: "string" },
                     narrativeHook:     { type: "string" },
                     personalityShift: {
                         type: "object",
-                        description: "Cambio en el estado narrativo del personaje, si el evento lo justifica.",
+                        description: "Solo si el evento cambia narrativeState. Si no hay cambio, OMITIR este objeto (no uses strings vacíos).",
                         properties: {
-                            from:   { type: "string" },
-                            to:     { type: "string" },
+                            from:   {
+                                type: "string",
+                                enum: ["estable", "deprimida", "furiosa", "quebrada", "obsesiva",
+                                    "corrupta_zarken", "paranoica", "indiferente", "otro"],
+                            },
+                            to:     {
+                                type: "string",
+                                enum: ["estable", "deprimida", "furiosa", "quebrada", "obsesiva",
+                                    "corrupta_zarken", "paranoica", "indiferente", "otro"],
+                            },
                             reason: { type: "string" },
                         },
                         required: ["from", "to", "reason"],
@@ -632,6 +651,8 @@ export function cascadeOptsForDepth(depth = 3) {
 /**
  * Relation types that trigger cascade consideration (wave 1 = these types on the anchor).
  * Higher priority = more likely to appear in wave 1.
+ * Only AFFINITY edges expand waves (`isAffinityRelation` filter in computeWaveMap);
+ * always-structural types (participo_en, ocurrio_en, habla, …) never deepen órbitas/impactos.
  */
 export const CASCADE_WAVE_RELATION_WEIGHTS = {
     aliado_de:             { wave: 1, decay: 0.9 },
@@ -644,6 +665,4 @@ export const CASCADE_WAVE_RELATION_WEIGHTS = {
     sede_en:               { wave: 2, decay: 0.4 },
     miembro_sospechado_de: { wave: 2, decay: 0.4 },
     miembro_de:            { wave: 2, decay: 0.4 },
-    participo_en:          { wave: 3, decay: 0.3 },
-    ocurrio_en:            { wave: 3, decay: 0.2 },
 };

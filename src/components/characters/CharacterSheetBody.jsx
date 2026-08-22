@@ -5,11 +5,12 @@ import { UI_COLORS } from "../../constants/uiColors";
 import { normalizeSheetTab } from "./CharacterSheetTabs";
 import DossierIdView from "./DossierIdView";
 import DossierKitView from "./DossierKitView";
+import DossierNarrativeView from "./DossierNarrativeView";
 import CharTreeTab from "../tabs/subtabs/CharTreeTab";
 
 /**
- * Dossier Holodeck body — routes to ID / KIT / MESH views.
- * Tabs live in the parent chrome; this component is pure content.
+ * Dossier Holodeck body — routes to ID / KIT / MESH / NAR views.
+ * Inventory lives as a drawer inside KIT. Tabs live in the parent chrome.
  */
 export default function CharacterSheetBody({
     character,
@@ -17,6 +18,7 @@ export default function CharacterSheetBody({
     onTabChange,
     kitView = "tree",
     onKitViewChange,
+    initialMaletinOpen = false,
     statDefinitions = [],
     maxStat = 4,
     wikiEntities = [],
@@ -55,13 +57,20 @@ export default function CharacterSheetBody({
             )}
 
             {tab === "KIT" && (
-                <DossierKitView character={character} />
+                <DossierKitView
+                    character={character}
+                    initialMaletinOpen={initialMaletinOpen}
+                />
             )}
 
             {tab === "MESH" && (
                 <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                     <CharTreeTab character={character} compactChrome />
                 </Box>
+            )}
+
+            {tab === "NARRATIVA" && (
+                <DossierNarrativeView character={character} />
             )}
         </Box>
     );

@@ -59,6 +59,37 @@ export function snapToGridCenter(x, y, cellSize) {
     };
 }
 
+/**
+ * How many cells on a side the token occupies (Large=2×2, Huge=3×3).
+ * Small/normal still occupy 1 cell for snap purposes.
+ */
+export function resolveTokenFootprintCells(sizeKey) {
+    const mult = TOKEN_SIZE_MULTIPLIERS[sizeKey] ?? 1;
+    return Math.max(1, Math.round(mult));
+}
+
+/**
+ * Snap a token so its N×N footprint aligns to grid corners (top-left anchored).
+ * Stored position remains the token center:
+ * - 1×1 → cell center
+ * - 2×2 → middle vertex of the four cells
+ * - 3×3 → center of the middle cell
+ */
+export function snapTokenToGrid(x, y, cellSize, sizeKey = "normal") {
+    const size = cellSize > 0 ? cellSize : DEFAULT_GRID_CELL_PX;
+    const cells = resolveTokenFootprintCells(sizeKey);
+    if (cells <= 1) {
+        return snapToGridCenter(x, y, size);
+    }
+    // Nearest footprint whose center is closest to (x, y).
+    const col = Math.round(x / size - cells / 2);
+    const row = Math.round(y / size - cells / 2);
+    return {
+        x: (col + cells / 2) * size,
+        y: (row + cells / 2) * size,
+    };
+}
+
 /** Grid column/row indices for a world point (cell containing the point). */
 export function worldToCell(x, y, cellSize) {
     const size = cellSize > 0 ? cellSize : DEFAULT_GRID_CELL_PX;

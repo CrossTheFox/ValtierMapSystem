@@ -16,7 +16,7 @@ import { updateCampaignElement, createCampaignElement } from '../../../../fireba
 import { deleteStorageFile, uploadCharacterImage } from '../../../../firebase/services/assetLoader';
 import { listClasesForCampaign, getClaseDoc } from '../../../../firebase/services/classService';
 import { createWikiEntity } from '../../../../firebase/services/wikiEntityService';
-import { linkWikiPersonajeToVtt } from '../../../../firebase/services/wikiVttLinkService';
+import { ensureNarrativeEntityForCharacter, linkWikiPersonajeToVtt } from '../../../../firebase/services/wikiVttLinkService';
 
 import { useDispatch, useSelector } from 'react-redux';
 import { showSnackbar } from '../../../store/uiSlice';
@@ -302,6 +302,13 @@ export default function CharactersSubTab({
                 );
 
                 await applyArchiveForCharacter(docRef.id, newData.name);
+
+                // Always ensure a narrative PERSONAJE exists (even if archiveMode === "skip")
+                await ensureNarrativeEntityForCharacter(
+                    currentCampaignId,
+                    { id: docRef.id, name: newData.name, imageUrl: newData.imageUrl, narrativeEntityId: null },
+                    uid
+                );
 
                 dispatch(showSnackbar({
                     message: "PROTOCOL_EXECUTED: NEW_ENTRY_SECURED",

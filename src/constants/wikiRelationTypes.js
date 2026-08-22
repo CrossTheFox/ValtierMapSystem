@@ -118,6 +118,50 @@ export function getAiRelationTypeList() {
 export const WIKI_RELATION_STRENGTH_MIN = -10;
 export const WIKI_RELATION_STRENGTH_MAX = 10;
 
+/** Affinity (Sync Meter / strengthDelta) vs structural (hecho plano, strength=0). */
+export const WIKI_RELATION_KIND = {
+  AFFINITY: "affinity",
+  STRUCTURAL: "structural",
+};
+
+/**
+ * Entity types that never carry affinity (edges touching them are structural).
+ * Dossier NAR Sync Meter excludes these as create targets.
+ */
+export const WIKI_STRUCTURAL_ENDPOINT_TYPES = new Set([
+  T.IDIOMA,
+  T.EVENTO_HISTORICO,
+  T.CRONICA,
+  T.ESPECIE,
+  T.RELIQUIA,
+  T.GLOSARIO,
+]);
+
+/** Entity types allowed as Sync Meter / Dossier creator targets. */
+export const WIKI_AFFINITY_DOSSIER_TARGET_TYPES = new Set([
+  T.PERSONAJE,
+  T.ORGANIZACION,
+  T.LOCACION,
+  T.IDEOLOGIA,
+]);
+
+/**
+ * Relation types that are always structural (no Sync Meter), regardless of endpoints.
+ * AI must not propose `habla` / idioma changes.
+ */
+export const WIKI_ALWAYS_STRUCTURAL_RELATION_TYPES = new Set([
+  WIKI_RELATION_TYPES.HABLA,
+  WIKI_RELATION_TYPES.DOCUMENTA,
+  WIKI_RELATION_TYPES.PARTICIPO_EN,
+  WIKI_RELATION_TYPES.OCURRIO_EN,
+  WIKI_RELATION_TYPES.COLINDA_CON,
+  WIKI_RELATION_TYPES.PERTENECIENTE_A,
+  WIKI_RELATION_TYPES.ORIGEN_DE,
+  WIKI_RELATION_TYPES.DESENCADENO,
+  WIKI_RELATION_TYPES.CUSTODIA,
+  WIKI_RELATION_TYPES.HABITA_EN,
+]);
+
 export const WIKI_RELATION_DEFAULT_STRENGTH = {
   [WIKI_RELATION_TYPES.ALIADO_DE]: 7,
   [WIKI_RELATION_TYPES.ENEMIGO_DE]: -8,
@@ -131,7 +175,7 @@ export const WIKI_RELATION_DEFAULT_STRENGTH = {
   [WIKI_RELATION_TYPES.RELACIONADO_CON]: 0,
   [WIKI_RELATION_TYPES.ORIGEN_DE]: 0,
   [WIKI_RELATION_TYPES.OCURRIO_EN]: 0,
-  [WIKI_RELATION_TYPES.PARTICIPO_EN]: 4,
+  [WIKI_RELATION_TYPES.PARTICIPO_EN]: 0,
   [WIKI_RELATION_TYPES.DESENCADENO]: 0,
   [WIKI_RELATION_TYPES.SUCESOR_DE]: 0,
   [WIKI_RELATION_TYPES.DESCENDIENTE_DE]: 0,
@@ -153,6 +197,131 @@ const R = WIKI_RELATION_TYPES;
 /** @param {string} fromType @param {string} toType */
 function pairKey(fromType, toType) {
   return `${fromType}::${toType}`;
+}
+
+/**
+ * Classify an edge as affinity (valued Sync Meter) or structural (fact, strength=0).
+ * @param {{ relationType?: string, fromEntityType?: string|null, toEntityType?: string|null }} args
+ * @returns {'affinity'|'structural'}
+ */
+export function getRelationKind({ relationType, fromEntityType = null, toEntityType = null } = {}) {
+  const type = relationType || "";
+  if (WIKI_ALWAYS_STRUCTURAL_RELATION_TYPES.has(type)) {
+    return WIKI_RELATION_KIND.STRUCTURAL;
+  }
+  if (
+    (fromEntityType && WIKI_STRUCTURAL_ENDPOINT_TYPES.has(fromEntityType))
+    || (toEntityType && WIKI_STRUCTURAL_ENDPOINT_TYPES.has(toEntityType))
+  ) {
+    return WIKI_RELATION_KIND.STRUCTURAL;
+  }
+  return WIKI_RELATION_KIND.AFFINITY;
+}
+
+/** @param {{ relationType?: string, fromEntityType?: string|null, toEntityType?: string|null }} args */
+export function isStructuralRelation(args) {
+  return getRelationKind(args) === WIKI_RELATION_KIND.STRUCTURAL;
+}
+
+/** @param {{ relationType?: string, fromEntityType?: string|null, toEntityType?: string|null }} args */
+export function isAffinityRelation(args) {
+  return getRelationKind(args) === WIKI_RELATION_KIND.AFFINITY;
+}
+
+/** Clamp −10…+10; structural edges always resolve to 0. */
+export function resolveRelationStrength({
+  relationType,
+  fromEntityType = null,
+  toEntityType = null,
+  strength,
+} = {}) {
+  if (isStructuralRelation({ relationType, fromEntityType, toEntityType })) return 0;
+  const n = Number(strength);
+  if (Number.isNaN(n)) return 0;
+  return Math.max(
+    WIKI_RELATION_STRENGTH_MIN,
+    Math.min(WIKI_RELATION_STRENGTH_MAX, Math.round(n))
+  );
+}
+
+/**
+ * Default strength for create UI / AI — 0 when structural.
+ * @param {string} relationType
+ * @param {string|null} [fromEntityType]
+ * @param {string|null} [toEntityType]
+ */
+export function defaultStrengthForRelation(relationType, fromEntityType = null, toEntityType = null) {
+  if (isStructuralRelation({ relationType, fromEntityType, toEntityType })) return 0;
+  return WIKI_RELATION_DEFAULT_STRENGTH[relationType] ?? 0;
+}
+
+/** @param {string} entityType */
+export function isAffinityDossierTargetType(entityType) {
+  return WIKI_AFFINITY_DOSSIER_TARGET_TYPES.has(entityType);
+}
+
+/** @param {string} entityType */
+export function isStructuralDossierTargetType(entityType) {
+  return WIKI_STRUCTURAL_ENDPOINT_TYPES.has(entityType);
+}
+
+/**
+ * Relation type options for Dossier NAR (affinity only).
+ * @param {object} fromEntity
+ * @param {object} toEntity
+ */
+export function getAffinityRelationTypeOptionsForContext(fromEntity, toEntity) {
+  return getRelationTypeOptionsForContext(fromEntity, toEntity).filter((opt) =>
+    isAffinityRelation({
+      relationType: opt.value,
+      fromEntityType: fromEntity?.entityType,
+      toEntityType: toEntity?.entityType,
+    })
+  );
+}
+
+/**
+ * Destinations allowed in Dossier creator (affinity targets with ≥1 affinity type).
+ * @param {object} fromEntity
+ * @param {object[]} entities
+ */
+export function filterAffinityRelatableEntities(fromEntity, entities = []) {
+  if (!fromEntity?.entityType) return [];
+  return entities.filter((candidate) => {
+    if (!candidate || candidate.id === fromEntity.id) return false;
+    if (!isAffinityDossierTargetType(candidate.entityType)) return false;
+    return getAffinityRelationTypeOptionsForContext(fromEntity, candidate).length > 0;
+  });
+}
+
+/**
+ * Relation type options that resolve as structural (hecho, strength=0).
+ * @param {object} fromEntity
+ * @param {object} toEntity
+ */
+export function getStructuralRelationTypeOptionsForContext(fromEntity, toEntity) {
+  return getRelationTypeOptionsForContext(fromEntity, toEntity).filter((opt) =>
+    isStructuralRelation({
+      relationType: opt.value,
+      fromEntityType: fromEntity?.entityType,
+      toEntityType: toEntity?.entityType,
+    })
+  );
+}
+
+/**
+ * Destinations for Dossier HECHOS (structural endpoints only: idioma, evento…).
+ * Orgs / lugares / personajes / ideologías van en RELACIONES (afinidad).
+ * @param {object} fromEntity
+ * @param {object[]} entities
+ */
+export function filterStructuralRelatableEntities(fromEntity, entities = []) {
+  if (!fromEntity?.entityType) return [];
+  return entities.filter((candidate) => {
+    if (!candidate || candidate.id === fromEntity.id) return false;
+    if (!isStructuralDossierTargetType(candidate.entityType)) return false;
+    return getStructuralRelationTypeOptionsForContext(fromEntity, candidate).length > 0;
+  });
 }
 
 /**
@@ -201,7 +370,10 @@ const WIKI_RELATION_PAIR_MATRIX = {
   [`${T.ORGANIZACION}::${T.ESPECIE}`]: [R.RELACIONADO_CON, R.OTRO],
   [`${T.ORGANIZACION}::${T.CRONICA}`]: [],
 
-  [`${T.LOCACION}::${T.LOCACION}`]: [R.PERTENECIENTE_A, R.COLINDA_CON, R.OTRO],
+  // Social affinity between places (cultural enmity / alliance) + geographic structure
+  [`${T.LOCACION}::${T.LOCACION}`]: [
+    R.PERTENECIENTE_A, R.COLINDA_CON, R.ALIADO_DE, R.ENEMIGO_DE, R.RELACIONADO_CON, R.OTRO,
+  ],
   [`${T.LOCACION}::${T.PERSONAJE}`]: [R.VIVE_EN],
   [`${T.LOCACION}::${T.ORGANIZACION}`]: [R.SEDE_EN],
   [`${T.LOCACION}::${T.RELIQUIA}`]: [R.CUSTODIA, R.RELACIONADO_CON, R.OTRO],
@@ -348,7 +520,7 @@ export function validateRelationCreate(fromEntity, toEntity, relationType) {
 }
 
 export function defaultStrengthForRelationType(relationType) {
-  return WIKI_RELATION_DEFAULT_STRENGTH[relationType] ?? 0;
+  return defaultStrengthForRelation(relationType);
 }
 
 const INCOMING_LABELS = {

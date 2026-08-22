@@ -3,8 +3,9 @@ import { useDispatch, useSelector } from "react-redux";
 import { useSearchParams } from "react-router-dom";
 import { Box } from "@mui/material";
 import { setSelectedCampaign, loadWorld } from "../store/worldSlice";
-import { openWikiOverlay } from "../store/uiSlice";
+import { openWikiOverlay, openNeuralLabOverlay } from "../store/uiSlice";
 import NarrativeWikiOverlay from "../components/wiki/NarrativeWikiOverlay";
+import CampaignNeuralLabOverlay from "../components/wiki/CampaignNeuralLabOverlay";
 import CyberLoader from "../components/animations/CyberLoader";
 import { UI_COLORS } from "../constants/uiColors";
 import { WIKI_AREA_IDS, DEFAULT_ARCHIVE_AREA, normalizeWikiAreaFilter } from "../constants/wiki";
@@ -36,14 +37,19 @@ export default function NarrativeArchivePage() {
             dispatch(loadWorld(paramCampaignId));
         }
 
+        const wantsNeuralLab = rawArea === "network" || rawArea === WIKI_AREA_IDS.NEURAL_LAB;
         const areaFilter = rawArea
-            ? normalizeWikiAreaFilter(rawArea === "network" ? WIKI_AREA_IDS.NEURAL_LAB : rawArea)
+            ? normalizeWikiAreaFilter(rawArea)
             : DEFAULT_ARCHIVE_AREA;
+
+        if (wantsNeuralLab) {
+            dispatch(openNeuralLabOverlay({ focusEntityId: entityId || null }));
+        }
 
         dispatch(
             openWikiOverlay({
-                mode,
-                entityId: entityId ?? null,
+                mode: wantsNeuralLab ? "list" : mode,
+                entityId: wantsNeuralLab ? null : (entityId ?? null),
                 areaFilter,
                 vttContext: null,
             })
@@ -98,5 +104,10 @@ export default function NarrativeArchivePage() {
         );
     }
 
-    return <NarrativeWikiOverlay popupMode />;
+    return (
+        <>
+            <NarrativeWikiOverlay popupMode />
+            <CampaignNeuralLabOverlay />
+        </>
+    );
 }

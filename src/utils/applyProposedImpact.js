@@ -13,7 +13,7 @@
  */
 
 import {
-    defaultStrengthForRelationType,
+    defaultStrengthForRelation,
     WIKI_RELATION_TYPES,
 } from "../constants/wikiRelationTypes.js";
 import { mergeCustomFields } from "./wikiCustomFields.js";
@@ -21,6 +21,7 @@ import { WIKI_ENTITY_TYPES } from "../constants/wikiEntityTypes.js";
 import {
     enrichRelationStrengthChange,
     formatStrengthChangeLabel,
+    isForbiddenLanguageRelation,
 } from "./resolveRelationStrengthChange.js";
 import {
     collectAffectedEntitiesFromImpact,
@@ -111,6 +112,11 @@ export async function applyProposedImpact({
                     details.push("omitido: falta relationType");
                     continue;
                 }
+                if (isForbiddenLanguageRelation(relType)) {
+                    skipped++;
+                    details.push("omitido: relaciones de idioma (habla) no se proponen");
+                    continue;
+                }
                 const fromEntityId = ch.resolvedEndpoints?.fromEntityId ?? ch.fromEntity?.id;
                 const toEntityId = ch.resolvedEndpoints?.toEntityId ?? ch.toEntity?.id;
                 if (!fromEntityId || !toEntityId) {
@@ -119,14 +125,22 @@ export async function applyProposedImpact({
                     continue;
                 }
 
+                const fromType = ch.fromEntity?.entityType ?? null;
+                const toType = ch.toEntity?.entityType ?? null;
+                const strengthValue = ch.proposedStrength
+                    ?? defaultStrengthForRelation(relType, fromType, toType);
+
                 const strengthLabel = formatStrengthChangeLabel(ch)
-                    ?? `peso ${ch.proposedStrength ?? 0}`;
+                    ?? `peso ${strengthValue}`;
                 const labelForCreate = sanitizeRelationLabel(relType, ch.newLabel, { forCreate: true });
                 const labelForUpdate = sanitizeRelationLabel(relType, ch.newLabel, { forCreate: false });
 
                 if (ch.existingRelationId && updateWikiRelation) {
                     const patch = {
-                        strength: ch.proposedStrength ?? defaultStrengthForRelationType(relType),
+                        strength: strengthValue,
+                        relationType: relType,
+                        fromEntityType: fromType,
+                        toEntityType: toType,
                     };
                     if (labelForUpdate !== undefined) {
                         patch.label = labelForUpdate;
@@ -153,7 +167,9 @@ export async function applyProposedImpact({
                             toEntityId,
                             relationType: relType,
                             label: labelForCreate ?? "",
-                            strength: ch.proposedStrength ?? defaultStrengthForRelationType(relType),
+                            strength: strengthValue,
+                            fromEntityType: fromType,
+                            toEntityType: toType,
                         },
                     })).unwrap();
                     liveRelations = [...liveRelations, created];
