@@ -32,24 +32,25 @@ import { cyberMenuItemSx, cyberMenuPaperSx, TYPO } from "../../constants/designS
 import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
 import { VTT_HUD } from "../../constants/vttHudTokens";
 import { useStatSystem } from "../../hooks/useStatSystem";
-import { useCharacterSessionPools } from "../../hooks/useCharacterSessionPools";
 import { usePinnedCharacters } from "../../hooks/usePinnedCharacters";
 import { useAssetUrl } from "../../hooks/useAssetUrl";
 import { useResolvedCombatStats } from "../../hooks/useResolvedCombatStats";
 import { setActiveCharacterId, persistActiveCharacter } from "../../store/playerSlice";
 import { showSnackbar, openCharacterSheet } from "../../store/uiSlice";
+import { usePersistedCharacterVitals } from "../../hooks/usePersistedCharacterVitals";
 import { canControlToken, isDmRole } from "../../utils/tokenControl";
 import {
     DEFAULT_VIT,
     buildCampaignCharacterMap,
-    resolveHpMax,
-    resolveVit,
-    resolveSessionHpMax,
-    applyHpWithVitCascade,
-    applyVitChange,
 } from "../../utils/characterCombat";
+import {
+    applyHpWithVitCascadeOnCharacter,
+    applyVitChangeOnCharacter,
+    normalizeCharacterVitals,
+    resolveCharacterHpMax,
+    resolveHpBrokenAfterChange,
+} from "../../utils/characterVitals";
 import { normalizeTokenCrop, tokenCropCss } from "../../utils/tokenImageFit";
-import { getSessionPools } from "../../utils/characterSessionPools";
 import { rollStatInChat } from "../../../firebase/services/chatService";
 import AbilityHotbar, { COMBAT_DOCK_MIN_HEIGHT } from "./AbilityHotbar";
 import BurdenMark from "../characters/BurdenMark";
@@ -1408,7 +1409,6 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
     const locations = useSelector((s) => s.world.locations);
     const charactersById = useSelector((s) => s.world.charactersById ?? {});
     const sheetCharacters = useSelector((s) => s.characters.list);
-    const remotePools = useSelector((s) => s.game.sessionPools ?? {});
     const initiative = useSelector((s) => s.game.initiative);
     const sheetOpen = useSelector((s) => !!s.ui.openDialogs?.sheet);
     const { resourceTracks, stats: statDefs } = useStatSystem(campaignId);
@@ -1523,59 +1523,34 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
     };
 
     const { combatStats } = useResolvedCombatStats(selected);
-    const vitMax = selected ? combatStats.vit : 4;
+    const vitMax = selected ? combatStats.vit : DEFAULT_VIT;
     const sheetHpMax = selected ? combatStats.hpMax : 16;
 
-    const combatTracks = useMemo(() => {
-        if (!selected) return [];
-        const effortBase = (resourceTracks || []).find((t) => t.key === "effort")
-            || { key: "effort", label: "Effort", maxDefault: 3, stateKey: "exhausted", stateLabel: "Exhausted" };
-        const effortMaxDefault = Math.max(1, Math.floor(Number(effortBase.maxDefault) || 3));
-        return [
-            { ...effortBase, key: "effort", maxDefault: effortMaxDefault, stateKey: "exhausted", stateLabel: "Exhausted" },
-            { key: "vit", label: "VIT", maxDefault: vitMax, defaultFull: true },
-            { key: "hp", label: "HP", maxDefault: sheetHpMax, defaultFull: true, stateKey: "broken", stateLabel: "Break" },
-        ];
-    }, [resourceTracks, vitMax, sheetHpMax, selected]);
-
     const effortMax = useMemo(() => {
-        const t = combatTracks.find((x) => x.key === "effort");
-        return Math.max(1, Math.floor(Number(t?.maxDefault) || 3));
-    }, [combatTracks]);
+        const effortBase = (resourceTracks || []).find((t) => t.key === "effort");
+        return Math.max(1, Math.floor(Number(effortBase?.maxDefault) || 3));
+    }, [resourceTracks]);
 
-    const { pools, setTrack, persist } = useCharacterSessionPools(selected?.id, combatTracks, { campaignId });
+    const remoteSessionPools = useSelector((s) => s.game?.sessionPools ?? {});
+
+    const { vitals, persistVitals } = usePersistedCharacterVitals(selected, { effortMax });
 
     const vitCur = selected
-        ? Math.min(Math.max(pools.vit?.current ?? vitMax, 0), vitMax)
+        ? Math.min(Math.max(Math.floor(Number(selected.vit ?? vitMax) || 0), 0), vitMax)
         : 0;
-    const sessionHpMax = selected ? resolveSessionHpMax(vitCur) : 0;
-    const hpCur = selected
-        ? Math.min(Math.max(pools.hp?.current ?? sessionHpMax, 0), sessionHpMax || 0)
-        : 0;
-    const hpPct = sessionHpMax > 0 ? (hpCur / sessionHpMax) * 100 : 0;
-    const effortCur = selected
-        ? Math.min(Math.max(pools.effort?.current ?? 0, 0), effortMax)
-        : 0;
-    const isBroken = Boolean(selected && pools.hp?.broken);
-    const isExhausted = Boolean(selected && (effortCur >= effortMax || pools.effort?.exhausted));
+    const hpCur = vitals?.hpCur ?? 0;
+    const hpPct = sheetHpMax > 0 ? (hpCur / sheetHpMax) * 100 : 0;
+    const effortCur = vitals?.effort?.current ?? 0;
+    const isBroken = Boolean(selected && vitals?.hpBroken);
+    const isExhausted = Boolean(selected && vitals?.effort?.exhausted);
     const isDead = Boolean(selected && vitCur <= 0);
 
     const resolvePinHp = (char) => {
-        const vmax = resolveVit(char);
-        const tracks = [
-            { key: "vit", label: "VIT", maxDefault: vmax, defaultFull: true },
-            { key: "hp", label: "HP", maxDefault: resolveHpMax(char), defaultFull: true },
-        ];
-        const remote = remotePools?.[char.id];
-        const local = getSessionPools(char.id, tracks);
-        const vCur = Math.min(
-            Math.max(Number(remote?.vit?.current ?? local?.vit?.current ?? vmax) || 0, 0),
-            vmax,
-        );
-        const max = resolveSessionHpMax(vCur);
-        const current = remote?.hp?.current ?? local?.hp?.current ?? max;
-        const cur = Math.min(Math.max(Number(current) || 0, 0), max || 1);
-        return { cur, max, pct: max > 0 ? (cur / max) * 100 : 0 };
+        const hpMax = resolveCharacterHpMax(char);
+        const poolEntry = char?.id ? remoteSessionPools[char.id] : null;
+        const normalized = normalizeCharacterVitals(char, { sessionPoolEntry: poolEntry });
+        const cur = Math.min(Math.max(normalized.hpCur, 0), hpMax || 1);
+        return { cur, max: hpMax, pct: hpMax > 0 ? (cur / hpMax) * 100 : 0 };
     };
 
     const handleSelect = (charId) => {
@@ -1593,50 +1568,40 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
     };
 
     const handleVitChange = (nextVit) => {
-        if (!selected) return;
+        if (!selected || !vitals) return;
         const prevHp = hpCur;
-        const result = applyVitChange(pools, vitMax, nextVit);
-        // Break only when current HP crosses to 0 — not merely from losing VIT.
-        const broken = prevHp > 0 && result.hp.current <= 0
-            ? true
-            : Boolean(pools.hp?.broken);
-        persist({
-            ...pools,
+        const result = applyVitChangeOnCharacter(selected, nextVit, null, hpCur);
+        persistVitals({
             vit: result.vit,
-            hp: { ...result.hp, broken },
+            hpCur: result.hpCur,
+            hpBroken: resolveHpBrokenAfterChange(vitals.hpBroken, prevHp, result.hpCur),
         });
     };
 
     const handleHpBarClick = (e) => {
-        if (!selected || sessionHpMax <= 0) return;
+        if (!selected || !vitals || sheetHpMax <= 0) return;
         const rect = e.currentTarget.getBoundingClientRect();
         const ratio = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
-        const nextHp = Math.round(ratio * sessionHpMax);
-        // Break arms when HP is driven to 0 (once), even if ICON VIT-cascade refills the bar.
-        const hitZero = nextHp <= 0;
-        const result = applyHpWithVitCascade(pools, vitMax, nextHp);
-        const broken = hitZero || result.hp.current <= 0
-            ? true
-            : Boolean(pools.hp?.broken);
-        persist({
-            ...pools,
+        const nextHp = Math.round(ratio * sheetHpMax);
+        const prevHp = hpCur;
+        const result = applyHpWithVitCascadeOnCharacter(selected, nextHp, null, hpCur);
+        persistVitals({
             vit: result.vit,
-            hp: { ...result.hp, broken },
+            hpCur: result.hpCur,
+            hpBroken: resolveHpBrokenAfterChange(vitals.hpBroken, prevHp, result.hpCur),
         });
     };
 
     const handleCureBreak = () => {
         if (!selected) return;
-        // Clear Break only — do not require / imply full VIT recovery.
-        persist({
-            ...pools,
-            hp: { ...(pools.hp || {}), current: hpCur, broken: false },
-        });
+        persistVitals({ hpBroken: false });
     };
 
     const handleEffortSet = (v) => {
         const next = Math.min(Math.max(Math.floor(Number(v) || 0), 0), effortMax);
-        setTrack("effort", { current: next, exhausted: next >= effortMax });
+        persistVitals({
+            effort: { current: next, exhausted: next >= effortMax },
+        });
     };
 
     const handleActionDelta = (next) => {
@@ -1909,7 +1874,7 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                     </Box>
 
                     <Box sx={{ position: "relative", zIndex: 1 }}>
-                    <TrackRow label="HP" valueLabel={`${hpCur}/${sessionHpMax}`}>
+                    <TrackRow label="HP" valueLabel={`${hpCur}/${sheetHpMax}`}>
                         <Box
                             sx={{
                                 flex: 1,

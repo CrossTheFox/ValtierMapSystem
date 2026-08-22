@@ -48,10 +48,14 @@ function mergeRemoteIntoTracks(characterId, resourceTracks, remoteEntry) {
     return out;
 }
 
+/** @deprecated Phase 03 — HP/VIT/Effort live on `characters/{id}`; do not use for vitals. */
+const DEPRECATED_VITAL_TRACK_KEYS = new Set(["hp", "vit", "effort"]);
+
 /**
- * Session combat pools (HP / Effort).
- * - Always mirrored to localStorage for offline resilience.
- * - When campaignId is set, also sync via game/{campaignId}.sessionPools for the table/DM.
+ * Session combat pools (legacy).
+ * @deprecated Phase 03 slice 1+: HP/VIT/Effort are persisted on `characters/{id}`.
+ * This hook remains for transitional UIs (SheetHpHud, SessionPoolHud) until slice 7 cleanup.
+ * Writes to hp/vit/effort tracks are ignored.
  */
 export function useCharacterSessionPools(characterId, resourceTracks, options = {}) {
     const campaignId = options.campaignId ?? null;
@@ -96,11 +100,25 @@ export function useCharacterSessionPools(characterId, resourceTracks, options = 
 
     const commit = useCallback(
         (next) => {
-            poolsRef.current = next;
-            mirroredRef.current = next;
-            setSessionPools(characterId, next);
-            setPools(next);
-            persistRemote(next);
+            const filtered = { ...next };
+            let skipped = false;
+            for (const key of DEPRECATED_VITAL_TRACK_KEYS) {
+                if (key in filtered) {
+                    delete filtered[key];
+                    skipped = true;
+                }
+            }
+            if (skipped && Object.keys(filtered).length === 0) {
+                console.warn(
+                    "[useCharacterSessionPools] hp/vit/effort writes ignored — use character vitals (phase-03)",
+                );
+                return;
+            }
+            poolsRef.current = filtered;
+            mirroredRef.current = filtered;
+            setSessionPools(characterId, filtered);
+            setPools(filtered);
+            persistRemote(filtered);
         },
         [characterId, persistRemote]
     );
@@ -116,6 +134,12 @@ export function useCharacterSessionPools(characterId, resourceTracks, options = 
     const setTrack = useCallback(
         (trackKey, partial) => {
             if (!characterId) return;
+            if (DEPRECATED_VITAL_TRACK_KEYS.has(trackKey)) {
+                console.warn(
+                    `[useCharacterSessionPools] setTrack("${trackKey}") ignored — use character vitals (phase-03)`,
+                );
+                return;
+            }
             const tracks = tracksRef.current || [];
             const track = tracks.find((t) => t.key === trackKey);
             const max = Math.max(track?.maxDefault ?? 3, 1);

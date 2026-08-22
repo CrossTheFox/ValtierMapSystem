@@ -425,6 +425,30 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                 payload.jobResources = liveDraft.jobResources;
                 reduxPatch.jobResources = liveDraft.jobResources;
             }
+            if (liveDraft.hpCur !== undefined) {
+                payload.hpCur = liveDraft.hpCur;
+                reduxPatch.hpCur = liveDraft.hpCur;
+            }
+            if (liveDraft.vigor !== undefined) {
+                payload.vigor = liveDraft.vigor;
+                reduxPatch.vigor = liveDraft.vigor;
+            }
+            if (liveDraft.effort !== undefined) {
+                payload.effort = liveDraft.effort;
+                reduxPatch.effort = liveDraft.effort;
+            }
+            if (liveDraft.turn !== undefined) {
+                payload.turn = liveDraft.turn;
+                reduxPatch.turn = liveDraft.turn;
+            }
+            if (liveDraft.conditions !== undefined) {
+                payload.conditions = liveDraft.conditions;
+                reduxPatch.conditions = liveDraft.conditions;
+            }
+            if (liveDraft.hpBroken !== undefined) {
+                payload.hpBroken = liveDraft.hpBroken;
+                reduxPatch.hpBroken = liveDraft.hpBroken;
+            }
             if (Object.keys(payload).length) {
                 await updateCharacterFields(selectedCharacter.id, payload);
                 dispatch(updateCharacterInList({ id: selectedCharacter.id, data: reduxPatch }));

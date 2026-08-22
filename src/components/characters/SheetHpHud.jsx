@@ -3,24 +3,25 @@ import { Box } from "@mui/material";
 import { CyberText } from "../customs/CustomTexts";
 import CyberTooltip from "../customs/CyberTooltip";
 import { UI_COLORS } from "../../constants/uiColors";
-import { useCharacterSessionPools } from "../../hooks/useCharacterSessionPools";
-import { resolveHpMax, resolveVit } from "../../utils/characterCombat";
+import { usePersistedCharacterVitals } from "../../hooks/usePersistedCharacterVitals";
+import { resolveCharacterHpMax, resolveCharacterVit, resolveHpBrokenAfterChange } from "../../utils/characterVitals";
 
 /**
- * Compact HP bar for character sheet header (session pool).
+ * Compact HP bar for character sheet header — reads/writes character.hpCur.
  */
 export default function SheetHpHud({ character }) {
-    const vit = resolveVit(character);
-    const hpMax = resolveHpMax(character);
-    const tracks = useMemo(
-        () => [{ key: "hp", label: "HP", maxDefault: hpMax, defaultFull: true }],
-        [hpMax]
-    );
-    const { pools, setTrack } = useCharacterSessionPools(character?.id, tracks);
+    const hpMax = resolveCharacterHpMax(character);
+    const vit = resolveCharacterVit(character);
+    const effortMax = 3;
+    const { vitals, persistVitals } = usePersistedCharacterVitals(character, { effortMax });
+
+    const hpCur = useMemo(() => {
+        if (!vitals) return hpMax;
+        return Math.min(Math.max(vitals.hpCur, 0), hpMax);
+    }, [vitals, hpMax]);
 
     if (!character?.id || hpMax <= 0) return null;
 
-    const hpCur = Math.min(Math.max(pools.hp?.current ?? hpMax, 0), hpMax);
     const hpPct = (hpCur / hpMax) * 100;
     const barColor = hpPct <= 25 ? "#ff3355" : hpPct <= 50 ? "#f97316" : UI_COLORS.anomaly;
 
@@ -60,7 +61,11 @@ export default function SheetHpHud({ character }) {
                     onClick={(e) => {
                         const rect = e.currentTarget.getBoundingClientRect();
                         const ratio = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
-                        setTrack("hp", { current: Math.round(ratio * hpMax) });
+                        const nextHp = Math.round(ratio * hpMax);
+                        persistVitals({
+                            hpCur: nextHp,
+                            hpBroken: resolveHpBrokenAfterChange(vitals?.hpBroken ?? false, hpCur, nextHp),
+                        });
                     }}
                 >
                     <Box
