@@ -20,16 +20,19 @@ import {
     setMacroSlot,
     withHexAlpha,
 } from "../../constants/macroBar";
-import { ABILITY_KINDS, normalizeAbilityKind } from "../../constants/abilityKinds";
-import { getAbilitiesByIds } from "../../../firebase/services/characterService";
 import { updateCharacterFields } from "../../../firebase/services/characterService";
-import { callAbilityInChat } from "../../../firebase/services/chatService";
+import { launchToChat } from "../../../firebase/services/launchToChat";
 import { setAbilityBarOpen, setMacroPage, showSnackbar } from "../../store/uiSlice";
 import { updateCharacterInList } from "../../store/characterSlice";
 import { updateCharacterInState } from "../../store/worldSlice";
 import { HudRichTooltipTitle, hudRichTooltipSlotProps } from "./hudRichTooltip";
 import WhatshotIcon from "@mui/icons-material/Whatshot";
 import { isMacroSlotDisabledByBurden, normalizeBurdens } from "../../utils/characterBurdens";
+import { useCharacterJobData } from "../../hooks/useCharacterJobData";
+import { useResolvedCombatStats } from "../../hooks/useResolvedCombatStats";
+import { useLocalDiceReveal } from "../../hooks/useLocalDiceReveal";
+import { mergeUnlockedUpgrades } from "../../utils/mergeUnlockedUpgrades";
+import { resolveAbilityForPlay } from "../../utils/abilityResolve";
 
 /** Fixed dock width so ACTIONS ↔ MACROS share one vertical slab (grow up/down, not sideways). */
 export const COMBAT_DOCK_WIDTH = 560;
@@ -51,6 +54,7 @@ function MacroHoverTitle({ slot }) {
     );
 }
 
+/** Narrative shortcuts (Second Wind / Special Ability / Bond) — lite `launchToChat({kind:"mech"})` path. */
 function resolveNarrativeShortcut(character, key) {
     if (!key) return null;
     const bond = character?.bond || {};
@@ -101,7 +105,7 @@ export default function AbilityHotbar({
     const profile = useSelector((s) => s.player.profile);
     const macroPage = useSelector((s) => s.ui.macroPage ?? 0);
     const [busy, setBusy] = useState(false);
-    const [attackPending, setAttackPending] = useState(null); // { payload }
+    const [attackPending, setAttackPending] = useState(null); // { kind, node }
 
     const bar = useMemo(() => normalizeMacroBar(character?.macroBar), [character?.macroBar]);
     const pageSlots = bar.pages[macroPage] || [];
@@ -109,25 +113,81 @@ export default function AbilityHotbar({
     const showDock = Boolean(open || actionsSlot);
     const matchCharacterHudHeight = Boolean(open && actionsSlot);
 
+    // G11 — same A+ job data + progression ctx as DossierKitView, so a macro slot
+    // plays through the exact same unified `launchToChat` path (unified Slice 6).
+    const { jobList } = useCharacterJobData(character);
+    const { combatStats } = useResolvedCombatStats(character);
+    const revealDice = useLocalDiceReveal();
+
+    const nodeIndex = useMemo(() => {
+        const map = new Map();
+        jobList.forEach((j) => {
+            j.abilities.forEach((a) => map.set(String(a.id), { node: a, kind: "ability" }));
+            j.traits.forEach((t) => map.set(String(t.id), { node: t, kind: "trait" }));
+            if (j.limitBreak) map.set(String(j.limitBreak.id), { node: j.limitBreak, kind: "limit_break" });
+        });
+        return map;
+    }, [jobList]);
+
+    const ownedBaseNodeIds = useMemo(() => {
+        const ids = new Set();
+        (character?.allAbilities || []).forEach((id) => ids.add(String(id)));
+        (character?.unlockedAbilities || []).forEach((id) => ids.add(String(id)));
+        jobList.forEach((j) => {
+            j.abilities.forEach((a) => ids.add(String(a.id)));
+            j.traits.forEach((t) => ids.add(String(t.id)));
+            if (j.limitBreak) ids.add(String(j.limitBreak.id));
+        });
+        return [...ids];
+    }, [character?.allAbilities, character?.unlockedAbilities, jobList]);
+
+    const kitCtx = useMemo(() => ({ ownedBaseNodeIds }), [ownedBaseNodeIds]);
+
+    const jobResourceValue = useMemo(() => {
+        const map = character?.jobResources && typeof character.jobResources === "object"
+            ? character.jobResources
+            : {};
+        const jobId = character?.activeClassId || null;
+        if (!jobId) return 0;
+        const n = Number(map[jobId]);
+        return Number.isFinite(n) ? n : 0;
+    }, [character?.jobResources, character?.activeClassId]);
+
+    const formulaCtx = useMemo(() => ({
+        damageDie: combatStats?.damageDie,
+        fray: combatStats?.fray,
+        mechanicResource: jobResourceValue,
+    }), [combatStats?.damageDie, combatStats?.fray, jobResourceValue]);
+
     const handleClose = () => dispatch(setAbilityBarOpen(false));
 
-    const launchAbility = useCallback(async (payload, attackMods = null) => {
-        if (!campaignId || !character || busy) return;
+    /** One unified Play call — mirrors `PlayButton`'s `fire()` (dossier). */
+    const fireLaunch = useCallback(async (kind, node, attackMods = null) => {
+        if (!campaignId || !character || !node || busy) return;
         setBusy(true);
         try {
-            await callAbilityInChat(
-                campaignId,
-                profile,
-                payload,
-                attackMods ? { character, attackMods } : { character },
-            );
+            if (kind === "trait" || kind === "mech") {
+                await launchToChat({ kind, node, character, campaignId, profile, formulaCtx: combatStats || {} });
+                return;
+            }
+            const isLb = kind === "limit_break";
+            const resolved = resolveAbilityForPlay(node, character, {
+                ctx: kitCtx, formulaCtx, isLb, attackMods,
+            });
+            if (resolved.hasAttack && resolved.atk && !resolved.atk.autoHit) {
+                await revealDice(resolved.atk, {
+                    rollerName: character?.name || profile?.nickname || "???",
+                    senderId: profile?.uid ?? null,
+                });
+            }
+            await launchToChat({ kind, node, character, campaignId, profile, kitCtx, formulaCtx, resolved });
         } catch (err) {
             console.error(err);
             dispatch(showSnackbar({ message: "No se pudo lanzar la macro", severity: "error" }));
         } finally {
             setBusy(false);
         }
-    }, [busy, campaignId, character, dispatch, profile]);
+    }, [busy, campaignId, character, dispatch, profile, kitCtx, formulaCtx, combatStats, revealDice]);
 
     const handleCall = useCallback(async (slot) => {
         if (!campaignId || !character || !slot || busy) return;
@@ -149,66 +209,40 @@ export default function AbilityHotbar({
             return;
         }
 
-        try {
-            let payload = {
-                id: slot.id,
-                label: slot.label || slot.id,
-                content: slot.blurb || "",
-                characterId: character.id,
-                characterName: character.name,
-                characterAvatarUrl: character.tokenImageUrl || character.imageUrl || null,
-                abilityKind: ABILITY_KINDS.STANDARD,
-                tagKeys: [],
-            };
+        if (slot.type === MACRO_SLOT_TYPES.SHORTCUT) {
+            const sc = resolveNarrativeShortcut(character, slot.id);
+            await fireLaunch("mech", {
+                id: sc?.id || slot.id,
+                label: sc?.label || slot.label || slot.id,
+                content: sc?.content || slot.blurb || "",
+            });
+            return;
+        }
 
-            if (slot.type === MACRO_SLOT_TYPES.SHORTCUT) {
-                const sc = resolveNarrativeShortcut(character, slot.id);
-                if (sc) {
-                    payload = {
-                        ...payload,
-                        id: sc.id,
-                        label: sc.label,
-                        content: sc.content || slot.blurb || "",
-                    };
-                }
-            } else {
-                try {
-                    const list = await getAbilitiesByIds([slot.id]);
-                    const live = list?.[0];
-                    if (live) {
-                        payload = {
-                            ...payload,
-                            id: live.id || live.key || slot.id,
-                            label: live.label || slot.label,
-                            content: live.content || live.description || live.blurb || slot.blurb || "",
-                            cost: live.cost || "",
-                            abilityKind: normalizeAbilityKind(live.abilityKind),
-                            tagKeys: Array.isArray(live.tagKeys) ? live.tagKeys : [],
-                        };
-                    }
-                } catch {
-                    /* use cached blurb */
-                }
-            }
+        const entry = nodeIndex.get(String(slot.id));
+        if (!entry) {
+            dispatch(showSnackbar({ message: "Habilidad no encontrada en el kit actual", severity: "warning" }));
+            return;
+        }
+        const { node, kind } = entry;
 
-            if (normalizeAbilityKind(payload.abilityKind) === ABILITY_KINDS.ATTACK) {
-                setAttackPending({ payload });
+        if (kind !== "trait") {
+            const merged = mergeUnlockedUpgrades(node, character, { ...kitCtx, isLb: kind === "limit_break" });
+            if (merged?.hasAttack && merged?.attack && !merged.attack.autoHit) {
+                setAttackPending({ kind, node });
                 return;
             }
-
-            await launchAbility(payload);
-        } catch (err) {
-            console.error(err);
-            dispatch(showSnackbar({ message: "No se pudo lanzar la macro", severity: "error" }));
         }
-    }, [busy, campaignId, character, dispatch, launchAbility, burdens]);
+
+        await fireLaunch(kind, node);
+    }, [busy, campaignId, character, dispatch, burdens, nodeIndex, kitCtx, fireLaunch]);
 
     const handleAttackConfirm = useCallback(async ({ boons, curses }) => {
         const pending = attackPending;
         setAttackPending(null);
-        if (!pending?.payload) return;
-        await launchAbility(pending.payload, { boons, curses });
-    }, [attackPending, launchAbility]);
+        if (!pending?.node) return;
+        await fireLaunch(pending.kind, pending.node, { boons, curses });
+    }, [attackPending, fireLaunch]);
 
     const handleClearSlot = useCallback(async (slotIndex, e) => {
         e.preventDefault();
@@ -547,7 +581,7 @@ export default function AbilityHotbar({
         ) : null}
         <AttackBoonDialog
             open={!!attackPending}
-            abilityLabel={attackPending?.payload?.label || "Ataque"}
+            abilityLabel={attackPending?.node?.label || "Ataque"}
             onClose={() => setAttackPending(null)}
             onConfirm={handleAttackConfirm}
         />

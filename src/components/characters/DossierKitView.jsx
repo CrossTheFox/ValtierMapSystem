@@ -1,18 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, CircularProgress, IconButton } from "@mui/material";
-import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
+import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
+import { Box, CircularProgress } from "@mui/material";
 import { useDispatch, useSelector } from "react-redux";
 
 import { UI_COLORS } from "../../constants/uiColors";
 import { updateCharacterFields } from "../../../firebase/services/characterService";
 import {
     createClaseDoc,
+    deleteAbilityFromJob,
     linkAbilityToClase,
     listClasesForCampaign,
-    updateClaseFields,
     upsertAbilityDoc,
 } from "../../../firebase/services/classService";
-import { callKitCardInChat } from "../../../firebase/services/chatService";
 import { useCharacterJobData } from "../../hooks/useCharacterJobData";
 import { useResolvedCombatStats } from "../../hooks/useResolvedCombatStats";
 import { useDossier } from "../CharactersSettingsDialog";
@@ -25,7 +23,6 @@ import {
     combatDefaultsForArchetype,
     sanitizeClassResource,
     sanitizeCombatPartial,
-    sanitizeSpecialMechanic,
 } from "../../constants/combatStats";
 import {
     ABILITY_KINDS,
@@ -38,21 +35,21 @@ import {
     sanitizeTagKeys,
 } from "../../constants/abilityKinds";
 import { resolveCombatStats } from "../../utils/resolveCombatStats";
-import {
-    isAbilityCut,
-    isTraitTorn,
-} from "../../utils/characterBurdens";
 import AbilityCommandToolbar from "../abilities/AbilityCommandToolbar";
+import CyberSelect from "../customs/CyberSelect";
 import TagSearchSelect from "../admin/TagSearchSelect";
-import MacroPinButton from "./MacroPinButton";
-import KitMarkdown from "./KitMarkdown";
-import { MACRO_SLOT_TYPES } from "../../constants/macroBar";
 import { useCampaignTags } from "../../hooks/useCampaignTags";
 import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
-import CyberTooltip from "../customs/CyberTooltip";
 import DossierInventoryView from "./DossierInventoryView";
-import { MaletinChromeButton } from "./CharacterSheetTabs";
+import DossierSeamP3 from "./DossierSeamP3";
+import PlateInsigniaDock from "./kit/PlateInsigniaDock";
+import { ABILITY_TEXTAREA_SX } from "./kit/kitStyles";
 import { subscribeCharacterItems } from "../../../firebase/services/itemService";
+import { unlockNode } from "../../utils/kitProgression";
+import KitAlignRail, { LoadoutPips, RailAddSlot, RailEditToggle } from "./kit/KitAlignRail";
+import TraitCategoryRail from "./kit/TraitCategoryRail";
+import AbilityVerticalMicro from "./kit/AbilityVerticalMicro";
+import LbStackCompact from "./kit/LbStackCompact";
 
 /* ── colour tokens ────────────────────────────────────────────────── */
 const C = {
@@ -68,7 +65,6 @@ const C = {
 };
 
 const MAX_LOADOUT = 6;
-const CORE_COMBAT_KEYS = COMBAT_STAT_KEYS.filter((k) => k !== "vigor");
 
 const STAT_META = {
     vit: { label: "VIT", accent: "#00f2ea" },
@@ -78,61 +74,6 @@ const STAT_META = {
     damageDie: { label: "DIE", accent: "#ff66ff" },
     armor: { label: "ARM", accent: "#ffb020" },
     vigor: { label: "VIG", accent: "#b8ff3c" },
-};
-
-function CallChatBtn({ onClick, disabled = false }) {
-    return (
-        <CyberTooltip title="Llamar al chat" placement="top">
-            <IconButton
-                size="small"
-                disabled={disabled}
-                onClick={(e) => {
-                    e.stopPropagation();
-                    onClick?.(e);
-                }}
-                aria-label="Llamar al chat"
-                sx={{
-                    width: 26,
-                    height: 26,
-                    color: C.cyan,
-                    border: `1px solid ${C.cyan}55`,
-                    bgcolor: "rgba(0,0,0,0.35)",
-                    "&:hover": {
-                        borderColor: C.cyan,
-                        bgcolor: `${C.cyan}18`,
-                    },
-                    "&.Mui-disabled": { opacity: 0.35 },
-                }}
-            >
-                <ChatBubbleOutlineIcon sx={{ fontSize: "0.9rem" }} />
-            </IconButton>
-        </CyberTooltip>
-    );
-}
-
-const SCROLL_SX = {
-    flex: 1,
-    minHeight: 0,
-    overflowY: "auto",
-    overflowX: "hidden",
-    ...CYBER_SCROLL_STYLE,
-};
-
-const ABILITY_TEXTAREA_SX = {
-    width: "100%",
-    boxSizing: "border-box",
-    background: "rgba(0,0,0,0.45)",
-    border: `1px solid rgba(255,102,255,0.35)`,
-    borderRadius: "4px",
-    color: "#ffffff",
-    fontSize: "0.9rem",
-    lineHeight: 1.5,
-    p: "8px",
-    resize: "vertical",
-    outline: "none",
-    fontFamily: '"Fira Sans", sans-serif',
-    "&:focus": { borderColor: C.cyan },
-    ...CYBER_SCROLL_STYLE,
 };
 
 function slugify(label) {
@@ -161,1073 +102,23 @@ function insertAtCursor(textarea, value, insert) {
     return next;
 }
 
-/* ── SectionLabel (ID parity) ─────────────────────────────────────── */
-function SectionLabel({ children, limit, sx }) {
-    return (
-        <Box sx={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            mb: "10px",
-            mt: "18px",
-            fontFamily: "Orbitron, sans-serif",
-            fontSize: "0.58rem",
-            letterSpacing: "0.14em",
-            color: "#ffffff",
-            "&::after": {
-                content: '""',
-                flex: 1,
-                height: "1px",
-                background: `linear-gradient(90deg, ${C.cyan}66, transparent)`,
-            },
-            ...sx,
-        }}>
-            {children}
-            {limit && (
-                <Box component="span" sx={{ fontSize: "0.52rem", color: "rgba(255,255,255,0.75)", ml: 0.5 }}>
-                    {limit}
-                </Box>
-            )}
-        </Box>
-    );
-}
 
-function AddRowButton({ label, onClick }) {
-    return (
-        <Box
-            component="button"
-            type="button"
-            onClick={onClick}
-            sx={{
-                width: "100%",
-                mt: 1,
-                py: 1.1,
-                borderRadius: "8px",
-                border: `1px dashed ${C.border}`,
-                bgcolor: "transparent",
-                color: C.muted,
-                fontFamily: "Orbitron, sans-serif",
-                fontSize: "0.58rem",
-                letterSpacing: "0.1em",
-                cursor: "pointer",
-                transition: "border-color 0.15s, color 0.15s, background-color 0.15s",
-                "&:hover": {
-                    borderColor: C.pink,
-                    color: C.pink,
-                    bgcolor: `${C.pink}10`,
-                },
-            }}
-        >
-            {label}
-        </Box>
-    );
-}
-
-/* ── Combat stat cell ─────────────────────────────────────────────── */
-function CombatStatCell({
-    statKey,
-    value,
-    display,
-    editMode,
-    isOverride,
-    onChange,
-    layout = "cell",
-}) {
-    const meta = STAT_META[statKey] || { label: statKey, accent: C.cyan };
-    const accent = isOverride ? C.pink : (meta.accent || C.cyan);
-    const [editing, setEditing] = useState(false);
-    const track = layout === "track";
-
-    useEffect(() => {
-        if (!editMode) setEditing(false);
-    }, [editMode]);
-
-    const showEditor = editMode && editing;
-    const shown = statKey === "damageDie" ? `d${display}` : display;
-
-    return (
-        <Box
-            onClick={() => {
-                if (editMode && !editing) setEditing(true);
-            }}
-            sx={track ? {
-                display: "flex",
-                alignItems: "center",
-                gap: 1,
-                p: "8px 12px",
-                borderRadius: "6px",
-                border: `1px solid ${showEditor ? C.cyan : `${accent}99`}`,
-                bgcolor: isOverride ? "rgba(255,102,255,0.1)" : `${accent}14`,
-                minWidth: 0,
-                cursor: editMode ? "pointer" : "default",
-            } : {
-                p: "10px 8px",
-                borderRadius: "6px",
-                border: `1px solid ${showEditor ? C.cyan : `${accent}99`}`,
-                bgcolor: isOverride ? "rgba(255,102,255,0.1)" : "rgba(0,0,0,0.42)",
-                textAlign: "center",
-                minWidth: 0,
-                cursor: editMode ? "pointer" : "default",
-                boxShadow: isOverride
-                    ? `0 0 14px ${C.pink}22`
-                    : `inset 0 0 12px ${accent}10`,
-                transition: "border-color 0.15s, box-shadow 0.15s",
-            }}
-        >
-            <Box sx={{
-                fontFamily: "Orbitron, sans-serif",
-                fontSize: "0.52rem",
-                letterSpacing: "0.14em",
-                color: accent,
-                mb: track ? 0 : "6px",
-                flexShrink: 0,
-                textShadow: `0 0 8px ${accent}44`,
-            }}>
-                {meta.label}
-            </Box>
-            {track ? <Box sx={{ flex: 1, minWidth: 8 }} /> : null}
-            {showEditor ? (
-                statKey === "damageDie" ? (
-                    <Box
-                        component="select"
-                        autoFocus
-                        value={String(value ?? "")}
-                        onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))}
-                        onBlur={() => setEditing(false)}
-                        onClick={(e) => e.stopPropagation()}
-                        sx={{
-                            width: "100%",
-                            background: "transparent",
-                            border: "none",
-                            outline: "none",
-                            color: C.text,
-                            fontFamily: "Orbitron, sans-serif",
-                            fontSize: "1.1rem",
-                            fontWeight: 700,
-                            textAlign: "center",
-                            cursor: "pointer",
-                        }}
-                    >
-                        <option value="" style={{ backgroundColor: "#12121a", color: "#fff" }}>
-                            heredado
-                        </option>
-                        {DAMAGE_DIE_OPTIONS.map((d) => (
-                            <option key={d} value={d} style={{ backgroundColor: "#12121a", color: "#fff" }}>
-                                d{d}
-                            </option>
-                        ))}
-                    </Box>
-                ) : (
-                    <Box
-                        component="input"
-                        type="number"
-                        autoFocus
-                        value={value === "" || value == null ? "" : value}
-                        placeholder={String(display)}
-                        onChange={(e) => {
-                            const raw = e.target.value;
-                            onChange(raw === "" ? "" : Number(raw));
-                        }}
-                        onBlur={() => setEditing(false)}
-                        onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === "Escape") {
-                                e.preventDefault();
-                                setEditing(false);
-                            }
-                        }}
-                        sx={{
-                            width: track ? 72 : "100%",
-                            background: "transparent",
-                            border: "none",
-                            outline: "none",
-                            color: C.text,
-                            fontFamily: "Orbitron, sans-serif",
-                            fontSize: "1.1rem",
-                            fontWeight: 700,
-                            textAlign: track ? "right" : "center",
-                            "&::placeholder": { color: "rgba(255,255,255,0.4)", opacity: 1 },
-                        }}
-                    />
-                )
-            ) : (
-                <Box sx={{
-                    fontFamily: "Orbitron, sans-serif",
-                    fontSize: track ? "1rem" : "1.15rem",
-                    fontWeight: 700,
-                    color: C.text,
-                    lineHeight: 1.1,
-                    textShadow: "0 1px 2px rgba(0,0,0,0.8)",
-                    flexShrink: 0,
-                }}>
-                    {shown}
-                </Box>
-            )}
-        </Box>
-    );
-}
-
-/* ── Class resource (full-width row) ───────────────────────────────── */
-function ClassResourceCell({
-    resource,
-    value,
-    editMode,
-    isDM,
-    onChangeValue,
-    onChangeMeta,
-}) {
-    const name = resource?.name || "CLASS RESOURCE";
-    const min = resource?.min ?? 0;
-    const max = resource?.max;
-    const display = value ?? min;
-
-    // Local drafts — commit meta to Firestore only on blur / Enter (not per keystroke).
-    const [draftName, setDraftName] = useState(name);
-    const [draftMax, setDraftMax] = useState(max == null ? "" : String(max));
-    const [draftValue, setDraftValue] = useState(String(display));
-
-    useEffect(() => {
-        setDraftName(name);
-    }, [name]);
-
-    useEffect(() => {
-        setDraftMax(max == null ? "" : String(max));
-    }, [max]);
-
-    useEffect(() => {
-        setDraftValue(String(display));
-    }, [display]);
-
-    const commitName = () => {
-        const next = String(draftName || "").trim();
-        if (!next || next === name) {
-            setDraftName(name);
-            return;
-        }
-        onChangeMeta?.({ name: next });
-    };
-
-    const commitMax = () => {
-        const raw = String(draftMax ?? "").trim();
-        const nextMax = raw === "" ? null : Number(raw);
-        const prev = max == null ? null : Number(max);
-        if (raw !== "" && !Number.isFinite(nextMax)) {
-            setDraftMax(max == null ? "" : String(max));
-            return;
-        }
-        if (nextMax === prev || (nextMax == null && prev == null)) return;
-        onChangeMeta?.({ max: nextMax });
-    };
-
-    const commitValue = () => {
-        const n = Number(draftValue);
-        if (!Number.isFinite(n)) {
-            setDraftValue(String(display));
-            return;
-        }
-        if (n === Number(display)) return;
-        onChangeValue?.(n);
-    };
-
-    return (
-        <Box
-            sx={{
-                display: "grid",
-                gridTemplateColumns: "auto 1fr auto",
-                alignItems: "center",
-                gap: 1.5,
-                p: "12px 16px",
-                borderRadius: "8px",
-                border: `1px solid ${C.cyan}99`,
-                bgcolor: "rgba(0,242,234,0.07)",
-                minWidth: 0,
-                boxShadow: `inset 0 0 24px ${C.cyan}10`,
-                "@media (max-width:700px)": {
-                    gridTemplateColumns: "1fr",
-                    gap: 1,
-                },
-            }}
-        >
-            <Box sx={{
-                fontFamily: "Orbitron, sans-serif",
-                fontSize: "0.48rem",
-                letterSpacing: "0.14em",
-                color: C.cyan,
-                flexShrink: 0,
-            }}>
-                CLASS RESOURCE
-            </Box>
-
-            {editMode && isDM ? (
-                <Box
-                    component="input"
-                    value={draftName}
-                    onChange={(e) => setDraftName(e.target.value)}
-                    onBlur={commitName}
-                    onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                            e.preventDefault();
-                            e.currentTarget.blur();
-                        } else if (e.key === "Escape") {
-                            setDraftName(name);
-                            e.currentTarget.blur();
-                        }
-                    }}
-                    placeholder="Nombre del recurso"
-                    sx={{
-                        minWidth: 0,
-                        background: "transparent",
-                        border: "none",
-                        outline: "none",
-                        fontFamily: "Orbitron, sans-serif",
-                        fontSize: "0.78rem",
-                        letterSpacing: "0.08em",
-                        color: C.text,
-                        textTransform: "uppercase",
-                    }}
-                />
-            ) : (
-                <Box sx={{
-                    fontFamily: "Orbitron, sans-serif",
-                    fontSize: "0.78rem",
-                    letterSpacing: "0.08em",
-                    color: C.text,
-                    minWidth: 0,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                }}>
-                    {name}
-                </Box>
-            )}
-
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1, justifySelf: "end" }}>
-                {editMode ? (
-                    <>
-                        <Box
-                            component="input"
-                            type="number"
-                            value={draftValue}
-                            onChange={(e) => setDraftValue(e.target.value)}
-                            onBlur={commitValue}
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                    e.preventDefault();
-                                    e.currentTarget.blur();
-                                }
-                            }}
-                            sx={{
-                                width: 64,
-                                background: "rgba(0,0,0,0.4)",
-                                border: `1px solid ${C.cyan}55`,
-                                borderRadius: "4px",
-                                outline: "none",
-                                color: C.text,
-                                fontFamily: "Orbitron, sans-serif",
-                                fontSize: "1rem",
-                                textAlign: "center",
-                                p: "6px 4px",
-                            }}
-                        />
-                        {isDM && (
-                            <>
-                                <Box sx={{ color: C.muted, fontFamily: "Orbitron, sans-serif", fontSize: "0.7rem" }}>/</Box>
-                                <Box
-                                    component="input"
-                                    type="number"
-                                    title="Máximo"
-                                    value={draftMax}
-                                    placeholder="max"
-                                    onChange={(e) => setDraftMax(e.target.value)}
-                                    onBlur={commitMax}
-                                    onKeyDown={(e) => {
-                                        if (e.key === "Enter") {
-                                            e.preventDefault();
-                                            e.currentTarget.blur();
-                                        }
-                                    }}
-                                    sx={{
-                                        width: 56,
-                                        background: "rgba(0,0,0,0.35)",
-                                        border: `1px solid ${C.border}`,
-                                        borderRadius: "4px",
-                                        outline: "none",
-                                        color: C.muted,
-                                        fontFamily: "Orbitron, sans-serif",
-                                        fontSize: "0.78rem",
-                                        textAlign: "center",
-                                        p: "6px 4px",
-                                    }}
-                                />
-                            </>
-                        )}
-                    </>
-                ) : (
-                    <Box sx={{
-                        fontFamily: "Orbitron, sans-serif",
-                        fontSize: "1.1rem",
-                        color: C.text,
-                        letterSpacing: "0.04em",
-                    }}>
-                        {display}
-                        {max != null && (
-                            <Box component="span" sx={{ color: C.muted, fontSize: "0.78rem", ml: 0.75 }}>
-                                / {max}
-                            </Box>
-                        )}
-                    </Box>
-                )}
-            </Box>
-            {max != null && max > 0 ? (
-                <Box sx={{
-                    gridColumn: "1 / -1",
-                    height: 4,
-                    border: `1px solid ${UI_COLORS.border}`,
-                    bgcolor: "rgba(0,0,0,0.35)",
-                }}>
-                    <Box sx={{
-                        width: `${Math.min(100, Math.round((Number(display) / max) * 100))}%`,
-                        height: "100%",
-                        bgcolor: C.cyan,
-                        boxShadow: `0 0 8px ${C.cyan}55`,
-                    }} />
-                </Box>
-            ) : null}
-        </Box>
-    );
-}
-
-/* ── Shared fold chrome (Job / Special / LB) ─────────────────────── */
-function KitFold({ tag, tagColor = C.cyan, title, onCall, children }) {
-    const [open, setOpen] = useState(true);
-    return (
-        <Box
-            sx={{
-                border: `1px solid ${C.border}`,
-                borderRadius: "6px",
-                bgcolor: "rgba(0,0,0,0.25)",
-                overflow: "hidden",
-                minWidth: 0,
-                height: "100%",
-                display: "flex",
-                flexDirection: "column",
-            }}
-        >
-            <Box
-                onClick={() => setOpen((v) => !v)}
-                sx={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 1,
-                    px: "10px",
-                    py: "8px",
-                    cursor: "pointer",
-                    userSelect: "none",
-                }}
-            >
-                <Box sx={{
-                    fontFamily: "Orbitron, sans-serif",
-                    fontSize: "0.52rem",
-                    letterSpacing: "0.1em",
-                    color: tagColor,
-                    flexShrink: 0,
-                    mt: "3px",
-                }}>
-                    {tag}
-                </Box>
-                <Box sx={{
-                    flex: 1,
-                    minWidth: 0,
-                    fontFamily: "Orbitron, sans-serif",
-                    fontSize: "0.82rem",
-                    letterSpacing: "0.06em",
-                    color: C.text,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                    pt: "1px",
-                }}>
-                    {title}
-                </Box>
-                {typeof onCall === "function" ? (
-                    <Box sx={{ flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
-                        <CallChatBtn onClick={onCall} />
-                    </Box>
-                ) : null}
-                <Box sx={{
-                    color: C.muted,
-                    fontFamily: "'Fira Code', monospace",
-                    fontSize: "0.7rem",
-                    transform: open ? "rotate(90deg)" : "none",
-                    transition: "transform 0.15s",
-                    mt: "2px",
-                    flexShrink: 0,
-                }}>
-                    ▸
-                </Box>
-            </Box>
-            {open ? (
-                <Box sx={{
-                    px: "12px",
-                    pb: "12px",
-                    flex: 1,
-                    minHeight: 0,
-                    overflowY: "auto",
-                    borderTop: `1px solid ${C.border}`,
-                    pt: "10px",
-                    ...CYBER_SCROLL_STYLE,
-                }}>
-                    {children}
-                </Box>
-            ) : null}
-        </Box>
-    );
-}
-
-/* ── Job identity (name + description) ────────────────────────────── */
-function JobIdentityPanel({
-    jobName,
-    description,
-    editMode,
-    isDM,
-    onSave,
-    onCall,
-}) {
-    const canEdit = Boolean(editMode && isDM && typeof onSave === "function");
-    const [editing, setEditing] = useState(false);
-    const [draftName, setDraftName] = useState(jobName || "");
-    const [draftDesc, setDraftDesc] = useState(description || "");
-
-    useEffect(() => { setDraftName(jobName || ""); }, [jobName]);
-    useEffect(() => { setDraftDesc(description || ""); }, [description]);
-    useEffect(() => {
-        if (!canEdit) setEditing(false);
-    }, [canEdit]);
-
-    const commit = () => {
-        if (!canEdit) return;
-        const nextName = String(draftName || "").trim();
-        const nextDesc = String(draftDesc || "").trim();
-        if (!nextName) {
-            setDraftName(jobName || "");
-            setEditing(false);
-            return;
-        }
-        if (nextName !== (jobName || "") || nextDesc !== (description || "")) {
-            onSave({ displayName: nextName, description: nextDesc });
-        }
-        setEditing(false);
-    };
-
-    const showEditor = canEdit && editing;
-
-    return (
-        <KitFold
-            tag="JOB"
-            tagColor={C.pink}
-            title={(jobName || "SIN JOB").toUpperCase()}
-            onCall={onCall}
-        >
-            {showEditor ? (
-                <>
-                    <Box
-                        component="input"
-                        value={draftName}
-                        autoFocus
-                        onChange={(e) => setDraftName(e.target.value)}
-                        onBlur={commit}
-                        onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                                e.preventDefault();
-                                e.currentTarget.blur();
-                            } else if (e.key === "Escape") {
-                                setDraftName(jobName || "");
-                                setDraftDesc(description || "");
-                                setEditing(false);
-                            }
-                        }}
-                        placeholder="NOMBRE DEL JOB"
-                        sx={{
-                            width: "100%",
-                            boxSizing: "border-box",
-                            background: "transparent",
-                            border: "none",
-                            outline: "none",
-                            fontFamily: "Orbitron, sans-serif",
-                            fontSize: "0.88rem",
-                            letterSpacing: "0.08em",
-                            color: C.text,
-                            textTransform: "uppercase",
-                            p: 0,
-                            mb: 1,
-                            "&::placeholder": { color: "rgba(255,255,255,0.3)", opacity: 1 },
-                        }}
-                    />
-                    <Box
-                        component="textarea"
-                        value={draftDesc}
-                        onChange={(e) => setDraftDesc(e.target.value)}
-                        onBlur={commit}
-                        rows={5}
-                        placeholder="Descripción / flavor del job (Markdown)…"
-                        sx={{
-                            ...ABILITY_TEXTAREA_SX,
-                            minHeight: 96,
-                            borderColor: `${C.pink}44`,
-                            bgcolor: "rgba(0,0,0,0.28)",
-                            fontSize: "0.9rem",
-                            lineHeight: 1.6,
-                            color: C.text,
-                        }}
-                    />
-                </>
-            ) : (
-                <Box
-                    onClick={canEdit ? () => setEditing(true) : undefined}
-                    sx={{ cursor: canEdit ? "text" : "default" }}
-                >
-                    <KitMarkdown
-                        content={description}
-                        emptyLabel="Sin descripción de job."
-                    />
-                </Box>
-            )}
-        </KitFold>
-    );
-}
-
-/* ── Special mechanic (name + rules text on job) ──────────────────── */
-function SpecialMechanicPanel({ mechanic, editMode, isDM, onChangeMeta, onCall }) {
-    const name = mechanic?.name || "SPECIAL MECHANIC";
-    const text = mechanic?.text || "";
-    const canEdit = Boolean(editMode && isDM && typeof onChangeMeta === "function");
-    const [editing, setEditing] = useState(false);
-    const [draftName, setDraftName] = useState(name);
-    const [draftText, setDraftText] = useState(text);
-
-    useEffect(() => { setDraftName(name); }, [name]);
-    useEffect(() => { setDraftText(text); }, [text]);
-    useEffect(() => {
-        if (!canEdit) setEditing(false);
-    }, [canEdit]);
-
-    const commit = () => {
-        const next = sanitizeSpecialMechanic({ name: draftName, text: draftText });
-        if (!next) {
-            setDraftName(name);
-            setDraftText(text);
-            setEditing(false);
-            return;
-        }
-        if (next.name !== name || next.text !== text) {
-            onChangeMeta?.(next);
-        }
-        setEditing(false);
-    };
-
-    const empty = !text && !editing;
-    const showEditor = canEdit && editing;
-
-    return (
-        <KitFold
-            tag="SPECIAL"
-            tagColor={C.cyan}
-            title={name}
-            onCall={!empty && typeof onCall === "function" ? onCall : undefined}
-        >
-            {showEditor ? (
-                <>
-                    <Box
-                        component="input"
-                        value={draftName}
-                        autoFocus
-                        onChange={(e) => setDraftName(e.target.value)}
-                        onBlur={commit}
-                        onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                                e.preventDefault();
-                                e.currentTarget.blur();
-                            } else if (e.key === "Escape") {
-                                setDraftName(name);
-                                setDraftText(text);
-                                setEditing(false);
-                            }
-                        }}
-                        placeholder="Nombre (ej. MOON PHASES)"
-                        sx={{
-                            width: "100%",
-                            boxSizing: "border-box",
-                            mb: 0.85,
-                            background: "transparent",
-                            border: "none",
-                            outline: "none",
-                            fontFamily: "Orbitron, sans-serif",
-                            fontSize: "0.88rem",
-                            letterSpacing: "0.08em",
-                            color: C.text,
-                            textTransform: "uppercase",
-                        }}
-                    />
-                    <Box
-                        component="textarea"
-                        value={draftText}
-                        onChange={(e) => setDraftText(e.target.value)}
-                        onBlur={commit}
-                        rows={5}
-                        placeholder="Reglas del special mechanic (Markdown)…"
-                        sx={{
-                            ...ABILITY_TEXTAREA_SX,
-                            borderColor: `${C.cyan}55`,
-                            minHeight: 100,
-                            color: C.text,
-                            fontSize: "0.9rem",
-                            lineHeight: 1.6,
-                        }}
-                    />
-                </>
-            ) : empty ? (
-                <Box
-                    onClick={canEdit ? () => setEditing(true) : undefined}
-                    sx={{
-                        fontSize: "0.85rem",
-                        color: C.muted,
-                        fontFamily: "'Fira Sans', sans-serif",
-                        cursor: canEdit ? "text" : "default",
-                    }}
-                >
-                    Sin special mechanic en este job.
-                    {canEdit ? " Clic para editar." : ""}
-                </Box>
-            ) : (
-                <Box
-                    onClick={canEdit ? () => setEditing(true) : undefined}
-                    sx={{ cursor: canEdit ? "text" : "default" }}
-                >
-                    <KitMarkdown content={text} />
-                </Box>
-            )}
-        </KitFold>
-    );
-}
-
-/* ── Tag chips / picker ───────────────────────────────────────────── */
-function TagChipsRow({ tagKeys = [], color = C.cyan }) {
-    if (!tagKeys?.length) return null;
-    return (
-        <Box sx={{ display: "flex", flexWrap: "wrap", gap: "4px", mt: "6px" }}>
-            {tagKeys.map((k) => (
-                <Box
-                    key={k}
-                    component="span"
-                    sx={{
-                        fontFamily: "'Fira Code', monospace",
-                        fontSize: "0.52rem",
-                        letterSpacing: "0.04em",
-                        color: "#ffffff",
-                        border: `1px solid ${color}66`,
-                        bgcolor: `${color}14`,
-                        px: "5px",
-                        py: "1px",
-                        borderRadius: "3px",
-                    }}
-                >
-                    {k}
-                </Box>
-            ))}
-        </Box>
-    );
-}
-
-const selectSx = {
+const DRAFT_SELECT_SX = {
     mb: 1,
     width: "100%",
     boxSizing: "border-box",
+    justifyContent: "space-between",
     bgcolor: "rgba(0,0,0,0.45)",
     border: `1px solid ${C.border}`,
     color: C.text,
-    fontFamily: "'Fira Sans', sans-serif",
-    fontSize: "0.78rem",
-    p: "6px",
-    borderRadius: "4px",
+    fontFamily: "'Fira Code', monospace",
+    fontSize: "0.72rem",
+    px: "8px",
+    py: "7px",
+    borderRadius: "3px",
+    minHeight: 32,
 };
 
-/* ── Editable kit card (ID-style contrast) ────────────────────────── */
-function KitCard({
-    tag,
-    tagColor,
-    title,
-    text,
-    hideTag = false,
-    editMode,
-    onSave,
-    showCommands = false,
-    pinEntry = null,
-    character = null,
-    abilityKind = null,
-    traitCategory = null,
-    showTraitMeta = false,
-    tagKeys = null,
-    availableTags = null,
-    onCall = null,
-    burdenDisabled = false,
-    burdenDisabledLabel = "CUT",
-}) {
-    const [editing, setEditing] = useState(false);
-    const [draftTitle, setDraftTitle] = useState(title || "");
-    const [draftText, setDraftText] = useState(text || "");
-    const [draftKind, setDraftKind] = useState(normalizeAbilityKind(abilityKind));
-    const [draftTraitCat, setDraftTraitCat] = useState(
-        normalizeTraitCategory(traitCategory),
-    );
-    const [draftTags, setDraftTags] = useState(() => sanitizeTagKeys(tagKeys));
-    const textRef = useRef(null);
-    const showAbilityMeta = abilityKind != null;
-    const showTags = availableTags != null || tagKeys != null;
-
-    useEffect(() => {
-        if (!editing) {
-            setDraftTitle(title || "");
-            setDraftText(text || "");
-            setDraftKind(normalizeAbilityKind(abilityKind));
-            setDraftTraitCat(normalizeTraitCategory(traitCategory));
-            setDraftTags(sanitizeTagKeys(tagKeys));
-        }
-    }, [title, text, editing, abilityKind, traitCategory, tagKeys]);
-
-    return (
-        <Box
-            onClick={() => {
-                if (editMode && !editing) setEditing(true);
-            }}
-            sx={{
-                position: "relative",
-                p: "12px 14px",
-                border: `1px solid ${burdenDisabled ? `${C.danger}88` : editing ? C.cyan : C.border}`,
-                borderRadius: "8px",
-                bgcolor: burdenDisabled ? "rgba(255,51,85,0.06)" : "rgba(0,0,0,0.28)",
-                transition: "border-color 0.18s, box-shadow 0.18s",
-                cursor: editMode ? "pointer" : "default",
-                opacity: burdenDisabled ? 0.72 : 1,
-                boxShadow: editing ? `0 0 18px rgba(0,242,234,0.12)` : "none",
-                "&:hover": { borderColor: burdenDisabled ? C.danger : (editMode ? "rgba(255,102,255,0.4)" : C.border) },
-                ...(burdenDisabled ? {
-                    "&::after": {
-                        content: '""',
-                        position: "absolute",
-                        left: 12,
-                        right: 12,
-                        top: "42%",
-                        height: "1px",
-                        bgcolor: `${C.danger}66`,
-                        pointerEvents: "none",
-                        zIndex: 1,
-                    },
-                } : {}),
-            }}
-        >
-            <Box sx={{ display: "flex", alignItems: "center", gap: "8px", mb: "6px", flexWrap: "wrap" }}>
-                {!hideTag ? (
-                <Box component="span" sx={{
-                    fontFamily: "Orbitron, sans-serif",
-                    fontSize: "0.62rem",
-                    letterSpacing: "0.1em",
-                    color: "#ffffff",
-                    border: `1px solid ${tagColor ? `${tagColor}88` : "rgba(255,204,51,0.55)"}`,
-                    px: "6px", py: "2px", borderRadius: "3px",
-                }}>
-                    {tag}
-                </Box>
-                ) : null}
-                {burdenDisabled && (
-                    <Box component="span" sx={{
-                        fontFamily: "Orbitron, sans-serif",
-                        fontSize: "0.48rem",
-                        letterSpacing: "0.1em",
-                        color: C.danger,
-                        border: `1px solid ${C.danger}88`,
-                        px: "5px", py: "1px", borderRadius: "2px",
-                    }}>
-                        {burdenDisabledLabel}
-                    </Box>
-                )}
-                {!editing && showTraitMeta && (
-                    <Box component="span" sx={{
-                        fontFamily: "Orbitron, sans-serif",
-                        fontSize: "0.5rem",
-                        letterSpacing: "0.06em",
-                        color: C.trait,
-                        border: `1px solid ${C.trait}66`,
-                        px: "5px", py: "1px", borderRadius: "3px",
-                    }}>
-                        {TRAIT_CATEGORY_LABELS[normalizeTraitCategory(traitCategory)] || "Simple"}
-                    </Box>
-                )}
-                {!editing && abilityKind === ABILITY_KINDS.ATTACK && (
-                    <Box component="span" sx={{
-                        fontFamily: "Orbitron, sans-serif",
-                        fontSize: "0.55rem",
-                        letterSpacing: "0.08em",
-                        color: C.danger,
-                        border: `1px solid ${C.danger}88`,
-                        px: "5px", py: "1px", borderRadius: "3px",
-                    }}>
-                        ATK
-                    </Box>
-                )}
-                {editing ? (
-                    <Box
-                        component="input"
-                        value={draftTitle}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => setDraftTitle(e.target.value)}
-                        sx={{
-                            flex: 1,
-                            background: "transparent",
-                            border: "none",
-                            outline: "none",
-                            fontFamily: "Orbitron, sans-serif",
-                            fontSize: "0.82rem",
-                            letterSpacing: "0.08em",
-                            color: C.text,
-                        }}
-                    />
-                ) : (
-                    <Box component="span" sx={{
-                        fontFamily: "Orbitron, sans-serif",
-                        fontSize: "0.82rem",
-                        letterSpacing: "0.1em",
-                        color: C.text,
-                        flex: 1,
-                        minWidth: 0,
-                    }}>
-                        {title}
-                    </Box>
-                )}
-                {typeof onCall === "function" && !editing && (
-                    <Box sx={{ flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
-                        <CallChatBtn
-                            disabled={burdenDisabled}
-                            onClick={() => {
-                                if (burdenDisabled) return;
-                                onCall();
-                            }}
-                        />
-                    </Box>
-                )}
-                {pinEntry && character && !editing && (
-                    <Box sx={{ flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
-                        <MacroPinButton character={character} entry={pinEntry} size="tiny" />
-                    </Box>
-                )}
-            </Box>
-            {!editing && <TagChipsRow tagKeys={tagKeys} />}
-            {editing ? (
-                <Box onClick={(e) => e.stopPropagation()}>
-                    {showAbilityMeta && (
-                        <Box
-                            component="select"
-                            value={draftKind}
-                            onChange={(e) => {
-                                const kind = normalizeAbilityKind(e.target.value);
-                                setDraftKind(kind);
-                                if (kind === ABILITY_KINDS.ATTACK && !draftText.trim()) {
-                                    setDraftText(DEFAULT_ATTACK_CONTENT);
-                                }
-                            }}
-                            sx={selectSx}
-                        >
-                            <option value={ABILITY_KINDS.STANDARD} style={{ background: "#000" }}>Standard</option>
-                            <option value={ABILITY_KINDS.ATTACK} style={{ background: "#000" }}>Attack (d20 + boons)</option>
-                        </Box>
-                    )}
-                    {showTraitMeta && (
-                        <Box
-                            component="select"
-                            value={draftTraitCat}
-                            onChange={(e) => setDraftTraitCat(normalizeTraitCategory(e.target.value))}
-                            sx={selectSx}
-                        >
-                            {TRAIT_CATEGORY_LIST.map((cat) => (
-                                <option key={cat} value={cat} style={{ background: "#000" }}>
-                                    {TRAIT_CATEGORY_LABELS[cat]}
-                                </option>
-                            ))}
-                        </Box>
-                    )}
-                    {showTags && (
-                        <TagSearchSelect
-                            available={availableTags || []}
-                            value={draftTags}
-                            onChange={setDraftTags}
-                        />
-                    )}
-                    {showCommands && (
-                        <AbilityCommandToolbar
-                            onInsert={(snip) => {
-                                setDraftText((prev) => insertAtCursor(textRef.current, prev, snip));
-                            }}
-                        />
-                    )}
-                    <Box
-                        component="textarea"
-                        ref={textRef}
-                        value={draftText}
-                        onChange={(e) => setDraftText(e.target.value)}
-                        rows={4}
-                        sx={ABILITY_TEXTAREA_SX}
-                    />
-                    <Box sx={{ display: "flex", gap: 0.75, mt: 0.75 }}>
-                        <Box
-                            component="button"
-                            type="button"
-                            onClick={() => {
-                                onSave?.({
-                                    label: draftTitle,
-                                    blurb: draftText,
-                                    ...(showAbilityMeta ? {
-                                        abilityKind: draftKind,
-                                    } : {}),
-                                    ...(showTraitMeta ? {
-                                        traitCategory: draftTraitCat,
-                                    } : {}),
-                                    ...(showTags ? {
-                                        tagKeys: sanitizeTagKeys(draftTags),
-                                    } : {}),
-                                });
-                                setEditing(false);
-                            }}
-                            sx={{
-                                px: 1.25, py: 0.55, borderRadius: "4px",
-                                border: `1px solid ${C.cyan}`, bgcolor: `${C.cyan}18`,
-                                color: C.cyan, fontFamily: "Orbitron, sans-serif",
-                                fontSize: "0.58rem", letterSpacing: "0.08em", cursor: "pointer",
-                            }}
-                        >
-                            APLICAR
-                        </Box>
-                        <Box
-                            component="button"
-                            type="button"
-                            onClick={() => setEditing(false)}
-                            sx={{
-                                px: 1.25, py: 0.55, borderRadius: "4px",
-                                border: `1px solid ${C.border}`, bgcolor: "transparent",
-                                color: C.muted, fontFamily: "Orbitron, sans-serif",
-                                fontSize: "0.58rem", letterSpacing: "0.08em", cursor: "pointer",
-                            }}
-                        >
-                            CANCELAR
-                        </Box>
-                    </Box>
-                </Box>
-            ) : (
-                <KitMarkdown content={text} emptyLabel="Sin descripción" />
-            )}
-        </Box>
-    );
-}
-
-/* ── New item draft ───────────────────────────────────────────────── */
 function NewItemDraft({
     tag,
     tagColor,
@@ -1248,16 +139,14 @@ function NewItemDraft({
     const textRef = useRef(null);
     return (
         <Box sx={{
-            p: "12px 14px",
-            border: `1px solid ${C.cyan}`,
-            borderRadius: "8px",
-            bgcolor: "rgba(0,242,234,0.06)",
+            p: "10px 12px",
+            border: `1px dashed ${tagColor ? `${tagColor}99` : C.border}`,
+            borderRadius: "4px",
+            bgcolor: "rgba(0,0,0,0.38)",
         }}>
             <Box sx={{
-                fontFamily: "Orbitron, sans-serif", fontSize: "0.62rem", letterSpacing: "0.1em",
-                color: "#ffffff", mb: 1,
-                border: `1px solid ${tagColor ? `${tagColor}88` : C.border}`,
-                display: "inline-block", px: "6px", py: "2px", borderRadius: "3px",
+                fontFamily: "Orbitron, sans-serif", fontSize: "0.42rem", letterSpacing: "0.12em",
+                color: tagColor || C.cyan, mb: 1,
             }}>
                 NUEVO {tag}
             </Box>
@@ -1274,35 +163,34 @@ function NewItemDraft({
                 }}
             />
             {asAbility && (
-                <Box
-                    component="select"
+                <CyberSelect
                     value={abilityKind}
-                    onChange={(e) => {
-                        const kind = normalizeAbilityKind(e.target.value);
+                    aria-label="Ability kind"
+                    options={[
+                        { value: ABILITY_KINDS.STANDARD, label: "Standard" },
+                        { value: ABILITY_KINDS.ATTACK, label: "Attack (d20 + boons)" },
+                    ]}
+                    triggerSx={DRAFT_SELECT_SX}
+                    onChange={(next) => {
+                        const kind = normalizeAbilityKind(next);
                         setAbilityKind(kind);
                         if (kind === ABILITY_KINDS.ATTACK && !blurb.trim()) {
                             setBlurb(DEFAULT_ATTACK_CONTENT);
                         }
                     }}
-                    sx={selectSx}
-                >
-                    <option value={ABILITY_KINDS.STANDARD} style={{ background: "#000" }}>Standard</option>
-                    <option value={ABILITY_KINDS.ATTACK} style={{ background: "#000" }}>Attack (d20 + boons)</option>
-                </Box>
+                />
             )}
             {asTrait && (
-                <Box
-                    component="select"
+                <CyberSelect
                     value={traitCategory}
-                    onChange={(e) => setTraitCategory(normalizeTraitCategory(e.target.value))}
-                    sx={selectSx}
-                >
-                    {TRAIT_CATEGORY_LIST.map((cat) => (
-                        <option key={cat} value={cat} style={{ background: "#000" }}>
-                            {TRAIT_CATEGORY_LABELS[cat]}
-                        </option>
-                    ))}
-                </Box>
+                    aria-label="Trait category"
+                    options={TRAIT_CATEGORY_LIST.map((cat) => ({
+                        value: cat,
+                        label: TRAIT_CATEGORY_LABELS[cat],
+                    }))}
+                    triggerSx={DRAFT_SELECT_SX}
+                    onChange={(next) => setTraitCategory(normalizeTraitCategory(next))}
+                />
             )}
             {(asAbility || asTrait) && (
                 <TagSearchSelect
@@ -1370,245 +258,6 @@ function NewItemDraft({
     );
 }
 
-/* ── Limit Break panel ────────────────────────────────────────────── */
-function LimitBreakPanel({ limitBreak, unlocked, editMode, onSave, character, onCall }) {
-    const title = limitBreak?.label || "LIMIT BREAK";
-
-    if (unlocked && limitBreak) {
-        return (
-            <KitFold tag="LIMIT BREAK" tagColor={C.lb} title={title} onCall={onCall}>
-                <KitCard
-                    hideTag
-                    tag="LIMIT"
-                    tagColor={C.lb}
-                    title={limitBreak.label}
-                    text={limitBreak.blurb}
-                    editMode={editMode}
-                    showCommands={editMode}
-                    onSave={onSave}
-                    character={character}
-                    pinEntry={{
-                        type: MACRO_SLOT_TYPES.ULTIMATE,
-                        id: limitBreak.key || limitBreak.id,
-                        label: limitBreak.label || "LIMIT BREAK",
-                        blurb: limitBreak.blurb || "",
-                    }}
-                />
-            </KitFold>
-        );
-    }
-
-    return (
-        <KitFold tag="LIMIT BREAK" tagColor={C.danger} title={title}>
-            <Box
-                sx={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 1.25,
-                    py: 1.5,
-                }}
-            >
-                <Box
-                    className="dossier-lb-locked-x"
-                    sx={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: "50%",
-                        border: `2px solid ${C.danger}`,
-                        color: C.danger,
-                        display: "grid",
-                        placeItems: "center",
-                        fontFamily: "Orbitron, sans-serif",
-                        fontSize: "1.35rem",
-                        fontWeight: 700,
-                        boxShadow: `0 0 18px ${C.danger}44`,
-                    }}
-                >
-                    ✕
-                </Box>
-                <Box
-                    className="dossier-lb-locked-label"
-                    sx={{
-                        fontFamily: "Orbitron, sans-serif",
-                        fontSize: "0.62rem",
-                        color: C.danger,
-                        textTransform: "uppercase",
-                        textAlign: "center",
-                    }}
-                >
-                    Aún no Desbloqueado
-                </Box>
-            </Box>
-        </KitFold>
-    );
-}
-
-/* ── Ability block ────────────────────────────────────────────────── */
-function AbilityBlock({
-    ability,
-    isActive,
-    onToggleLoadout,
-    editMode,
-    onSave,
-    character,
-    availableTags = null,
-    onCall = null,
-    burdenDisabled = false,
-}) {
-    const [open, setOpen] = useState(false);
-    const { spawnPing } = useDossier();
-
-    return (
-        <Box sx={{
-            border: `1px solid ${burdenDisabled ? `${C.danger}88` : isActive ? "rgba(0,242,234,0.45)" : C.border}`,
-            borderRadius: "8px",
-            bgcolor: burdenDisabled ? "rgba(255,51,85,0.06)" : "rgba(0,0,0,0.22)",
-            overflow: "hidden",
-            alignSelf: "start",
-            opacity: burdenDisabled ? 0.72 : 1,
-        }}>
-            <Box
-                sx={{
-                    display: "flex", alignItems: "center", gap: "8px",
-                    p: "10px 12px",
-                    bgcolor: "rgba(0,0,0,0.2)",
-                    "&:hover": { bgcolor: "rgba(255,102,255,0.04)" },
-                }}
-            >
-                <Box
-                    role="checkbox"
-                    aria-checked={isActive}
-                    aria-label="Loadout"
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        spawnPing(e.clientX, e.clientY);
-                        onToggleLoadout();
-                    }}
-                    sx={{
-                        width: 18, height: 18, borderRadius: "3px", flexShrink: 0,
-                        border: `1px solid ${isActive ? C.cyan : C.border}`,
-                        bgcolor: isActive ? "rgba(0,242,234,0.15)" : "transparent",
-                        display: "grid", placeItems: "center",
-                        color: isActive ? C.cyan : "transparent",
-                        fontSize: "0.55rem",
-                        cursor: "pointer",
-                    }}
-                >
-                    {isActive ? "✓" : ""}
-                </Box>
-                <Box
-                    onClick={(e) => {
-                        spawnPing(e.clientX, e.clientY);
-                        setOpen((p) => !p);
-                    }}
-                    sx={{
-                        fontFamily: "Orbitron, sans-serif",
-                        fontSize: "0.72rem",
-                        letterSpacing: "0.08em",
-                        flex: 1,
-                        color: C.text,
-                        cursor: "pointer",
-                        minWidth: 0,
-                        textDecoration: burdenDisabled ? "line-through" : "none",
-                    }}
-                >
-                    {ability.label}
-                </Box>
-                {burdenDisabled && (
-                    <Box component="span" sx={{
-                        fontFamily: "Orbitron, sans-serif",
-                        fontSize: "0.45rem",
-                        letterSpacing: "0.08em",
-                        color: C.danger,
-                        border: `1px solid ${C.danger}88`,
-                        px: "4px",
-                        borderRadius: "2px",
-                    }}>
-                        CUT
-                    </Box>
-                )}
-                {ability.abilityKind === ABILITY_KINDS.ATTACK && (
-                    <Box component="span" sx={{
-                        fontFamily: "Orbitron, sans-serif",
-                        fontSize: "0.5rem",
-                        letterSpacing: "0.06em",
-                        color: C.danger,
-                        border: `1px solid ${C.danger}66`,
-                        px: "4px",
-                        borderRadius: "2px",
-                    }}>
-                        ATK
-                    </Box>
-                )}
-                <MacroPinButton
-                    character={character}
-                    entry={{
-                        type: MACRO_SLOT_TYPES.ABILITY,
-                        id: ability.key || ability.id,
-                        label: ability.label || "ABILITY",
-                        blurb: ability.blurb || "",
-                    }}
-                    size="tiny"
-                />
-                {typeof onCall === "function" && (
-                    <CallChatBtn
-                        disabled={burdenDisabled}
-                        onClick={() => {
-                            if (burdenDisabled) return;
-                            onCall();
-                        }}
-                    />
-                )}
-                <Box
-                    onClick={() => setOpen((p) => !p)}
-                    sx={{
-                        fontFamily: '"Fira Code", monospace', fontSize: "0.55rem",
-                        color: C.muted, px: "6px", cursor: "pointer",
-                        "&:hover": { color: C.cyan },
-                    }}
-                >
-                    {open ? "▲" : "▼"}
-                </Box>
-            </Box>
-
-            {open && (
-                <Box sx={{ p: "0 12px 12px" }}>
-                    {editMode ? (
-                        <KitCard
-                            tag="ABILITY"
-                            tagColor={C.cyan}
-                            title={ability.label}
-                            text={ability.blurb}
-                            editMode
-                            showCommands
-                            onSave={onSave}
-                            character={character}
-                            abilityKind={ability.abilityKind || ABILITY_KINDS.STANDARD}
-                            tagKeys={ability.tagKeys || []}
-                            availableTags={availableTags}
-                            pinEntry={{
-                                type: MACRO_SLOT_TYPES.ABILITY,
-                                id: ability.key || ability.id,
-                                label: ability.label || "ABILITY",
-                                blurb: ability.blurb || "",
-                            }}
-                        />
-                    ) : (
-                        <Box>
-                            <TagChipsRow tagKeys={ability.tagKeys || []} />
-                            <Box sx={{ mt: 1 }}>
-                                <KitMarkdown content={ability.blurb} />
-                            </Box>
-                        </Box>
-                    )}
-                </Box>
-            )}
-        </Box>
-    );
-}
-
 /* ── Create / propose job panel ───────────────────────────────────── */
 function CreateJobPanel({ isDM, onCreate, onCancel }) {
     const [name, setName] = useState("");
@@ -1642,28 +291,20 @@ function CreateJobPanel({ isDM, onCreate, onCancel }) {
                     fontFamily: "Orbitron, sans-serif", fontSize: "0.82rem", outline: "none",
                 }}
             />
-            <Box
-                component="select"
+            <CyberSelect
                 value={archetype}
-                onChange={(e) => {
-                    const a = e.target.value;
+                aria-label="Class archetype"
+                options={["stalwart", "vagabond", "mendicant", "wright"].map((a) => ({
+                    value: a,
+                    label: a.toUpperCase(),
+                }))}
+                triggerSx={{ ...DRAFT_SELECT_SX, mb: 1.25 }}
+                onChange={(a) => {
                     setArchetype(a);
                     setStats(combatDefaultsForArchetype(a));
                     setResource(classResourceForArchetype(a));
                 }}
-                sx={{
-                    width: "100%", mb: 1.25, boxSizing: "border-box",
-                    background: "rgba(0,0,0,0.4)", border: `1px solid ${C.border}`,
-                    borderRadius: "6px", color: C.text, p: "8px 10px",
-                    fontFamily: "'Fira Code', monospace", fontSize: "0.75rem", outline: "none",
-                }}
-            >
-                {["stalwart", "vagabond", "mendicant", "wright"].map((a) => (
-                    <option key={a} value={a} style={{ backgroundColor: "#12121a", color: "#fff" }}>
-                        {a.toUpperCase()}
-                    </option>
-                ))}
-            </Box>
+            />
             <Box sx={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 0.75, mb: 1.25 }}>
                 {COMBAT_STAT_KEYS.map((key) => (
                     <Box key={key}>
@@ -1671,19 +312,23 @@ function CreateJobPanel({ isDM, onCreate, onCancel }) {
                             {STAT_META[key]?.label || key}
                         </Box>
                         {key === "damageDie" ? (
-                            <Box
-                                component="select"
-                                value={stats.damageDie ?? 6}
-                                onChange={(e) => setStats((s) => ({ ...s, damageDie: Number(e.target.value) }))}
-                                sx={{
-                                    width: "100%", background: "rgba(0,0,0,0.4)", border: `1px solid ${C.border}`,
-                                    borderRadius: "4px", color: C.text, p: "6px", fontSize: "0.75rem",
+                            <CyberSelect
+                                value={String(stats.damageDie ?? 6)}
+                                aria-label="Damage die"
+                                options={DAMAGE_DIE_OPTIONS.map((d) => ({ value: String(d), label: `d${d}` }))}
+                                triggerSx={{
+                                    width: "100%",
+                                    bgcolor: "rgba(0,0,0,0.4)",
+                                    border: `1px solid ${C.border}`,
+                                    borderRadius: "4px",
+                                    color: C.text,
+                                    px: "6px",
+                                    py: "6px",
+                                    fontSize: "0.75rem",
+                                    justifyContent: "space-between",
                                 }}
-                            >
-                                {DAMAGE_DIE_OPTIONS.map((d) => (
-                                    <option key={d} value={d} style={{ backgroundColor: "#12121a" }}>d{d}</option>
-                                ))}
-                            </Box>
+                                onChange={(next) => setStats((s) => ({ ...s, damageDie: Number(next) }))}
+                            />
                         ) : (
                             <Box
                                 component="input"
@@ -1790,12 +435,17 @@ export default function DossierKitView({ character, initialMaletinOpen = false }
     const [campaignJobs, setCampaignJobs] = useState([]);
     const [showCreateJob, setShowCreateJob] = useState(false);
     const [draftTrait, setDraftTrait] = useState(false);
-    const [traitFilter, setTraitFilter] = useState(null); // null | TRAIT_CATEGORIES.*
     const [draftAbility, setDraftAbility] = useState(false);
+    const [kitEdit, setKitEdit] = useState(false);
+    const [benchOpen, setBenchOpen] = useState(false);
     const [savingExtra, setSavingExtra] = useState(false);
     const [maletinOpen, setMaletinOpen] = useState(Boolean(initialMaletinOpen));
     const [maletinCount, setMaletinCount] = useState(0);
     const didSeedLoadout = useRef(false);
+    const [abilityDrafts, setAbilityDrafts] = useState({});
+    const abilityDraftsRef = useRef({});
+    const persistPendingRef = useRef({});
+    const persistTimersRef = useRef({});
 
     useEffect(() => {
         if (initialMaletinOpen) setMaletinOpen(true);
@@ -1853,12 +503,6 @@ export default function DossierKitView({ character, initialMaletinOpen = false }
         return classResourceForArchetype(arch);
     }, [claseDoc]);
 
-    const jobSpecialMechanic = useMemo(
-        () => sanitizeSpecialMechanic(claseDoc?.specialMechanic),
-        [claseDoc],
-    );
-
-    const jobDescription = String(claseDoc?.description || "").trim();
     const jobDisplayName = String(
         claseDoc?.displayName || activeJob?.label || "",
     ).trim();
@@ -1933,103 +577,6 @@ export default function DossierKitView({ character, initialMaletinOpen = false }
         };
         patchDraft({ jobResources: next });
     };
-
-    const setJobResourceMeta = async (partial) => {
-        const jobId = activeJob?.classId || focusClassId || activeClassId;
-        if (!jobId || !isDM) return;
-        const next = sanitizeClassResource({ ...jobResourceDef, ...partial });
-        if (!next) {
-            dispatch(showSnackbar({
-                message: "Class resource necesita un nombre",
-                severity: "warning",
-            }));
-            return;
-        }
-        if (
-            next.name === jobResourceDef.name
-            && next.min === jobResourceDef.min
-            && next.max === jobResourceDef.max
-        ) {
-            return;
-        }
-        setSavingExtra(true);
-        try {
-            await updateClaseFields(jobId, { classResource: next });
-            setReloadTick((t) => t + 1);
-        } catch (err) {
-            console.error(err);
-            dispatch(showSnackbar({ message: "No se pudo guardar class resource", severity: "error" }));
-        } finally {
-            setSavingExtra(false);
-        }
-    };
-
-    const setJobSpecialMechanic = async (nextRaw) => {
-        const jobId = activeJob?.classId || focusClassId || activeClassId;
-        if (!jobId || !isDM) return;
-        const next = sanitizeSpecialMechanic(nextRaw);
-        if (!next) return;
-        const prev = jobSpecialMechanic;
-        if (prev && prev.name === next.name && prev.text === next.text) return;
-        setSavingExtra(true);
-        try {
-            await updateClaseFields(jobId, { specialMechanic: next });
-            setReloadTick((t) => t + 1);
-        } catch (err) {
-            console.error(err);
-            dispatch(showSnackbar({ message: "No se pudo guardar special mechanic", severity: "error" }));
-        } finally {
-            setSavingExtra(false);
-        }
-    };
-
-    const setJobIdentity = async ({ displayName, description }) => {
-        const jobId = activeJob?.classId || focusClassId || activeClassId;
-        if (!jobId || !isDM) return;
-        const nextName = String(displayName || "").trim();
-        const nextDesc = String(description || "").trim();
-        if (!nextName) return;
-        const prevName = jobDisplayName;
-        const prevDesc = jobDescription;
-        if (nextName === prevName && nextDesc === prevDesc) return;
-        setSavingExtra(true);
-        try {
-            await updateClaseFields(jobId, {
-                displayName: nextName,
-                description: nextDesc || null,
-            });
-            setReloadTick((t) => t + 1);
-        } catch (err) {
-            console.error(err);
-            dispatch(showSnackbar({ message: "No se pudo guardar el job", severity: "error" }));
-        } finally {
-            setSavingExtra(false);
-        }
-    };
-
-    const callKit = useCallback(async (card) => {
-        if (!campaignId || !character) {
-            dispatch(showSnackbar({ message: "Sin campaña/personaje", severity: "warning" }));
-            return;
-        }
-        try {
-            await callKitCardInChat(
-                campaignId,
-                profile,
-                {
-                    ...card,
-                    characterId: character.id,
-                    characterName: character.name,
-                    characterAvatarUrl: character.tokenImageUrl || character.imageUrl || null,
-                },
-                { character, claseDoc, combatStats },
-            );
-            dispatch(showSnackbar({ message: "Enviado al chat", severity: "success" }));
-        } catch (err) {
-            console.error("[DossierKitView] callKit:", err);
-            dispatch(showSnackbar({ message: "No se pudo enviar al chat", severity: "error" }));
-        }
-    }, [campaignId, character, profile, claseDoc, combatStats, dispatch]);
 
     const handleCreateJob = async ({ displayName, classArchetype, combatStats: cs, classResource, specialMechanic, description }) => {
         if (!campaignId) return;
@@ -2114,13 +661,13 @@ export default function DossierKitView({ character, initialMaletinOpen = false }
         }
     };
 
+    /* Over-6 is a warning, not a hard block (G9/loadout-warn) — Disable/Enable only touches loadout[]. */
     const handleAbilityToggle = useCallback((abilityId, jobAbilityIds) => {
         setLoadout((prev) => {
             const on = prev.includes(abilityId);
             let next;
             if (on) next = prev.filter((id) => id !== abilityId);
             else {
-                if (prev.length >= MAX_LOADOUT) return prev;
                 next = [...prev, abilityId];
                 if (!majorityOk(next, jobAbilityIds)) return prev;
             }
@@ -2136,17 +683,119 @@ export default function DossierKitView({ character, initialMaletinOpen = false }
         [activeJob],
     );
 
-    const traitsGrouped = useMemo(() => {
-        const list = (activeJob?.traits || []).filter(Boolean);
-        const filtered = traitFilter
-            ? list.filter((t) => normalizeTraitCategory(t.traitCategory) === traitFilter)
-            : list;
-        return TRAIT_CATEGORY_LIST.map((cat) => ({
-            cat,
-            label: TRAIT_CATEGORY_LABELS[cat],
-            items: filtered.filter((t) => normalizeTraitCategory(t.traitCategory) === cat),
-        })).filter((g) => g.items.length > 0);
-    }, [activeJob?.traits, traitFilter]);
+    /* Flat trait list — traitMode chip replaces the old traitCategory grouping/filter UI. */
+    const activeTraits = useMemo(
+        () => (activeJob?.traits || []).filter(Boolean),
+        [activeJob?.traits],
+    );
+
+    /* G11 grandfather ctx — nodes already attached to a job/legacy list stay unlocked
+     * even if a DM retroactively tags them with unlockCostAP, until the character
+     * migrates to strict mode (see kitProgression.js). */
+    const ownedBaseNodeIds = useMemo(() => {
+        const ids = new Set();
+        (character?.allAbilities || []).forEach((id) => ids.add(String(id)));
+        (character?.unlockedAbilities || []).forEach((id) => ids.add(String(id)));
+        jobList.forEach((j) => {
+            j.abilities.forEach((a) => ids.add(String(a.id)));
+            j.traits.forEach((t) => ids.add(String(t.id)));
+            if (j.limitBreak) ids.add(String(j.limitBreak.id));
+        });
+        return [...ids];
+    }, [character?.allAbilities, character?.unlockedAbilities, jobList]);
+
+    const kitCtx = useMemo(() => ({ ownedBaseNodeIds }), [ownedBaseNodeIds]);
+
+    const formulaCtx = useMemo(() => ({
+        damageDie: combatStats?.damageDie,
+        fray: combatStats?.fray,
+        mechanicResource: jobResourceValue,
+    }), [combatStats?.damageDie, combatStats?.fray, jobResourceValue]);
+
+    const mergeAbilityDraft = useCallback((node) => {
+        if (!node) return node;
+        const key = node.key || node.id;
+        const extra = abilityDrafts[key];
+        return extra ? { ...node, ...extra } : node;
+    }, [abilityDrafts]);
+
+    /** Direct A+ field patch. React overlay via startTransition (never blocks typing);
+     * Firestore write is debounced. Text fields already debounce before calling this. */
+    const patchAbilityFields = useCallback((existingKey, patch) => {
+        if (!existingKey || !patch) return;
+        abilityDraftsRef.current = {
+            ...abilityDraftsRef.current,
+            [existingKey]: { ...abilityDraftsRef.current[existingKey], ...patch },
+        };
+        startTransition(() => {
+            setAbilityDrafts(abilityDraftsRef.current);
+        });
+        persistPendingRef.current[existingKey] = {
+            ...(persistPendingRef.current[existingKey] || {}),
+            ...patch,
+        };
+        const prevTimer = persistTimersRef.current[existingKey];
+        if (prevTimer) clearTimeout(prevTimer);
+        persistTimersRef.current[existingKey] = setTimeout(async () => {
+            const toWrite = persistPendingRef.current[existingKey];
+            delete persistPendingRef.current[existingKey];
+            delete persistTimersRef.current[existingKey];
+            if (!toWrite) return;
+            try {
+                await upsertAbilityDoc(existingKey, toWrite);
+            } catch (err) {
+                console.error(err);
+                dispatch(showSnackbar({ message: "No se pudo guardar", severity: "error" }));
+            }
+        }, 700);
+    }, [dispatch]);
+
+    useEffect(() => () => {
+        Object.entries(persistPendingRef.current).forEach(([key, patch]) => {
+            if (patch) upsertAbilityDoc(key, patch).catch(console.error);
+        });
+        Object.values(persistTimersRef.current).forEach((t) => clearTimeout(t));
+    }, []);
+
+    /** G9 delete — irreversible: removes the doc + unlinks it from the job, and
+     * strips it from the local loadout so nothing dangles. */
+    const handleDeleteAbility = useCallback(async (node) => {
+        const jobId = activeJob?.classId || focusClassId || activeClassId;
+        const key = node?.key || node?.id;
+        if (!jobId || !key) return;
+        setSavingExtra(true);
+        try {
+            await deleteAbilityFromJob(jobId, key);
+            if (loadout.includes(key) && character?.id) {
+                const nextLoadout = loadout.filter((id) => id !== key);
+                setLoadout(nextLoadout);
+                await updateCharacterFields(character.id, { loadout: nextLoadout });
+            }
+            setReloadTick((t) => t + 1);
+            dispatch(showSnackbar({ message: "Eliminado", severity: "success" }));
+        } catch (err) {
+            console.error(err);
+            dispatch(showSnackbar({ message: "No se pudo eliminar", severity: "error" }));
+        } finally {
+            setSavingExtra(false);
+        }
+    }, [activeJob?.classId, focusClassId, activeClassId, loadout, character?.id, dispatch]);
+
+    /** G11 — spend AP to unlock a base node or a talent/mastery child. */
+    const handleUnlockNode = useCallback(async (node) => {
+        if (!character?.id) return;
+        const patch = unlockNode(character, node, kitCtx);
+        if (!patch) {
+            dispatch(showSnackbar({ message: "No se puede desbloquear (AP insuficiente)", severity: "warning" }));
+            return;
+        }
+        try {
+            await updateCharacterFields(character.id, patch);
+        } catch (err) {
+            console.error(err);
+            dispatch(showSnackbar({ message: "No se pudo desbloquear", severity: "error" }));
+        }
+    }, [character, kitCtx, dispatch]);
 
     const allAbilities = useMemo(() => {
         if (!activeJob) return [];
@@ -2176,7 +825,30 @@ export default function DossierKitView({ character, initialMaletinOpen = false }
         updateCharacterFields(character.id, { loadout: first6 }).catch(console.error);
     }, [loading, character?.id, currentLoadout.length, allAbilities]);
 
-    if (loading) {
+    const loadoutAbilities = useMemo(
+        () => loadout.map((id) => allAbilities.find((a) => a.id === id)).filter(Boolean),
+        [loadout, allAbilities],
+    );
+    const benchAbilities = useMemo(
+        () => allAbilities.filter((a) => !loadout.includes(a.id)),
+        [allAbilities, loadout],
+    );
+
+    const colSx = {
+        minWidth: 0,
+        minHeight: 0,
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        gap: "6px",
+        overflowY: "auto",
+        overflowX: "hidden",
+        pt: "6px",
+        ...CYBER_SCROLL_STYLE,
+        "@media (max-width:960px)": { gridColumn: "1 / -1", height: "auto", maxHeight: "none" },
+    };
+
+    if (loading && !jobList.length) {
         return (
             <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", flex: 1 }}>
                 <CircularProgress size={28} sx={{ color: C.cyan }} />
@@ -2185,365 +857,119 @@ export default function DossierKitView({ character, initialMaletinOpen = false }
     }
 
     return (
-        <Box sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, bgcolor: "rgba(8,8,14,0.55)", position: "relative" }}>
-            <div className="dossier-trail" style={{ margin: "0 18px 0" }} />
-            <Box sx={{ position: "absolute", top: 10, right: 14, zIndex: 4 }}>
-                <MaletinChromeButton
-                    open={maletinOpen}
-                    count={maletinCount}
-                    onClick={() => setMaletinOpen((v) => !v)}
+        <Box sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, bgcolor: "transparent", position: "relative" }}>
+            <Box
+                className="dialog-no-drag"
+                sx={{
+                    mx: "8px",
+                    mt: "7px",
+                    mb: "7px",
+                    border: "1px solid rgba(255,102,255,0.32)",
+                    borderRadius: "8px",
+                    overflow: "visible",
+                    background: "rgba(0,0,0,0.72)",
+                    boxShadow: "none",
+                }}
+            >
+                <DossierSeamP3 character={character} />
+                <PlateInsigniaDock
+                    character={character}
+                    combatStats={combatStats}
+                    overrides={overrides}
+                    editMode={editMode}
+                    onChangeStat={setOverride}
+                    onChangeName={(name) => patchDraft({ name })}
+                    onChangeLevel={(level) => patchDraft({ level })}
+                    onChangeAp={(ap) => patchDraft({ ap })}
+                    jobDisplayName={jobDisplayName}
+                    jobs={jobList}
+                    activeClassId={focusClassId || activeClassId}
+                    onSelectJob={handleJobChip}
+                    onAssignJob={handleAssignJob}
+                    campaignJobs={campaignJobs}
+                    kitEdit={kitEdit}
+                    isDM={isDM}
+                    onCreateJob={() => setShowCreateJob(true)}
+                    resource={jobResourceDef}
+                    resourceValue={jobResourceValue}
+                    onChangeResourceValue={setJobResourceValue}
+                    maletinOpen={maletinOpen}
+                    maletinCount={maletinCount}
+                    onToggleMaletin={() => setMaletinOpen((v) => !v)}
                 />
             </Box>
-
-            <Box sx={{ ...SCROLL_SX, px: "18px", pr: "56px", pb: "28px" }}>
-                {/* JOBS */}
-                <SectionLabel limit="1 por sesión" sx={{ mt: "8px" }}>JOB ACTIVO</SectionLabel>
-                <Box sx={{ display: "flex", flexWrap: "wrap", gap: "6px", mb: "4px", alignItems: "center" }}>
-                    {jobList.map((job) => {
-                        const isActive = job.classId === (focusClassId || activeClassId);
-                        return (
-                            <Box
-                                key={job.classId}
-                                component="button"
-                                type="button"
-                                onClick={(e) => handleJobChip(e, job.classId)}
-                                sx={{
-                                    fontFamily: "Orbitron, sans-serif", fontSize: "0.58rem", letterSpacing: "0.08em",
-                                    px: "12px", py: "7px", borderRadius: "999px",
-                                    border: `1px solid ${isActive ? C.cyan : C.border}`,
-                                    color: isActive ? C.cyan : C.muted,
-                                    bgcolor: isActive ? "rgba(0,242,234,0.1)" : "rgba(0,0,0,0.35)",
-                                    boxShadow: isActive ? `0 0 14px ${C.glowC}` : "none",
-                                    cursor: "pointer",
-                                    "&:hover": { borderColor: C.cyan, color: C.text },
-                                }}
-                            >
-                                {job.label}
-                                {isActive && (
-                                    <Box component="span" sx={{ ml: "6px", fontSize: "0.48rem", color: C.lb }}>ACTIVE</Box>
-                                )}
-                            </Box>
-                        );
-                    })}
-                    {jobList.length === 0 && (
-                        <Box sx={{ fontSize: "0.85rem", color: C.muted }}>Sin clases asignadas</Box>
-                    )}
-                    {editMode && (
-                        <>
-                            <Box
-                                component="select"
-                                value=""
-                                onChange={(e) => { if (e.target.value) handleAssignJob(e.target.value); }}
-                                sx={{
-                                    height: 32, px: 1, borderRadius: 999,
-                                    border: `1px solid ${C.border}`, bgcolor: "rgba(0,0,0,0.35)",
-                                    color: C.text, fontFamily: "Orbitron, sans-serif",
-                                    fontSize: "0.52rem", letterSpacing: "0.06em", outline: "none", cursor: "pointer",
-                                }}
-                            >
-                                <option value="" style={{ backgroundColor: "#12121a", color: "#fff" }}>+ ASIGNAR</option>
-                                {campaignJobs.map((j) => (
-                                    <option key={j.id} value={j.id} style={{ backgroundColor: "#12121a", color: "#fff" }}>
-                                        {(j.displayName || j.id).toUpperCase()}
-                                        {j.status === "proposed" ? " · PROPUESTO" : ""}
-                                    </option>
-                                ))}
-                            </Box>
-                            <Box
-                                component="button"
-                                type="button"
-                                onClick={() => setShowCreateJob((v) => !v)}
-                                sx={{
-                                    fontFamily: "Orbitron, sans-serif", fontSize: "0.52rem", letterSpacing: "0.08em",
-                                    px: "10px", py: "7px", borderRadius: "999px",
-                                    border: `1px solid ${C.pink}`, color: C.pink,
-                                    bgcolor: `${C.pink}14`, cursor: "pointer",
-                                    "&:hover": { bgcolor: `${C.pink}28` },
-                                }}
-                            >
-                                {isDM ? "+ CREAR JOB" : "+ PROPONER JOB"}
-                            </Box>
-                        </>
-                    )}
-                </Box>
-
-                {editMode && showCreateJob && (
+            {kitEdit && showCreateJob && (
+                <Box sx={{ px: "10px" }}>
                     <CreateJobPanel
                         isDM={isDM}
                         onCancel={() => setShowCreateJob(false)}
                         onCreate={handleCreateJob}
                     />
-                )}
+                </Box>
+            )}
 
-                {/* COMBAT — Job (left half) | Stats + Class Resource (right) → Special → LB */}
-                <SectionLabel>COMBAT</SectionLabel>
-                <Box sx={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(12, minmax(0, 1fr))",
-                    gap: "12px",
-                    alignItems: "stretch",
-                    "@media (max-width:900px)": {
-                        gridTemplateColumns: "1fr",
-                    },
-                }}>
-                    {/* Job identity — full left half (matches right stack height) */}
-                    <Box sx={{
-                        gridColumn: "span 6",
-                        minWidth: 0,
-                        display: "flex",
-                        flexDirection: "column",
-                        alignSelf: "stretch",
-                        "@media (max-width:900px)": { gridColumn: "1 / -1" },
-                    }}>
-                        <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-                            <JobIdentityPanel
-                                jobName={jobDisplayName}
-                                description={jobDescription}
-                                editMode={editMode}
-                                isDM={isDM}
-                                onSave={setJobIdentity}
-                                onCall={() => callKit({
-                                    id: `job:${activeClassId || "none"}`,
-                                    label: `JOB · ${jobDisplayName || "Sin job"}`,
-                                    content: jobDescription || "",
-                                    abilityKind: ABILITY_KINDS.STANDARD,
+            <Box
+                sx={{
+                    flex: 1,
+                    minHeight: 0,
+                    overflow: "hidden",
+                    px: "10px",
+                    pt: "8px",
+                    pb: "14px",
+                    display: "flex",
+                    flexDirection: "column",
+                }}
+            >
+                <Box
+                    sx={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(12, minmax(0, 1fr))",
+                        gap: "10px",
+                        alignItems: "stretch",
+                        flex: 1,
+                        minHeight: 0,
+                        height: "100%",
+                        "@media (max-width:960px)": {
+                            gridTemplateColumns: "1fr",
+                            overflowY: "auto",
+                            height: "auto",
+                            alignItems: "start",
+                            ...CYBER_SCROLL_STYLE,
+                        },
+                    }}
+                >
+                    <Box sx={{ ...colSx, gridColumn: "span 3" }}>
+                        <KitAlignRail
+                            label="TRAITS"
+                            end={kitEdit && !draftTrait ? (
+                                <RailAddSlot title="Agregar trait" onClick={() => setDraftTrait(true)} />
+                            ) : null}
+                        />
+                        {activeTraits.map((t) => (
+                            <TraitCategoryRail
+                                key={t.id}
+                                trait={mergeAbilityDraft(t)}
+                                character={character}
+                                kitEdit={kitEdit}
+                                kitCtx={kitCtx}
+                                formulaCtx={formulaCtx}
+                                campaignId={campaignId}
+                                profile={profile}
+                                availableTags={campaignTags}
+                                onPatch={(patch) => patchAbilityFields(t.key || t.id, patch)}
+                                onUnlockNode={handleUnlockNode}
+                                onDelete={kitEdit ? () => handleDeleteAbility(t) : null}
+                                onSave={({ label, blurb, tagKeys }) => saveAbilityToActiveJob({
+                                    label,
+                                    blurb,
+                                    type: "trait",
+                                    existingKey: t.key || t.id,
+                                    tagKeys,
                                 })}
                             />
-                        </Box>
-                    </Box>
-
-                    {/* Right stack: Stats + Class Resource */}
-                    <Box sx={{
-                        gridColumn: "span 6",
-                        minWidth: 0,
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "8px",
-                        "@media (max-width:900px)": { gridColumn: "1 / -1" },
-                    }}>
-                        <Box sx={{
-                            display: "grid",
-                            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                            gap: "8px",
-                            alignContent: "start",
-                        }}>
-                            {CORE_COMBAT_KEYS.map((key) => (
-                                <CombatStatCell
-                                    key={key}
-                                    statKey={key}
-                                    value={overrides[key] ?? ""}
-                                    display={combatStats?.[key] ?? 0}
-                                    editMode={editMode}
-                                    isOverride={overrides[key] != null}
-                                    onChange={(raw) => setOverride(key, raw)}
-                                />
-                            ))}
-                        </Box>
-                        <Box sx={{
-                            display: "grid",
-                            gridTemplateColumns: "1fr 1fr",
-                            gap: "8px",
-                            "@media (max-width:700px)": { gridTemplateColumns: "1fr" },
-                        }}>
-                            <CombatStatCell
-                                statKey="vigor"
-                                value={overrides.vigor ?? ""}
-                                display={combatStats?.vigor ?? 0}
-                                editMode={editMode}
-                                isOverride={overrides.vigor != null}
-                                onChange={(raw) => setOverride("vigor", raw)}
-                                layout="track"
-                            />
-                            <ClassResourceCell
-                                resource={jobResourceDef}
-                                value={jobResourceValue}
-                                editMode={editMode}
-                                isDM={isDM}
-                                onChangeValue={setJobResourceValue}
-                                onChangeMeta={setJobResourceMeta}
-                            />
-                        </Box>
-                    </Box>
-
-                    {/* Special Mechanic | Limit Break */}
-                    <Box sx={{
-                        gridColumn: "span 6",
-                        minWidth: 0,
-                        "@media (max-width:900px)": { gridColumn: "1 / -1" },
-                    }}>
-                        <SpecialMechanicPanel
-                            mechanic={jobSpecialMechanic}
-                            editMode={editMode}
-                            isDM={isDM}
-                            onChangeMeta={setJobSpecialMechanic}
-                            onCall={() => callKit({
-                                id: `special:${activeClassId || "none"}`,
-                                label: `SPECIAL · ${jobSpecialMechanic?.name || "Mechanic"}`,
-                                content: jobSpecialMechanic?.text || "",
-                                abilityKind: ABILITY_KINDS.STANDARD,
-                            })}
-                        />
-                    </Box>
-                    <Box sx={{
-                        gridColumn: "span 6",
-                        minWidth: 0,
-                        "@media (max-width:900px)": { gridColumn: "1 / -1" },
-                    }}>
-                        <LimitBreakPanel
-                            limitBreak={activeJob?.limitBreak || null}
-                            unlocked={lbUnlocked}
-                            editMode={editMode && lbUnlocked}
-                            character={character}
-                            onCall={activeJob?.limitBreak ? () => callKit({
-                                id: activeJob.limitBreak.key || activeJob.limitBreak.id,
-                                label: activeJob.limitBreak.label || "LIMIT BREAK",
-                                content: activeJob.limitBreak.blurb || "",
-                                abilityKind: ABILITY_KINDS.STANDARD,
-                            }) : undefined}
-                            onSave={({ label, blurb }) => saveAbilityToActiveJob({
-                                label,
-                                blurb,
-                                type: "ultimate",
-                                existingKey: activeJob?.limitBreak?.key || activeJob?.limitBreak?.id,
-                            })}
-                        />
-                    </Box>
-                </Box>
-
-                {/* TRAITS */}
-                <Box sx={{ mt: 0.5 }}>
-                    <Box sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 0.75,
-                        flexWrap: "wrap",
-                        mb: 1,
-                        mt: "14px",
-                    }}>
-                        <Box sx={{
-                            fontFamily: "Orbitron, sans-serif",
-                            fontSize: "0.58rem",
-                            letterSpacing: "0.14em",
-                            color: "#ffffff",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "10px",
-                            flex: 1,
-                            minWidth: 120,
-                            "&::after": {
-                                content: '""',
-                                flex: 1,
-                                height: "1px",
-                                background: `linear-gradient(90deg, ${C.cyan}66, transparent)`,
-                            },
-                        }}>
-                            TRAITS
-                        </Box>
-                        <Box
-                            component="button"
-                            type="button"
-                            onClick={() => setTraitFilter(null)}
-                            sx={{
-                                px: 0.8, py: 0.3, borderRadius: "3px",
-                                border: `1px solid ${traitFilter == null ? C.trait : C.border}`,
-                                bgcolor: traitFilter == null ? `${C.trait}18` : "transparent",
-                                color: traitFilter == null ? C.trait : C.muted,
-                                fontFamily: "Orbitron, sans-serif",
-                                fontSize: "0.48rem", letterSpacing: "0.06em", cursor: "pointer",
-                            }}
-                        >
-                            All
-                        </Box>
-                        {TRAIT_CATEGORY_LIST.map((cat) => (
-                            <Box
-                                key={cat}
-                                component="button"
-                                type="button"
-                                onClick={() => setTraitFilter((p) => (p === cat ? null : cat))}
-                                sx={{
-                                    px: 0.8, py: 0.3, borderRadius: "3px",
-                                    border: `1px solid ${traitFilter === cat ? C.trait : C.border}`,
-                                    bgcolor: traitFilter === cat ? `${C.trait}18` : "transparent",
-                                    color: traitFilter === cat ? C.trait : C.muted,
-                                    fontFamily: "Orbitron, sans-serif",
-                                    fontSize: "0.48rem", letterSpacing: "0.06em", cursor: "pointer",
-                                }}
-                            >
-                                {TRAIT_CATEGORY_LABELS[cat]}
-                            </Box>
                         ))}
-                    </Box>
-                    <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
-                        {traitsGrouped.map((group) => (
-                            <Box key={group.cat}>
-                                {!traitFilter && group.items.length > 0 && (
-                                    <Box sx={{
-                                        fontFamily: "'Fira Code', monospace",
-                                        fontSize: "0.55rem",
-                                        color: C.trait,
-                                        letterSpacing: "0.06em",
-                                        mb: 0.5,
-                                    }}>
-                                        {group.label}
-                                    </Box>
-                                )}
-                                <Box sx={{
-                                    display: "grid",
-                                    gridTemplateColumns: "1fr 1fr",
-                                    gap: "10px",
-                                    alignItems: "start",
-                                    "@media (max-width:700px)": { gridTemplateColumns: "1fr" },
-                                }}>
-                                    {group.items.map((t) => (
-                                        <KitCard
-                                            key={t.id}
-                                            tag="TRAIT"
-                                            tagColor={C.trait}
-                                            title={t.label}
-                                            text={t.blurb}
-                                            editMode={editMode}
-                                            character={character}
-                                            showTraitMeta
-                                            traitCategory={t.traitCategory}
-                                            tagKeys={t.tagKeys || []}
-                                            availableTags={campaignTags}
-                                            burdenDisabled={isTraitTorn(character?.burdens, t.key || t.id)}
-                                            burdenDisabledLabel="TORN"
-                                            pinEntry={{
-                                                type: MACRO_SLOT_TYPES.TRAIT,
-                                                id: t.key || t.id,
-                                                label: t.label || "TRAIT",
-                                                blurb: t.blurb || "",
-                                            }}
-                                            onSave={({ label, blurb, traitCategory, tagKeys }) => saveAbilityToActiveJob({
-                                                label,
-                                                blurb,
-                                                type: "trait",
-                                                existingKey: t.key || t.id,
-                                                traitCategory,
-                                                tagKeys,
-                                            })}
-                                            onCall={() => callKit({
-                                                id: t.key || t.id,
-                                                label: t.label || "TRAIT",
-                                                content: t.blurb || "",
-                                                tagKeys: t.tagKeys || [],
-                                                abilityKind: ABILITY_KINDS.STANDARD,
-                                            })}
-                                        />
-                                    ))}
-                                </Box>
-                            </Box>
-                        ))}
-                        {(activeJob?.traits || []).length === 0 && !draftTrait && (
-                            <Box sx={{ fontSize: "0.85rem", color: C.muted }}>Sin traits</Box>
-                        )}
-                        {(activeJob?.traits || []).length > 0
-                            && traitsGrouped.every((g) => g.items.length === 0)
-                            && !draftTrait && (
-                            <Box sx={{ fontSize: "0.85rem", color: C.muted }}>
-                                Sin traits en esta categoría
-                            </Box>
+                        {activeTraits.length === 0 && !draftTrait && (
+                            <Box sx={{ fontSize: "0.75rem", color: C.muted, px: "6px" }}>Sin traits</Box>
                         )}
                         {draftTrait && (
                             <NewItemDraft
@@ -2559,96 +985,151 @@ export default function DossierKitView({ character, initialMaletinOpen = false }
                             />
                         )}
                     </Box>
-                    {editMode && !draftTrait && (
-                        <AddRowButton label="+ AGREGAR TRAIT" onClick={() => setDraftTrait(true)} />
-                    )}
-                </Box>
 
-                {/* LOADOUT */}
-                <Box sx={{
-                    display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap",
-                    p: "10px 12px", mt: "16px", mb: "4px", borderRadius: "8px",
-                    border: "1px solid rgba(255,204,51,0.28)",
-                    bgcolor: "rgba(255,204,51,0.06)",
-                    fontFamily: '"Fira Code", monospace', fontSize: "0.72rem", color: C.muted,
-                }}>
-                    <span>LOADOUT <strong style={{ color: C.lb }}>{loadout.length}/{MAX_LOADOUT}</strong></span>
-                    <Box sx={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
-                        {Array.from({ length: MAX_LOADOUT }).map((_, i) => (
-                            <Box key={i} sx={{
-                                width: 22, height: 22, borderRadius: "4px",
-                                border: `1px solid ${i < loadout.length ? C.cyan : C.border}`,
-                                bgcolor: i < loadout.length ? "rgba(0,242,234,0.12)" : "rgba(0,0,0,0.35)",
-                                display: "grid", placeItems: "center",
-                                fontSize: "0.5rem",
-                                color: i < loadout.length ? C.cyan : C.muted,
-                            }}>
-                                {i < loadout.length ? "◈" : "·"}
-                            </Box>
+                    <Box sx={{ ...colSx, gridColumn: "span 6" }}>
+                        <KitAlignRail
+                            label="LOADOUT"
+                            count={loadout.length}
+                            max={MAX_LOADOUT}
+                            over={loadout.length > MAX_LOADOUT}
+                            end={(
+                                <>
+                                    <LoadoutPips count={loadout.length} max={MAX_LOADOUT} />
+                                    <RailEditToggle on={kitEdit} onClick={() => setKitEdit((v) => !v)} />
+                                    {kitEdit && !draftAbility && (
+                                        <RailAddSlot title="Agregar habilidad" onClick={() => setDraftAbility(true)} />
+                                    )}
+                                </>
+                            )}
+                        />
+                        {loadoutAbilities.map((ab) => (
+                            <AbilityVerticalMicro
+                                key={ab.id}
+                                ability={mergeAbilityDraft(ab)}
+                                kitEdit={kitEdit}
+                                character={character}
+                                kitCtx={kitCtx}
+                                formulaCtx={formulaCtx}
+                                campaignId={campaignId}
+                                profile={profile}
+                                availableTags={campaignTags}
+                                onToggleLoadout={() => handleAbilityToggle(ab.id, jobAbilityIds)}
+                                onSave={({ label, blurb, abilityKind, tagKeys }) => saveAbilityToActiveJob({
+                                    label, blurb, type: "ability", existingKey: ab.key || ab.id,
+                                    abilityKind, tagKeys,
+                                })}
+                                onPatch={(patch) => patchAbilityFields(ab.key || ab.id, patch)}
+                                onUnlockNode={handleUnlockNode}
+                                onDelete={() => handleDeleteAbility(ab)}
+                            />
+                        ))}
+                        {loadoutAbilities.length === 0 && !draftAbility && (
+                            <Box sx={{ fontSize: "0.75rem", color: C.muted, px: "6px" }}>Loadout vacío</Box>
+                        )}
+                        {draftAbility && (
+                            <NewItemDraft
+                                tag="ABILITY"
+                                tagColor={C.cyan}
+                                showCommands
+                                asAbility
+                                availableTags={campaignTags}
+                                onCancel={() => setDraftAbility(false)}
+                                onCommit={async (data) => {
+                                    await saveAbilityToActiveJob({ ...data, type: "ability" });
+                                    setDraftAbility(false);
+                                }}
+                            />
+                        )}
+                        <Box
+                            component="button"
+                            type="button"
+                            onClick={() => setBenchOpen((v) => !v)}
+                            sx={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "8px",
+                                width: "100%",
+                                height: 28,
+                                px: "10px",
+                                borderRadius: "5px",
+                                border: "1px dashed rgba(255,255,255,0.16)",
+                                bgcolor: "rgba(0,0,0,0.25)",
+                                color: C.muted,
+                                fontFamily: "Orbitron, sans-serif",
+                                fontSize: "0.4rem",
+                                letterSpacing: "0.12em",
+                                cursor: "pointer",
+                            }}
+                        >
+                            <Box component="span" sx={{ transform: benchOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▸</Box>
+                            BENCH · INACTIVE
+                            <Box component="span" sx={{ ml: "auto", color: C.cyan }}>{benchAbilities.length}</Box>
+                        </Box>
+                        {benchOpen && benchAbilities.map((ab) => (
+                            <AbilityVerticalMicro
+                                key={ab.id}
+                                ability={mergeAbilityDraft(ab)}
+                                inactive
+                                kitEdit={kitEdit}
+                                character={character}
+                                kitCtx={kitCtx}
+                                formulaCtx={formulaCtx}
+                                campaignId={campaignId}
+                                profile={profile}
+                                availableTags={campaignTags}
+                                onToggleLoadout={() => handleAbilityToggle(ab.id, jobAbilityIds)}
+                                onSave={({ label, blurb, abilityKind, tagKeys }) => saveAbilityToActiveJob({
+                                    label, blurb, type: "ability", existingKey: ab.key || ab.id,
+                                    abilityKind, tagKeys,
+                                })}
+                                onPatch={(patch) => patchAbilityFields(ab.key || ab.id, patch)}
+                                onUnlockNode={handleUnlockNode}
+                                onDelete={() => handleDeleteAbility(ab)}
+                            />
                         ))}
                     </Box>
-                    <Box component="span" sx={{ ml: "auto" }}>✓ = loadout · click nombre = detalle</Box>
-                </Box>
 
-                {/* ABILITIES — 2 cols, desplegadas */}
-                <SectionLabel limit={`${loadout.length}/${MAX_LOADOUT} loadout · + 2 talentos · 1 mastery c/u`}>HABILIDADES</SectionLabel>
-                <Box sx={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                    gap: "10px",
-                    mb: "4px",
-                    alignItems: "start",
-                    "@media (max-width:700px)": { gridTemplateColumns: "1fr" },
-                }}>
-                    {allAbilities.map((ab) => (
-                        <AbilityBlock
-                            key={ab.id}
-                            ability={ab}
-                            isActive={loadout.includes(ab.id)}
-                            onToggleLoadout={() => handleAbilityToggle(ab.id, jobAbilityIds)}
-                            editMode={editMode}
+                    <Box sx={{ ...colSx, gridColumn: "span 3" }}>
+                        <KitAlignRail
+                            label="LIMIT BREAK"
+                            variant={lbUnlocked ? "lb-ready" : "lb-locked"}
+                            end={(
+                                <Box sx={{
+                                    fontFamily: "Orbitron, sans-serif",
+                                    fontSize: "0.42rem",
+                                    letterSpacing: "0.1em",
+                                    color: lbUnlocked ? "#ffcc33" : "#ff3355",
+                                }}>
+                                    {lbUnlocked ? "READY" : "LOCKED"}
+                                </Box>
+                            )}
+                        />
+                        <LbStackCompact
+                            limitBreak={mergeAbilityDraft(activeJob?.limitBreak) || null}
+                            unlocked={lbUnlocked}
+                            kitEdit={kitEdit && lbUnlocked}
                             character={character}
+                            kitCtx={kitCtx}
+                            formulaCtx={formulaCtx}
+                            campaignId={campaignId}
+                            profile={profile}
                             availableTags={campaignTags}
-                            burdenDisabled={isAbilityCut(character?.burdens, ab.key || ab.id)}
-                            onSave={({ label, blurb, abilityKind, tagKeys }) => saveAbilityToActiveJob({
-                                label, blurb, type: "ability", existingKey: ab.key || ab.id,
-                                abilityKind, tagKeys,
+                            onSave={({ label, blurb, tagKeys }) => saveAbilityToActiveJob({
+                                label,
+                                blurb,
+                                type: "ultimate",
+                                existingKey: activeJob?.limitBreak?.key || activeJob?.limitBreak?.id,
+                                tagKeys,
                             })}
-                            onCall={() => callKit({
-                                id: ab.key || ab.id,
-                                label: ab.label || "ABILITY",
-                                content: ab.blurb || "",
-                                tagKeys: ab.tagKeys || [],
-                                abilityKind: ab.abilityKind || ABILITY_KINDS.STANDARD,
-                            })}
+                            onPatch={(patch) => patchAbilityFields(
+                                activeJob?.limitBreak?.key || activeJob?.limitBreak?.id,
+                                patch,
+                            )}
+                            onUnlockNode={handleUnlockNode}
+                            onDelete={() => handleDeleteAbility(activeJob?.limitBreak)}
                         />
-                    ))}
-                    {allAbilities.length === 0 && !draftAbility && (
-                        <Box sx={{ fontSize: "0.85rem", color: C.muted, gridColumn: "1 / -1" }}>
-                            Sin habilidades cargadas
-                        </Box>
-                    )}
-                    {draftAbility && (
-                        <NewItemDraft
-                            tag="ABILITY"
-                            tagColor={C.cyan}
-                            showCommands
-                            asAbility
-                            availableTags={campaignTags}
-                            onCancel={() => setDraftAbility(false)}
-                            onCommit={async (data) => {
-                                await saveAbilityToActiveJob({ ...data, type: "ability" });
-                                setDraftAbility(false);
-                            }}
-                        />
-                    )}
+                    </Box>
                 </Box>
-                {editMode && !draftAbility && (
-                    <AddRowButton
-                        label="+ AGREGAR HABILIDAD"
-                        onClick={() => setDraftAbility(true)}
-                    />
-                )}
 
                 {savingExtra && (
                     <Box sx={{ mt: 1.5, display: "flex", alignItems: "center", gap: 1 }}>

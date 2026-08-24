@@ -59,7 +59,7 @@ Skills útiles: `pixi-map-ttrpg` (código), `icon-ttrpg-index` (reglas ICON si h
 | Tú escribes | El agente debe |
 |-------------|----------------|
 | `OK plan` | Implementar según plan acordado |
-| `OK slice` | Checklist de prueba manual + sugerir commit (no commit sin pedir) |
+| `OK slice` | `npm run test:phase-03` + checklist manual + sugerir commit (no commit sin pedir) |
 | `Corregir: …` | Solo eso; no abrir slice siguiente |
 | `No ejecutar backfill` | Solo `--dry-run` |
 | Bloqueo de diseño | 2–3 opciones + recomendación; esperar tu OK |
@@ -143,6 +143,53 @@ Si falta en DECISION-LOG: DETENER y preguntar con opciones.
 
 Primera acción: delta live vs target en ≤10 líneas + plan de archivos.
 ```
+
+---
+
+## Protocolo de tests (obligatorio tras cada slice)
+
+**Regla:** los tests de Fase 03 son **100 % locales** — `node --test` sobre fixtures en memoria.  
+**Prohibido** en la suite de slice: escribir en Firestore, crear personajes de prueba en Firebase, ni depender de cuota de red.
+
+### Comando canónico
+
+```powershell
+npm run test:phase-03
+```
+
+Incluye vitals + seam (`normalizeCharacter.test.mjs`, `seamVitals.test.mjs`).  
+Slices que toquen combate/rolls: `npm run test:combat-rolls`.
+
+### Qué debe cubrir cada slice (añadir tests al cerrar)
+
+| Slice | Tests mínimos (sin Firebase) |
+|-------|------------------------------|
+| **1** Vitals | `normalizeCharacterVitals`, migration patch, effort/turn defaults |
+| **2** Seam P3 | `commitSeamHpChange` (cascada VIT = HUD), `commitSeamVigChange`, `computeBarPercents`, `buildOptimisticVitalsReduxPatch` |
+| **3** Plate | `resolveCombatStats` plate keys; sin celda VIG en overrides |
+| **4** Header EDIT | blank-safe A+ field merge (util pura cuando exista) |
+| **5** Body B2 | `mergeUnlockedUpgrades`, formula VIEW substitute |
+| **6** Play/C2 | `launchToChat` payload builder, un solo post |
+| **7** COND | `normalizeConditions`, mirror patch builder (token ↔ character) |
+
+### Dónde viven los tests
+
+- Utilidades puras → `src/utils/*.test.mjs` junto al módulo.
+- **No** persistir resultados de test en Firebase.
+- Manual en campaña real = checklist humano **opcional** y separado; no sustituye `npm run test:phase-03`.
+
+### Checklist agente (fin de slice)
+
+1. `npm run test:phase-03` (o subset del slice) → **0 failures**
+2. Si se añadieron tests nuevos, documentar el comando en el mensaje de cierre
+3. Checklist manual solo si el slice tiene UI no cubierta por tests
+4. **NO** ejecutar backfill `--apply` ni seeds de prueba en prod
+
+### Comportamiento unificado (Slice 2b — locked)
+
+- **HP seam** usa `commitSeamHpChange` → misma cascada VIT que HUD F4 (`applyHpWithVitCascadeOnCharacter`).
+- **Dossier `patchDraft`** hace Redux optimista en vitals (`buildOptimisticVitalsReduxPatch`) para que F4 y dossier lean el mismo doc sin esperar autosave.
+- **Vigor** sin techo; **SHA/shattered** bloquea solo *ganar* vigor (bajar sigue permitido).
 
 ---
 
@@ -253,12 +300,13 @@ Plan → OK → implement → checklist.
 
 ## Checklist manual (después de cada slice)
 
-- [ ] Abrir campaña de prueba con PJ conocido
+- [ ] `npm run test:phase-03` (o `test:combat-rolls` si el slice tocó rolls) — **0 failures**
+- [ ] Abrir campaña de prueba con PJ conocido (solo si hay UI nueva)
 - [ ] Dossier abre sin error
-- [ ] HUD F4 muestra vitals coherentes
+- [ ] HUD F4 muestra vitals coherentes con dossier (mismo `hpCur` / `vigor` sin esperar 600ms)
 - [ ] Sin regresión: mapa, tokens, chat básico
-- [ ] `npm test` o tests del slice pasan
 - [ ] Commit con mensaje claro (cuando pidas)
+- [ ] **No** datos de prueba dejados en Firebase (tests = fixtures locales)
 
 ---
 

@@ -7,6 +7,7 @@ import { Box, Chip, FormControl, MenuItem, Select, TextField } from "@mui/materi
 
 import { CyberText, CyberTitle } from "../customs/CustomTexts";
 import CyberTooltip from "../customs/CyberTooltip";
+import { DebouncedTextField } from "../customs/DebouncedField";
 import { UI_COLORS } from "../../constants/uiColors";
 import { cyberMenuItemSx, cyberMenuPaperSx } from "../../constants/designSystem";
 import {
@@ -273,14 +274,14 @@ export default function DossierPersonalityPanel({
                         <Box component="span" sx={{ fontSize: "0.55rem", color: UI_COLORS.textSecondary, cursor: "help" }}>?</Box>
                     </CyberTooltip>
                 </Box>
-                <TextField
+                <DebouncedTextField
                     fullWidth
                     multiline
                     minRows={3}
                     placeholder="Personas, lugares o promesas que deben pesar si el evento las toca…"
                     value={ficha.bondNotes}
-                    onChange={(e) => patchFicha({ bondNotes: e.target.value })}
-                    onBlur={() => flushSave?.()}
+                    onCommit={(next) => patchFicha({ bondNotes: next })}
+                    onBlurExtra={() => flushSave?.()}
                     sx={fieldSx}
                 />
             </Box>

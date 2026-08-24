@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { Box } from "@mui/material";
 import DiceRevealOverlay from "./DiceRevealOverlay";
+import LocalDiceRevealHost from "./LocalDiceRevealHost";
 import VttChatPanel from "./VttChatPanel";
 import TokenDeployPanel from "./TokenDeployPanel";
 import CharacterRosterPanel from "./CharacterRosterPanel";
@@ -46,6 +47,7 @@ export default function VttDiceChatDock({
                 onDone={onDiceRevealDone}
                 onSkip={skipDiceReveal}
             />
+            <LocalDiceRevealHost />
             <Box
                 data-no-token-drop
                 sx={{

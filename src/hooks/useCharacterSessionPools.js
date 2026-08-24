@@ -54,7 +54,8 @@ const DEPRECATED_VITAL_TRACK_KEYS = new Set(["hp", "vit", "effort"]);
 /**
  * Session combat pools (legacy).
  * @deprecated Phase 03 slice 1+: HP/VIT/Effort are persisted on `characters/{id}`.
- * This hook remains for transitional UIs (SheetHpHud, SessionPoolHud) until slice 7 cleanup.
+ * Retained for non-vital class resource tracks (`SessionPoolHud`) — confirmed
+ * legitimate scope in Phase 03 Slice 7 cleanup (not full retirement).
  * Writes to hp/vit/effort tracks are ignored.
  */
 export function useCharacterSessionPools(characterId, resourceTracks, options = {}) {

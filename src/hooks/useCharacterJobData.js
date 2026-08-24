@@ -4,6 +4,7 @@ import { getAbilityKeysForClase, getClaseDocsByIds } from "../../firebase/servic
 import { formatClassLabel } from "../constants/characterSheetTokens";
 import { archGlow } from "../components/tabs/subtabs/skillMatrix/orbitLayoutEngine";
 import { normalizeTraitCategory } from "../constants/abilityKinds";
+import { normalizeAbilityAplus } from "../utils/abilityAplus";
 
 /**
  * Shared Firebase loader for job / class data.
@@ -35,13 +36,19 @@ export function useCharacterJobData(character, reloadKey = 0) {
         [assignedKey]
     );
 
+    const allAbilitiesKey = Array.isArray(character?.allAbilities)
+        ? character.allAbilities.filter(Boolean).join(",")
+        : "";
+    const unlockedKey = Array.isArray(character?.unlockedAbilities)
+        ? character.unlockedAbilities.filter(Boolean).join(",")
+        : "";
+
     const [loading, setLoading] = useState(true);
     const [payload, setPayload] = useState(null);
 
     useEffect(() => {
         let cancelled = false;
         async function load() {
-            setLoading(true);
             try {
                 if (classIds.length) {
                     const [meta, keysList] = await Promise.all([
@@ -73,7 +80,7 @@ export function useCharacterJobData(character, reloadKey = 0) {
         }
         load();
         return () => { cancelled = true; };
-    }, [character?.id, assignedKey, classIds, character?.allAbilities, character?.unlockedAbilities, reloadKey]);
+    }, [character?.id, assignedKey, classIds, allAbilitiesKey, unlockedKey, reloadKey]);
 
     /** Build a normalized job list from the raw payload */
     const jobList = useMemo(() => {
@@ -102,8 +109,10 @@ export function useCharacterJobData(character, reloadKey = 0) {
 }
 
 /**
- * Partition flat ability docs by `type` and nest upgrades/masteries under their parent ability.
- * Same taxonomy as skillMatrixUtils / neuralMeshLayout.
+ * Partition flat ability docs by `type` and nest upgrades/masteries under their parent
+ * ability/trait/LB (talents/mastery flatten onto all three kinds, not just abilities —
+ * G11 gates T1/T2/M unlocks on any base node). Same taxonomy as skillMatrixUtils /
+ * neuralMeshLayout.
  */
 function buildJobFromAbilities(rawAbs, { classId, label, accent }) {
     const byParent = new Map();
@@ -114,31 +123,30 @@ function buildJobFromAbilities(rawAbs, { classId, label, accent }) {
         byParent.get(pid).push(a);
     }
 
+    function withChildren(leaf, ownerKey) {
+        if (!leaf) return null;
+        const kids = byParent.get(ownerKey) || [];
+        const talents = kids
+            .filter((x) => x.type === "upgrade")
+            .slice(0, 2)
+            .map(normalizeTalent)
+            .filter(Boolean);
+        const masteryRaw = kids.find((x) => x.type === "mastery") || null;
+        const mastery = masteryRaw ? normalizeTalent(masteryRaw) : null;
+        return { ...leaf, talents, mastery };
+    }
+
     const traits = rawAbs
         .filter((a) => a.type === "trait")
-        .map(normalizeTrait)
+        .map((t) => withChildren(normalizeTrait(t), t.key || t.id))
         .filter(Boolean);
 
     const limitRaw = rawAbs.find((a) => a.type === "ultimate" || a.isLimitBreak || a.kind === "limitbreak");
-    const limitBreak = limitRaw ? normalizeLeaf(limitRaw) : null;
+    const limitBreak = limitRaw ? withChildren(normalizeLeaf(limitRaw), limitRaw.key || limitRaw.id) : null;
 
     const abilities = rawAbs
         .filter((a) => a.type === "ability")
-        .map((ab) => {
-            const kids = byParent.get(ab.key || ab.id) || [];
-            const talents = kids
-                .filter((x) => x.type === "upgrade")
-                .slice(0, 2)
-                .map(normalizeTalent)
-                .filter(Boolean);
-            const masteryRaw = kids.find((x) => x.type === "mastery") || null;
-            const mastery = masteryRaw ? normalizeTalent(masteryRaw) : null;
-            return {
-                ...normalizeLeaf(ab),
-                talents,
-                mastery,
-            };
-        })
+        .map((ab) => withChildren(normalizeLeaf(ab), ab.key || ab.id))
         .filter(Boolean);
 
     return { classId, label, accent, abilities, traits, limitBreak };
@@ -146,27 +154,36 @@ function buildJobFromAbilities(rawAbs, { classId, label, accent }) {
 
 /* ── Normalizers ─────────────────────────────────────────────────── */
 
+/**
+ * Flatten a raw `abilities/{key}` doc into legacy display fields (label/blurb/
+ * abilityKind/tagKeys/traitCategory, kept for existing consumers) plus the full A+
+ * shape (title/description/hasAttack/actionCost/range/aoe/tags/effects/attack/
+ * traitMode/resolveCost/unlockCostAP) via `abilityAplus.js`.
+ */
 function normalizeLeaf(raw) {
     if (!raw) return null;
+    const aplus = normalizeAbilityAplus(raw);
     return {
-        id:    raw.id || raw.key || "",
-        key:   raw.key || raw.id || "",
-        label: (raw.label || raw.displayName || raw.name || raw.key || "").toUpperCase(),
-        blurb: raw.content || raw.description || raw.text || raw.blurb || raw.summary || "",
-        abilityKind: String(raw.abilityKind || "").toLowerCase() === "attack" ? "attack" : "standard",
-        tagKeys: Array.isArray(raw.tagKeys) ? raw.tagKeys.map(String).filter(Boolean) : [],
+        ...aplus,
+        id: raw.id || raw.key || aplus.id || "",
+        key: raw.key || raw.id || aplus.key || "",
+        label: (raw.label || raw.displayName || raw.name || raw.key || aplus.title || "").toUpperCase(),
+        blurb: raw.content || raw.description || raw.text || raw.blurb || raw.summary || aplus.description || "",
+        abilityKind: aplus.abilityKind,
+        tagKeys: aplus.tags,
         traitCategory: normalizeTraitCategory(raw.traitCategory),
+        mods: Array.isArray(raw.mods) ? raw.mods : [],
     };
 }
 
 function normalizeTalent(raw) {
     if (!raw) return null;
-    if (typeof raw === "string") return { id: raw, label: raw.toUpperCase(), blurb: "" };
+    if (typeof raw === "string") return { id: raw, key: raw, label: raw.toUpperCase(), blurb: "", mods: [] };
     return normalizeLeaf(raw);
 }
 
 function normalizeTrait(raw) {
     if (!raw) return null;
-    if (typeof raw === "string") return { id: raw, label: raw.toUpperCase(), blurb: "" };
+    if (typeof raw === "string") return { id: raw, key: raw, label: raw.toUpperCase(), blurb: "", mods: [] };
     return normalizeLeaf(raw);
 }

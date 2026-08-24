@@ -128,7 +128,15 @@ export async function updateTokenSizeOverride(campaignId, mapId, tokenId, sizeOv
     );
 }
 
-/** @param {string[]} conditions */
+/**
+ * @deprecated G12 (Phase 03 Slice 7): `character.conditions[]` is now the
+ * single source of truth for condition state (dossier COND drawer +
+ * `MapContextMenu` both read/write it; `TokenLayer` badges read it too).
+ * This helper is unused by character-linked tokens as of that migration but
+ * is left in place in case a future map-only marker (no linked character)
+ * needs a token-scoped conditions store.
+ * @param {string[]} conditions
+ */
 export async function updateTokenConditions(campaignId, mapId, tokenId, conditions, existingPos) {
     return updateTokenPosition(
         campaignId,

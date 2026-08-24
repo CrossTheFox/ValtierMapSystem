@@ -27,4 +27,8 @@ export const UI_COLORS = {
     /** Inventory / object macros. */
     loot: "#f5c542",
     lootGlow: "rgba(245, 197, 66, 0.4)",
+
+    /** Vigor pool — seam P3 chip + bar tip only (CANON). */
+    vigor: "#b8ff3c",
+    vigorGlow: "rgba(184, 255, 60, 0.45)",
 };

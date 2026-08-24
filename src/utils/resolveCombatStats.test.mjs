@@ -33,4 +33,41 @@ describe("resolveCombatStats", () => {
         // legacy vit when no combatOverrides.vit
         assert.equal(s.vit, 9);
     });
+
+    describe("plate parity (Slice 3 — no VIG cell)", () => {
+        const PLATE_KEYS = ["vit", "defense", "speed", "fray", "damageDie", "armor"];
+
+        it("exposes every plate stat key as a finite number", () => {
+            const s = resolveCombatStats(
+                { combatOverrides: { defense: 4 } },
+                { classArchetype: "stalwart", combatStats: { fray: 2 } },
+            );
+            for (const key of PLATE_KEYS) {
+                assert.equal(typeof s[key], "number", `${key} should be a number`);
+                assert.ok(Number.isFinite(s[key]), `${key} should be finite`);
+            }
+        });
+
+        it("hpMax/dash derive from vit/speed only, independent of vigor overrides", () => {
+            const withoutVigor = resolveCombatStats(
+                { combatOverrides: { vit: 6, speed: 8 } },
+                { classArchetype: "wright" },
+            );
+            const withVigor = resolveCombatStats(
+                { combatOverrides: { vit: 6, speed: 8, vigor: 99 } },
+                { classArchetype: "wright" },
+            );
+            assert.equal(withoutVigor.hpMax, 24);
+            assert.equal(withoutVigor.dash, 4);
+            // vigor override changes only vigor/vigorMax (deprecated fields), never hpMax/dash
+            assert.equal(withVigor.hpMax, withoutVigor.hpMax);
+            assert.equal(withVigor.dash, withoutVigor.dash);
+            assert.equal(withVigor.vigor, 99);
+        });
+
+        it("damageDie clamps to a valid die even when the job/character omit it", () => {
+            const s = resolveCombatStats({}, { classArchetype: "mendicant" });
+            assert.ok(Number.isFinite(s.damageDie) && s.damageDie > 0);
+        });
+    });
 });

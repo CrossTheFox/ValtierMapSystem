@@ -1,4 +1,5 @@
 import { resolveCombatStats } from "./resolveCombatStats.js";
+import { normalizeCharacterConditions } from "../constants/characterConditions.js";
 
 /** Default VIT when a character has none set (HP = VIT × 4). */
 export const DEFAULT_VIT = 4;
@@ -162,7 +163,7 @@ export function normalizeCharacterVitals(char, options = {}) {
     }
 
     const turn = char?.turn != null ? normalizeTurn(char.turn) : { ...DEFAULT_TURN };
-    const conditions = normalizeConditions(char?.conditions);
+    const conditions = normalizeCharacterConditions(char?.conditions);
 
     let hpBroken = false;
     if (typeof char?.hpBroken === "boolean") {

@@ -16,6 +16,7 @@ import { Box, CircularProgress, TextField } from "@mui/material";
 import { useDispatch, useSelector } from "react-redux";
 
 import { CyberText, CyberTitle } from "../customs/CustomTexts";
+import { DebouncedTextField } from "../customs/DebouncedField";
 import { UI_COLORS } from "../../constants/uiColors";
 import { WIKI_ENTITY_TYPES } from "../../constants/wikiEntityTypes";
 import { getEntityMeta, mergeCustomFields } from "../../utils/wikiCustomFields";
@@ -560,12 +561,12 @@ export default function DossierNarrativeView({ character }) {
                                             clearLabel="— Sin especie —"
                                         />
                                     </Box>
-                                    <TextField
+                                    <DebouncedTextField
                                         size="small"
                                         label="Género"
                                         value={ficha.genderPresentation}
-                                        onChange={(e) => patchFicha({ genderPresentation: e.target.value })}
-                                        onBlur={flushFichaSave}
+                                        onCommit={(next) => patchFicha({ genderPresentation: next })}
+                                        onBlurExtra={flushFichaSave}
                                         sx={{
                                             ...fieldSx,
                                             flex: "1 1 140px",
@@ -581,24 +582,24 @@ export default function DossierNarrativeView({ character }) {
                                         }}
                                     />
                                 </Box>
-                                <TextField
+                                <DebouncedTextField
                                     fullWidth
                                     size="small"
                                     label="Resumen"
                                     value={ficha.summary}
-                                    onChange={(e) => patchFicha({ summary: e.target.value })}
-                                    onBlur={flushFichaSave}
+                                    onCommit={(next) => patchFicha({ summary: next })}
+                                    onBlurExtra={flushFichaSave}
                                     sx={{ ...fieldSx, mb: 1.25 }}
                                     inputProps={{ maxLength: 280 }}
                                 />
-                                <TextField
+                                <DebouncedTextField
                                     fullWidth
                                     multiline
                                     minRows={10}
                                     label="Biografía / lore"
                                     value={ficha.body}
-                                    onChange={(e) => patchFicha({ body: e.target.value })}
-                                    onBlur={flushFichaSave}
+                                    onCommit={(next) => patchFicha({ body: next })}
+                                    onBlurExtra={flushFichaSave}
                                     sx={{
                                         ...fieldSx,
                                         flex: 1,

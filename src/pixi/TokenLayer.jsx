@@ -28,9 +28,9 @@ import {
     setSelectedTokenIds,
 } from "../store/uiSlice";
 import {
-    TOKEN_CONDITIONS,
-    normalizeTokenConditions,
-} from "../constants/tokenConditions";
+    CHARACTER_CONDITIONS,
+    normalizeCharacterConditions,
+} from "../constants/characterConditions";
 
 const HOVER_CYAN = 0x00f2ea;
 const SELECT_MAGENTA = 0xff66ff;
@@ -507,10 +507,10 @@ function setSelectChrome(entry, on, radiusHint = 0) {
 function createConditionBadges(conditions, radius) {
     const root = new PIXI.Container();
     root.eventMode = "none";
-    const list = normalizeTokenConditions(conditions);
+    const list = normalizeCharacterConditions(conditions);
     if (list.length === 0) return root;
 
-    const byKey = Object.fromEntries(TOKEN_CONDITIONS.map((c) => [c.key, c]));
+    const byKey = Object.fromEntries(CHARACTER_CONDITIONS.map((c) => [c.key, c]));
     const fontSize = Math.max(8, Math.round(radius * 0.28));
     let x = -radius * 0.9;
     const y = -radius - fontSize - 2;
@@ -520,7 +520,7 @@ function createConditionBadges(conditions, radius) {
         if (!def) return;
         const bg = new PIXI.Graphics();
         const label = new PIXI.Text({
-            text: def.short,
+            text: def.code,
             style: {
                 fontFamily: "Fira Code, monospace",
                 fontSize,
@@ -532,7 +532,7 @@ function createConditionBadges(conditions, radius) {
         const padX = 3;
         const w = label.width + padX * 2;
         const h = label.height + 2;
-        bg.beginFill(0xff66ff, 0.92);
+        bg.beginFill(new PIXI.Color(def.color).toNumber(), 0.92);
         bg.drawRoundedRect(0, 0, w, h, 2);
         bg.endFill();
         bg.x = x;
@@ -627,10 +627,10 @@ async function buildTokenVisual(char, diameter, color) {
 }
 
 function buildPositionPayload(entry, x, y) {
+    // G12: character.conditions[] is the single source of truth — position
+    // docs no longer carry conditions (drag no longer needs to round-trip them).
     const payload = { x, y };
     if (entry.sizeOverride) payload.sizeOverride = entry.sizeOverride;
-    const conditions = normalizeTokenConditions(entry.conditions);
-    if (conditions.length) payload.conditions = conditions;
     if (entry.visible === false) payload.visible = false;
     return payload;
 }
@@ -1043,7 +1043,6 @@ export default function TokenLayer() {
                         startX: entry.marker.x,
                         startY: entry.marker.y,
                         sizeOverride: entry.sizeOverride ?? null,
-                        conditions: entry.conditions ?? [],
                         visible: entry.visible,
                     });
                     entry.marker.cursor = "grabbing";
@@ -1086,7 +1085,8 @@ export default function TokenLayer() {
             const diameter = resolveTokenDiameter(char, cellSize, pos?.sizeOverride);
             const radius = diameter / 2;
             const color = ringColorForChar(char);
-            const conditions = normalizeTokenConditions(pos?.conditions);
+            // G12: badges read the character doc's conditions[], not the token position doc.
+            const conditions = normalizeCharacterConditions(char?.conditions);
             const condKey = conditions.join(",");
             const existing = markersRef.current.get(tokenId);
             const imageKey = tokenVisualKey(char);
