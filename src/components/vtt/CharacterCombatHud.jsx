@@ -30,7 +30,7 @@ import CyberTooltip from "../customs/CyberTooltip";
 import { UI_COLORS } from "../../constants/uiColors";
 import { cyberMenuItemSx, cyberMenuPaperSx, TYPO } from "../../constants/designSystem";
 import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
-import { VTT_HUD } from "../../constants/vttHudTokens";
+import { VTT_GRID, VTT_HUD, vttGapCss, vttSpanWidthCss } from "../../constants/vttHudTokens";
 import { useStatSystem } from "../../hooks/useStatSystem";
 import { usePinnedCharacters } from "../../hooks/usePinnedCharacters";
 import { useAssetUrl } from "../../hooks/useAssetUrl";
@@ -47,12 +47,23 @@ import {
     applyHpWithVitCascadeOnCharacter,
     applyVitChangeOnCharacter,
     normalizeCharacterVitals,
+    normalizeTurn,
     resolveCharacterHpMax,
+    resolveCharacterVit,
     resolveHpBrokenAfterChange,
 } from "../../utils/characterVitals";
+import { computeBarPercents, vigorGainBlocked } from "../../utils/seamVitals";
+import {
+    effortBladeCommit,
+    hpFromBarRatio,
+    nextPrincipalAfterEject,
+    shouldShowPrincipalPlus,
+    toggleTurn,
+} from "../../utils/hudF4";
+import { activeCharacterConditions } from "../../constants/characterConditions";
 import { normalizeTokenCrop, tokenCropCss } from "../../utils/tokenImageFit";
 import { rollStatInChat } from "../../../firebase/services/chatService";
-import AbilityHotbar, { COMBAT_DOCK_MIN_HEIGHT } from "./AbilityHotbar";
+import AbilityHotbar from "./AbilityHotbar";
 import BurdenMark from "../characters/BurdenMark";
 import {
     normalizeBurdens,
@@ -256,6 +267,11 @@ const VIT_RED = "#ff2a4a";
 const VIT_RED_LOST = "#8a1020";
 const VIT_RED_LOST_GLOW = "rgba(255, 42, 74, 0.35)";
 const VIT_RED_GLOW = "rgba(255, 42, 74, 0.55)";
+const F4_AMBER = "#ffb020";
+const F4_MACROS = "#e879f9";
+const F4_CYAN = UI_COLORS.anomaly;
+const F4_VIGOR = UI_COLORS.vigor;
+const F4_PINK = UI_COLORS.accent;
 
 /** Visual VIT ring always has 4 quarters (HP = VIT × 4); maps onto vitCur/vitMax. */
 const VIT_RING_SEGMENTS = 4;
@@ -297,7 +313,7 @@ function VitRingAvatar({
     const cur = Math.min(Math.max(Math.floor(Number(vitCur) || 0), 0), vmax);
     const filled = vitToFilledSegs(cur, vmax);
     const [hoverSeg, setHoverSeg] = useState(null);
-    const ringPad = 7;
+    const ringPad = 12;
     const outer = size + ringPad * 2;
     const cx = outer / 2;
     const cy = outer / 2;
@@ -447,13 +463,9 @@ function VitRingAvatar({
             >
                 <CharAvatarButton
                     char={char}
-                    active={!dead || portraitActive}
+                    active={!dead}
                     size={size}
-                    title={
-                        dead
-                            ? "BREAK · clic para cambiar personaje"
-                            : "Cambiar personaje"
-                    }
+                    title={dead ? "BREAK · abrir dossier" : "Abrir dossier"}
                     onClick={canPick
                         ? (e) => {
                             e.stopPropagation();
@@ -1401,6 +1413,519 @@ function ActionTile({ statDef, value, penance = 0, busy, onRoll }) {
     );
 }
 
+function F4PlusIcon() {
+    return (
+        <Box
+            component="svg"
+            viewBox="0 0 24 24"
+            sx={{ width: 13, height: 13, display: "block", pointerEvents: "none" }}
+        >
+            <path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+        </Box>
+    );
+}
+
+function F4EjectIcon() {
+    return (
+        <Box
+            component="svg"
+            viewBox="0 0 24 24"
+            sx={{ width: 9, height: 9, display: "block", pointerEvents: "none" }}
+        >
+            <path
+                fill="currentColor"
+                d="M18.3 5.71 12 12.01 5.7 5.7 4.29 7.11 10.59 13.4 4.29 19.7 5.7 21.11 12 14.82l6.3 6.29 1.41-1.41-6.29-6.3 6.29-6.29z"
+            />
+        </Box>
+    );
+}
+
+function F4BurdenIcon() {
+    return (
+        <Box
+            component="svg"
+            viewBox="0 0 24 24"
+            sx={{ width: 15, height: 15, display: "block", pointerEvents: "none" }}
+        >
+            <rect x="10" y="2.5" width="4" height="3.5" rx="0.4" fill="currentColor" />
+            <path d="M12 6 L12 8.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+            <path
+                d="M6.5 9.2 H17.5 L16.2 20.5 H7.8 Z"
+                fill="currentColor"
+                fillOpacity="0.55"
+                stroke="currentColor"
+                strokeWidth="1.4"
+            />
+            <path d="M12 10.2 L12 18.8" fill="none" stroke="#fff" strokeWidth="1.1" opacity="0.7" />
+        </Box>
+    );
+}
+
+function F4MoveGlyph() {
+    return (
+        <Box
+            component="svg"
+            viewBox="0 0 24 12"
+            sx={{ width: 12, height: 7, justifySelf: "end" }}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+        >
+            <path d="M2 6h14M13 2l7 4-7 4" />
+        </Box>
+    );
+}
+
+function f4VitFx(vitCur) {
+    const v = Math.min(Math.max(Math.floor(Number(vitCur) || 0), 0), 4);
+    const table = {
+        4: { veins: 0.12, circuit: 0.08, pulse: 0, pulseB: 0, bleed: 0, bleedH: "0%" },
+        3: { veins: 0.45, circuit: 0.25, pulse: 0.55, pulseB: 0, bleed: 0.35, bleedH: "8%" },
+        2: { veins: 0.7, circuit: 0.45, pulse: 0.85, pulseB: 0.5, bleed: 0.55, bleedH: "16%" },
+        1: { veins: 0.9, circuit: 0.7, pulse: 1, pulseB: 0.85, bleed: 0.75, bleedH: "28%" },
+        0: { veins: 1, circuit: 0.9, pulse: 1, pulseB: 0.9, bleed: 1, bleedH: "45%" },
+    };
+    return { v, ...table[v] };
+}
+
+function F4FxLayer({ vitCur }) {
+    const fx = f4VitFx(vitCur);
+    const dead = fx.v === 0;
+    return (
+        <Box
+            aria-hidden
+            className="fx-layer"
+            sx={{
+                position: "absolute",
+                inset: 0,
+                pointerEvents: "none",
+                zIndex: 4,
+                overflow: "hidden",
+                clipPath: "inherit",
+            }}
+        >
+            <Box
+                sx={{
+                    position: "absolute",
+                    inset: 0,
+                    opacity: dead ? 1 : 0,
+                    transition: "opacity 0.4s",
+                    background: dead
+                        ? "radial-gradient(ellipse at 30% 40%, rgba(40,8,12,0.5), transparent 55%), radial-gradient(ellipse at 80% 70%, rgba(20,20,24,0.6), transparent 50%), linear-gradient(135deg, rgba(18,18,22,0.55), rgba(8,8,10,0.35))"
+                        : "none",
+                }}
+            />
+            <Box
+                sx={{
+                    position: "absolute",
+                    inset: 0,
+                    opacity: fx.circuit,
+                    transition: "opacity 0.35s",
+                    background: dead
+                        ? "repeating-linear-gradient(90deg, transparent 0 16px, rgba(255,42,74,0.14) 16px 17px), repeating-linear-gradient(0deg, transparent 0 12px, rgba(80,80,85,0.2) 12px 13px)"
+                        : "repeating-linear-gradient(90deg, transparent 0 18px, rgba(255,42,74,0.07) 18px 19px), repeating-linear-gradient(0deg, transparent 0 14px, rgba(255,42,74,0.05) 14px 15px)",
+                    maskImage: "linear-gradient(90deg, #000 0%, transparent 35%, transparent 70%, #000 100%)",
+                    WebkitMaskImage: "linear-gradient(90deg, #000 0%, transparent 35%, transparent 70%, #000 100%)",
+                    animation: dead ? "f4CircuitFlicker 0.8s steps(2) infinite" : "none",
+                    "@keyframes f4CircuitFlicker": {
+                        "0%, 100%": { opacity: 0.9 },
+                        "50%": { opacity: 0.45 },
+                    },
+                    "@media (prefers-reduced-motion: reduce)": { animation: "none" },
+                }}
+            />
+            <Box
+                sx={{
+                    position: "absolute",
+                    inset: 0,
+                    opacity: fx.veins,
+                    transition: "opacity 0.35s",
+                    background: dead
+                        ? "linear-gradient(90deg, rgba(255,42,74,0.7) 0%, transparent 14%), linear-gradient(270deg, rgba(120,20,30,0.5) 0%, transparent 12%), linear-gradient(180deg, transparent 40%, rgba(255,42,74,0.35) 100%)"
+                        : "linear-gradient(90deg, rgba(255,42,74,0.55) 0%, transparent 10%), linear-gradient(270deg, rgba(255,42,74,0.28) 0%, transparent 8%), linear-gradient(180deg, transparent 55%, rgba(255,42,74,0.22) 100%)",
+                    boxShadow: "inset 0 0 28px rgba(255,42,74,0.12)",
+                }}
+            />
+            <Box
+                sx={{
+                    position: "absolute",
+                    inset: "auto 0 0 0",
+                    height: fx.bleedH,
+                    opacity: fx.bleed,
+                    transition: "height 0.4s, opacity 0.35s",
+                    background: "linear-gradient(0deg, rgba(255,42,74,0.45), transparent)",
+                }}
+            />
+            <Box
+                sx={{
+                    position: "absolute",
+                    left: fx.v <= 1 ? "1px" : 0,
+                    top: "18%",
+                    width: fx.v === 0 ? 5 : fx.v === 1 ? 4 : 3,
+                    height: "42%",
+                    background: dead
+                        ? "linear-gradient(180deg, transparent, #ff2a4a, #8a1020, transparent)"
+                        : `linear-gradient(180deg, transparent, ${VIT_RED}, transparent)`,
+                    boxShadow: `0 0 ${dead ? 20 : 14}px ${VIT_RED_GLOW}`,
+                    opacity: fx.pulse,
+                    animation: fx.pulse
+                        ? `f4PulseVein ${fx.v <= 1 ? (dead ? 0.55 : 0.9) : 1.4}s ease-in-out infinite`
+                        : "none",
+                    "@keyframes f4PulseVein": {
+                        "0%, 100%": { opacity: 0.35 },
+                        "50%": { opacity: 1 },
+                    },
+                    "@media (prefers-reduced-motion: reduce)": { animation: "none" },
+                }}
+            />
+            <Box
+                sx={{
+                    position: "absolute",
+                    right: 0,
+                    bottom: "12%",
+                    width: 3,
+                    height: "28%",
+                    background: `linear-gradient(180deg, transparent, ${VIT_RED}, transparent)`,
+                    boxShadow: `0 0 14px ${VIT_RED_GLOW}`,
+                    opacity: fx.pulseB,
+                    animation: fx.pulseB ? "f4PulseVein 1.4s ease-in-out 0.45s infinite" : "none",
+                    "@media (prefers-reduced-motion: reduce)": { animation: "none" },
+                }}
+            />
+        </Box>
+    );
+}
+
+function F4StackRow({
+    char,
+    isPrincipal,
+    isActiveTurn,
+    hpCur,
+    hpMax,
+    vitCur,
+    vitMax,
+    onSelect,
+    onEject,
+}) {
+    const pct = hpMax > 0 ? Math.round((hpCur / hpMax) * 100) : 0;
+    const fillTone = pct <= 33 ? "low" : pct <= 66 ? "mid" : "ok";
+    const fillBg = fillTone === "low"
+        ? "repeating-linear-gradient(-45deg, #ff4d6a 0 3px, #c01030 3px 6px)"
+        : fillTone === "mid"
+            ? "repeating-linear-gradient(-45deg, #ffb020 0 3px, #c87800 3px 6px)"
+            : "repeating-linear-gradient(-45deg, #00f2ea 0 3px, #00c4bd 3px 6px)";
+    return (
+        <Box
+            onClick={() => onSelect?.(char.id)}
+            sx={{
+                display: "grid",
+                gridTemplateColumns: "36px minmax(0, 1fr) 52px",
+                gap: "8px",
+                alignItems: "center",
+                width: "100%",
+                p: "5px 8px 5px 6px",
+                bgcolor: isPrincipal ? "rgba(0,24,28,0.7)" : "rgba(0,0,0,0.55)",
+                border: `1px solid ${
+                    isActiveTurn
+                        ? "rgba(255,176,32,0.65)"
+                        : isPrincipal
+                            ? "rgba(0,242,234,0.55)"
+                            : "rgba(255,255,255,0.1)"
+                }`,
+                boxShadow: isActiveTurn
+                    ? "0 0 12px rgba(255,176,32,0.2)"
+                    : isPrincipal
+                        ? "0 0 10px rgba(0,242,234,0.15)"
+                        : "none",
+                cursor: "pointer",
+                position: "relative",
+                overflow: "visible",
+                "&::after": {
+                    content: '""',
+                    position: "absolute",
+                    top: 0,
+                    right: 0,
+                    width: 8,
+                    height: 8,
+                    background: "linear-gradient(135deg, transparent 48%, rgba(0,0,0,0.9) 50%)",
+                    pointerEvents: "none",
+                },
+                "&:hover": {
+                    borderColor: "rgba(0,242,234,0.4)",
+                    bgcolor: "rgba(0,20,24,0.65)",
+                },
+            }}
+        >
+            <Box
+                component="button"
+                type="button"
+                title="Quitar de la lista"
+                aria-label={`Quitar ${char.name || ""}`}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onEject?.(char.id);
+                }}
+                sx={{
+                    position: "absolute",
+                    top: "-7px",
+                    left: "-7px",
+                    zIndex: 5,
+                    width: 16,
+                    height: 16,
+                    p: 0,
+                    border: "1px solid rgba(255,42,74,0.65)",
+                    bgcolor: "rgba(12,4,8,0.96)",
+                    color: "rgba(255,90,110,0.95)",
+                    cursor: "pointer",
+                    display: "grid",
+                    placeItems: "center",
+                    borderRadius: "1px",
+                    boxShadow: "0 0 0 1px rgba(0,0,0,0.7), 0 2px 8px rgba(0,0,0,0.45), 0 0 8px rgba(255,42,74,0.25)",
+                    "&:hover": {
+                        borderColor: "#fff",
+                        color: "#fff",
+                        bgcolor: "rgba(255,42,74,0.55)",
+                        transform: "scale(1.08)",
+                    },
+                }}
+            >
+                <F4EjectIcon />
+            </Box>
+            {isPrincipal && (
+                <Box
+                    sx={{
+                        position: "absolute",
+                        left: 14,
+                        top: "-7px",
+                        zIndex: 2,
+                        pointerEvents: "none",
+                        fontFamily: "Orbitron, sans-serif",
+                        fontSize: "0.34rem",
+                        letterSpacing: "0.1em",
+                        color: F4_CYAN,
+                        bgcolor: "rgba(0,0,0,0.9)",
+                        px: "5px",
+                        py: "1px",
+                        border: "1px solid rgba(0,242,234,0.45)",
+                    }}
+                >
+                    PRINCIPAL
+                </Box>
+            )}
+            {isActiveTurn && (
+                <Box
+                    sx={{
+                        position: "absolute",
+                        right: 6,
+                        top: "-7px",
+                        zIndex: 2,
+                        pointerEvents: "none",
+                        fontFamily: "Orbitron, sans-serif",
+                        fontSize: "0.34rem",
+                        letterSpacing: "0.1em",
+                        color: F4_AMBER,
+                        bgcolor: "rgba(0,0,0,0.9)",
+                        px: "5px",
+                        py: "1px",
+                        border: "1px solid rgba(255,176,32,0.5)",
+                    }}
+                >
+                    ACTIVE
+                </Box>
+            )}
+            <CharAvatarButton char={char} active={isPrincipal} size={32} title={char.name || "—"} />
+            <Box sx={{ minWidth: 0 }}>
+                <Box
+                    sx={{
+                        fontFamily: "Orbitron, sans-serif",
+                        fontSize: "0.48rem",
+                        letterSpacing: "0.1em",
+                        mb: "3px",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        color: UI_COLORS.textPrimary,
+                    }}
+                >
+                    {(char.name || "—").toUpperCase()}
+                </Box>
+                <Box
+                    sx={{
+                        position: "relative",
+                        height: 7,
+                        bgcolor: "#041016",
+                        boxShadow: "inset 0 0 0 1px rgba(0,242,234,0.35)",
+                        overflow: "hidden",
+                    }}
+                >
+                    <Box
+                        sx={{
+                            position: "absolute",
+                            inset: "0 auto 0 0",
+                            width: `${pct}%`,
+                            background: fillBg,
+                            boxShadow: fillTone === "ok" ? `0 0 6px ${F4_CYAN}80` : "none",
+                        }}
+                    />
+                </Box>
+            </Box>
+            <Box
+                sx={{
+                    fontFamily: '"Fira Code", monospace',
+                    fontSize: "0.5rem",
+                    color: UI_COLORS.textSecondary,
+                    textAlign: "right",
+                    lineHeight: 1.2,
+                }}
+            >
+                <Box component="span" sx={{ color: F4_CYAN, display: "block" }}>
+                    {hpCur}/{hpMax}
+                </Box>
+                <Box component="span" sx={{ color: "rgba(255,42,74,0.85)", fontSize: "0.42rem" }}>
+                    VIT {vitCur}/{vitMax}
+                </Box>
+            </Box>
+        </Box>
+    );
+}
+
+function F4BurdenRail({ burdens, character }) {
+    const slots = normalizeBurdens(burdens);
+    const active = listActiveBurdens(burdens);
+    return (
+        <Box
+            role="group"
+            aria-label="Burdens"
+            sx={{
+                position: "absolute",
+                left: "-34px",
+                top: "50%",
+                transform: "translateY(-50%)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "5px",
+                zIndex: 8,
+                p: "7px 5px",
+                bgcolor: "rgba(8,4,10,0.94)",
+                border: "1px solid rgba(255,42,74,0.4)",
+                clipPath: "polygon(0 0, 100% 5px, 100% calc(100% - 5px), 0 100%)",
+                boxShadow: "-6px 0 18px rgba(255,42,74,0.15)",
+            }}
+        >
+            {slots.map((b, i) => {
+                const on = Boolean(b);
+                const effectLine = b
+                    ? formatBurdenEffectSummary(b.effect, {
+                        targetLabel: burdenEffectTargetLabel(b.effect, character),
+                    })
+                    : "";
+                const note = (b?.consequence || b?.text || "").trim();
+                return (
+                    <Box
+                        key={b?.id || `empty-${i}`}
+                        component="button"
+                        type="button"
+                        aria-label={on ? (b.title || `Burden ${i + 1}`) : "Slot vacío"}
+                        title={on ? undefined : "Slot vacío"}
+                        sx={{
+                            position: "relative",
+                            width: 24,
+                            height: 24,
+                            p: 0,
+                            border: `1px solid ${on ? VIT_RED : "rgba(255,42,74,0.28)"}`,
+                            bgcolor: on ? "rgba(255,42,74,0.18)" : "rgba(0,0,0,0.45)",
+                            color: VIT_RED,
+                            cursor: "default",
+                            display: "grid",
+                            placeItems: "center",
+                            opacity: on ? 1 : 0.32,
+                            boxShadow: on ? "0 0 10px rgba(255,42,74,0.35)" : "none",
+                            "&:hover .f4-burden-tip": on ? { opacity: 1 } : {},
+                        }}
+                    >
+                        <F4BurdenIcon />
+                        {on && (
+                            <Box
+                                className="f4-burden-tip"
+                                sx={{
+                                    position: "absolute",
+                                    left: "calc(100% + 10px)",
+                                    top: "50%",
+                                    transform: "translateY(-50%)",
+                                    width: 240,
+                                    p: "10px 12px",
+                                    bgcolor: "rgba(8,6,12,0.97)",
+                                    border: "1px solid rgba(255,42,74,0.45)",
+                                    boxShadow: "0 12px 28px rgba(0,0,0,0.55), 0 0 16px rgba(255,42,74,0.15)",
+                                    clipPath: "polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px)",
+                                    opacity: 0,
+                                    pointerEvents: "none",
+                                    transition: "opacity 0.12s",
+                                    zIndex: 20,
+                                    textAlign: "left",
+                                }}
+                            >
+                                <Box
+                                    sx={{
+                                        fontFamily: "Orbitron, sans-serif",
+                                        fontSize: "0.5rem",
+                                        letterSpacing: "0.1em",
+                                        color: VIT_RED,
+                                        textTransform: "uppercase",
+                                        mb: "6px",
+                                    }}
+                                >
+                                    {active.length > 1 ? `Burdens · ${active.length}` : `Burden ${i + 1}`}
+                                </Box>
+                                <Box
+                                    sx={{
+                                        fontFamily: "Orbitron, sans-serif",
+                                        fontSize: "0.62rem",
+                                        letterSpacing: "0.06em",
+                                        color: "#fff",
+                                        textTransform: "uppercase",
+                                        mb: "2px",
+                                    }}
+                                >
+                                    {(b.title || "").trim() || `Burden ${i + 1}`}
+                                    <Box
+                                        component="span"
+                                        sx={{
+                                            fontFamily: '"Fira Code", monospace',
+                                            fontSize: "0.5rem",
+                                            color: VIT_RED,
+                                            ml: "6px",
+                                        }}
+                                    >
+                                        {b.clockFilled}/{b.clockSize}
+                                    </Box>
+                                </Box>
+                                {effectLine && (
+                                    <Box
+                                        sx={{
+                                            fontFamily: '"Fira Code", monospace',
+                                            fontSize: "0.56rem",
+                                            color: VIT_RED,
+                                            my: "4px",
+                                        }}
+                                    >
+                                        {effectLine}
+                                    </Box>
+                                )}
+                                {note && (
+                                    <Box sx={{ fontSize: "0.7rem", color: UI_COLORS.textSecondary, lineHeight: 1.35 }}>
+                                        {note}
+                                    </Box>
+                                )}
+                            </Box>
+                        )}
+                    </Box>
+                );
+            })}
+        </Box>
+    );
+}
+
 /** Bottom-left: session life sheet + pin rail + dossier/actions/macros column. */
 export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbilityBar }) {
     const dispatch = useDispatch();
@@ -1483,21 +2008,35 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         setActivatedIds((prev) => (prev.includes(selectedId) ? prev : [...prev, selectedId]));
     }, [selectedId]);
 
-    /** Above the surface: activated and/or pinned, excluding the one in the main HUD. */
+    /** Session stack: principal first (column-reverse → nearest the HUD), then added/pinned. */
     const stripChars = useMemo(() => {
         const order = [];
         const seen = new Set();
         const push = (id) => {
-            if (!id || id === selectedId || seen.has(id)) return;
+            if (!id || seen.has(id)) return;
             const c = roster.find((x) => x.id === id);
             if (!c) return;
             seen.add(id);
             order.push(c);
         };
+        if (selectedId) push(selectedId);
         activatedIds.forEach(push);
         pinnedIds.forEach(push);
         return order;
     }, [activatedIds, pinnedIds, roster, selectedId]);
+
+    const showStack = stripChars.length > 1 || stripChars.some((c) => c.id !== selectedId);
+
+    const assignedIds = useMemo(() => {
+        if (Array.isArray(profile?.characterIds) && profile.characterIds.length) {
+            return profile.characterIds.filter((id) => roster.some((c) => c.id === id));
+        }
+        return roster.map((c) => c.id);
+    }, [profile?.characterIds, roster]);
+
+    const assignedCount = isDM ? roster.length : assignedIds.length;
+    const showPlus = shouldShowPrincipalPlus({ assignedCount, isDm: isDM });
+    const activeTurnId = activeInitEntry?.id || null;
 
     const openCharMenu = (e, char) => {
         if (!char) return;
@@ -1525,26 +2064,33 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         return Math.max(1, Math.floor(Number(effortBase?.maxDefault) || 3));
     }, [resourceTracks]);
 
-    const remoteSessionPools = useSelector((s) => s.game?.sessionPools ?? {});
-
     const { vitals, persistVitals } = usePersistedCharacterVitals(selected, { effortMax });
 
     const vitCur = selected
         ? Math.min(Math.max(Math.floor(Number(selected.vit ?? vitMax) || 0), 0), vitMax)
         : 0;
     const hpCur = vitals?.hpCur ?? 0;
-    const hpPct = sheetHpMax > 0 ? (hpCur / sheetHpMax) * 100 : 0;
+    const vigor = vitals?.vigor ?? 0;
+    const { hpPct, vigPct } = computeBarPercents(sheetHpMax, hpCur, vigor);
     const effortCur = vitals?.effort?.current ?? 0;
+    const turn = normalizeTurn(vitals?.turn);
+    const shaBlocked = vigorGainBlocked(vitals?.conditions || selected?.conditions);
+    const condChips = useMemo(() => {
+        const all = activeCharacterConditions(selected?.conditions);
+        const rank = (c) => (c.key === "shattered" ? 0 : c.group === "statuses" ? 1 : 2);
+        return [...all].sort((a, b) => rank(a) - rank(b)).slice(0, 4);
+    }, [selected?.conditions]);
     const isBroken = Boolean(selected && vitals?.hpBroken);
     const isExhausted = Boolean(selected && vitals?.effort?.exhausted);
     const isDead = Boolean(selected && vitCur <= 0);
 
     const resolvePinHp = (char) => {
         const hpMax = resolveCharacterHpMax(char);
-        const poolEntry = char?.id ? remoteSessionPools[char.id] : null;
-        const normalized = normalizeCharacterVitals(char, { sessionPoolEntry: poolEntry });
+        const normalized = normalizeCharacterVitals(char);
+        const vmax = resolveCharacterVit(char);
+        const vcur = Math.min(Math.max(Math.floor(Number(char?.vit ?? vmax) || 0), 0), vmax);
         const cur = Math.min(Math.max(normalized.hpCur, 0), hpMax || 1);
-        return { cur, max: hpMax, pct: hpMax > 0 ? (cur / hpMax) * 100 : 0 };
+        return { cur, max: hpMax, vitCur: vcur, vitMax: vmax };
     };
 
     const handleSelect = (charId) => {
@@ -1559,6 +2105,26 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         dispatch(setActiveCharacterId(null));
         dispatch(persistActiveCharacter({ uid: profile.uid, characterId: null }));
         setStatsOpen(false);
+    };
+
+    const handleEject = (charId) => {
+        const result = nextPrincipalAfterEject({
+            ejectedId: charId,
+            principalId: selectedId,
+            assignedIds: isDM ? roster.map((c) => c.id) : assignedIds,
+            stackIds: stripChars.map((c) => c.id),
+        });
+        setActivatedIds((prev) => prev.filter((id) => id !== charId));
+        if (pinnedIds.includes(charId)) togglePin(charId);
+        if (result.nextPrincipalId && result.nextPrincipalId !== selectedId) {
+            handleSelect(result.nextPrincipalId);
+        } else if (!result.nextPrincipalId && selectedId === charId) {
+            handleDeactivate();
+        }
+    };
+
+    const handleOpenDossier = () => {
+        dispatch(openCharacterSheet({ tab: "IDENTIDAD" }));
     };
 
     const handleVitChange = (nextVit) => {
@@ -1581,7 +2147,7 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         if (!selected || !vitals || sheetHpMax <= 0) return;
         const rect = e.currentTarget.getBoundingClientRect();
         const ratio = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
-        const nextHp = Math.round(ratio * sheetHpMax);
+        const nextHp = hpFromBarRatio(ratio, sheetHpMax);
         const prevHp = hpCur;
         const result = applyHpWithVitCascadeOnCharacter(
             { ...selected, hpCur, vit: vitCur, hpBroken: vitals.hpBroken },
@@ -1601,11 +2167,12 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         persistVitals({ hpBroken: false });
     };
 
-    const handleEffortSet = (v) => {
-        const next = Math.min(Math.max(Math.floor(Number(v) || 0), 0), effortMax);
-        persistVitals({
-            effort: { current: next, exhausted: next >= effortMax },
-        });
+    const handleEffortBlade = (index) => {
+        persistVitals(effortBladeCommit(index, effortCur, effortMax));
+    };
+
+    const handleTurnToggle = (key) => {
+        persistVitals({ turn: toggleTurn(turn, key) });
     };
 
     const handleActionDelta = (next) => {
@@ -1647,6 +2214,7 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         <>
         <Box
             data-no-token-drop
+            data-vtt-span={VTT_GRID.combatSpan}
             sx={{
                 position: "fixed",
                 bottom: VTT_HUD.inset,
@@ -1655,8 +2223,10 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                 pointerEvents: "auto",
                 display: "flex",
                 alignItems: "flex-end",
-                gap: 0.55,
-                maxWidth: "calc(100vw - 32px)",
+                width: vttSpanWidthCss(VTT_GRID.combatSpan),
+                boxSizing: "border-box",
+                pl: "34px",
+                mr: vttGapCss(),
             }}
         >
             <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, minWidth: 0 }}>
@@ -1705,42 +2275,44 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                         </CyberTitle>
                     </Box>
                 )}
-                {(stripChars.length > 0 || !selected) && (
+                {(showStack || !selected) && (
                 <Box
                     sx={{
                         display: "flex",
-                        alignItems: "flex-end",
-                        gap: 0.65,
-                        px: 0.25,
-                        maxWidth: 340,
-                        flexWrap: "wrap",
+                        flexDirection: "column-reverse",
+                        gap: "8px",
+                        width: "100%",
+                        maxWidth: "100%",
+                        mb: selected ? "10px" : 0,
+                        borderLeft: `2px solid rgba(0,242,234,0.22)`,
+                        position: "relative",
+                        "&::before": showStack ? {
+                            content: '"SESSION · ADDED"',
+                            position: "absolute",
+                            left: 10,
+                            top: "-16px",
+                            fontFamily: "Orbitron, sans-serif",
+                            fontSize: "0.38rem",
+                            letterSpacing: "0.14em",
+                            color: "rgba(0,242,234,0.5)",
+                        } : undefined,
                     }}
                 >
-                    {stripChars.map((c) => {
+                    {showStack && stripChars.map((c) => {
                         const hp = resolvePinHp(c);
-                        const isPinned = pinnedIds.includes(c.id);
                         return (
-                            <Box
+                            <F4StackRow
                                 key={c.id}
-                                sx={{
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    alignItems: "center",
-                                    width: 40,
-                                    flexShrink: 0,
-                                }}
-                            >
-                                <CharAvatarButton
-                                    char={c}
-                                    active={false}
-                                    pinned={isPinned}
-                                    size={34}
-                                    title={`${c.name || "—"} · clic activar · menú contextual`}
-                                    onClick={() => handleSelect(c.id)}
-                                    onContextMenu={(e) => openCharMenu(e, c)}
-                                />
-                                <MiniHpBar pct={hp.pct} />
-                            </Box>
+                                char={c}
+                                isPrincipal={c.id === selectedId}
+                                isActiveTurn={c.id === activeTurnId}
+                                hpCur={hp.cur}
+                                hpMax={hp.max}
+                                vitCur={hp.vitCur}
+                                vitMax={hp.vitMax}
+                                onSelect={handleSelect}
+                                onEject={handleEject}
+                            />
                         );
                     })}
                     {!selected && (
@@ -1758,7 +2330,6 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                 </Box>
                 )}
 
-                {/* Hidden popover host when active — opened via context menu "Cambiar personaje" */}
                 {selected && (
                     <ActivateCharacterButton
                         roster={roster}
@@ -1775,199 +2346,612 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
 
                 {selected && (
                 <Box
-                    sx={{
-                        display: "flex",
-                        alignItems: "stretch",
-                        gap: 0.55,
-                        minWidth: 0,
-                    }}
+                    className="hud-wrap"
+                    sx={{ position: "relative", width: "100%", maxWidth: "100%" }}
                 >
-                <Box
-                    ref={surfaceRef}
-                    onContextMenu={(e) => openCharMenu(e, selected)}
-                    sx={{
-                        position: "relative",
-                        minWidth: 280,
-                        maxWidth: 340,
-                        minHeight: COMBAT_DOCK_MIN_HEIGHT,
-                        p: "12px 14px",
-                        borderRadius: `${VTT_HUD.borderRadius}px`,
-                        border: `1px solid ${isBroken ? VIT_RED : vitCur <= 1 ? UI_COLORS.accentStrong : VTT_HUD.glassBorder}`,
-                        bgcolor: VTT_HUD.glassBg,
-                        backdropFilter: "blur(14px)",
-                        boxShadow: isBroken
-                            ? `0 0 22px ${VIT_RED}44`
-                            : vitCur <= 2
-                                ? `0 0 20px ${UI_COLORS.accent}33`
-                                : "0 0 20px rgba(255,102,255,0.06)",
-                        display: "flex",
-                        flexDirection: "column",
-                        justifyContent: "center",
-                        gap: 1,
-                        flexShrink: 0,
-                        overflow: "hidden",
-                        boxSizing: "border-box",
-                    }}
-                >
-                    <SurfaceCrackOverlay vitCur={vitCur} vitMax={vitMax} />
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, position: "relative", zIndex: 1 }}>
-                        <VitRingAvatar
-                            char={selected}
-                            size={50}
-                            vitCur={vitCur}
-                            vitMax={vitMax}
-                            onVitChange={handleVitChange}
-                            onPortraitClick={toggleActivatePicker}
-                            portraitActive={Boolean(activateAnchor)}
-                            dead={isDead}
-                        />
-                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                            <CyberTitle
-                                sx={{
-                                    fontSize: "0.72rem",
-                                    letterSpacing: "0.08em",
-                                    color: isBroken ? VIT_RED : "#fff",
-                                    lineHeight: 1.2,
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                    whiteSpace: "nowrap",
-                                }}
-                            >
-                                {selected.name || "—"}
-                            </CyberTitle>
-                            {(isBroken || isExhausted) && (
-                                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.45, mt: 0.25 }}>
-                                    {isBroken && (
-                                        <CyberText
-                                            sx={{
-                                                fontFamily: "Orbitron, sans-serif",
-                                                fontSize: "0.42rem",
-                                                letterSpacing: "0.12em",
-                                                color: VIT_RED,
-                                                border: `1px solid ${VIT_RED}88`,
-                                                bgcolor: `${VIT_RED}18`,
-                                                px: 0.55,
-                                                py: "1px",
-                                                borderRadius: 0.5,
-                                            }}
-                                        >
-                                            BREAK
-                                        </CyberText>
-                                    )}
-                                    {isExhausted && (
-                                        <CyberText
-                                            sx={{
-                                                fontFamily: "Orbitron, sans-serif",
-                                                fontSize: "0.42rem",
-                                                letterSpacing: "0.12em",
-                                                color: "#f97316",
-                                                border: "1px solid rgba(249,115,22,0.7)",
-                                                bgcolor: "rgba(249,115,22,0.14)",
-                                                px: 0.55,
-                                                py: "1px",
-                                                borderRadius: 0.5,
-                                            }}
-                                        >
-                                            EXHAUSTED
-                                        </CyberText>
-                                    )}
-                                </Box>
-                            )}
-                        </Box>
-                        <ActiveBurdenIcons burdens={selected.burdens} character={selected} />
-                    </Box>
-
-                    <Box sx={{ position: "relative", zIndex: 1 }}>
-                    <TrackRow label="HP" valueLabel={`${hpCur}/${sheetHpMax}`}>
+                    <F4BurdenRail burdens={selected.burdens} character={selected} />
+                    <Box
+                        ref={surfaceRef}
+                        data-vit={String(vitCur)}
+                        onContextMenu={(e) => openCharMenu(e, selected)}
+                        sx={{
+                            position: "relative",
+                            display: "grid",
+                            gridTemplateColumns: "auto minmax(0, 1fr) 26px 28px 32px",
+                            columnGap: 0,
+                            alignItems: "center",
+                            width: "100%",
+                            p: "12px 12px 12px 16px",
+                            minHeight: 92,
+                            overflow: "visible",
+                            zIndex: 2,
+                            clipPath: "polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px))",
+                            border: `1px solid ${
+                                vitCur <= 0
+                                    ? "rgba(255,42,74,0.85)"
+                                    : vitCur <= 1
+                                        ? "rgba(255,42,74,0.7)"
+                                        : "rgba(255,42,74,0.34)"
+                            }`,
+                            bgcolor: vitCur <= 0
+                                ? undefined
+                                : "rgba(0,0,0,0.78)",
+                            background: vitCur <= 0
+                                ? "radial-gradient(ellipse at 15% 50%, rgba(80,10,18,0.35), transparent 50%), linear-gradient(145deg, #0c0c0e 0%, #161618 45%, #0a0a0c 100%)"
+                                : "radial-gradient(ellipse at 18% 50%, rgba(255,42,74,0.08), transparent 52%), rgba(0,0,0,0.78)",
+                            boxShadow: vitCur <= 0
+                                ? "0 0 36px rgba(255,42,74,0.35), inset 0 0 50px rgba(0,0,0,0.65), inset 0 -20px 40px rgba(255,42,74,0.12)"
+                                : vitCur === 1
+                                    ? "0 0 28px rgba(255,42,74,0.28), inset 0 0 36px rgba(255,42,74,0.12)"
+                                    : vitCur === 2
+                                        ? "0 12px 32px rgba(0,0,0,0.45), 0 0 18px rgba(255,42,74,0.12), inset 0 0 28px rgba(255,42,74,0.06)"
+                                        : "0 12px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04)",
+                            filter: vitCur <= 0 ? "saturate(0.55) contrast(1.08)" : "none",
+                            transition: "border-color 0.35s, box-shadow 0.35s, background 0.35s, filter 0.35s",
+                            "&::before": {
+                                content: '""',
+                                position: "absolute",
+                                top: 0,
+                                right: 0,
+                                width: 14,
+                                height: 14,
+                                background: "linear-gradient(135deg, transparent 48%, rgba(255,42,74,0.4) 50%)",
+                                pointerEvents: "none",
+                                zIndex: 5,
+                            },
+                        }}
+                    >
                         <Box
                             sx={{
-                                flex: 1,
-                                height: 10,
-                                borderRadius: 0.5,
-                                bgcolor: "rgba(255,255,255,0.06)",
-                                overflow: "hidden",
-                                cursor: "pointer",
-                                border: `1px solid ${UI_COLORS.border}`,
+                                position: "absolute",
+                                left: 14,
+                                top: "-11px",
+                                fontFamily: "Orbitron, sans-serif",
+                                fontSize: "0.36rem",
+                                letterSpacing: "0.14em",
+                                color: vitCur <= 0 ? "#ff4d6a" : F4_CYAN,
+                                bgcolor: "rgba(0,0,0,0.92)",
+                                px: "7px",
+                                py: "2px",
+                                border: `1px solid ${vitCur <= 0 ? "rgba(255,42,74,0.5)" : "rgba(0,242,234,0.4)"}`,
+                                zIndex: 6,
                             }}
-                            onClick={handleHpBarClick}
+                        >
+                            PRINCIPAL
+                            {activeTurnId && activeTurnId !== selectedId && (
+                                <>
+                                    <Box component="span" sx={{ color: "rgba(255,255,255,0.25)", mx: "4px" }}>·</Box>
+                                    <Box component="span" sx={{ color: F4_AMBER }}>
+                                        ACTIVE: {(roster.find((c) => c.id === activeTurnId)?.name || "—").toUpperCase()}
+                                    </Box>
+                                </>
+                            )}
+                        </Box>
+
+                        <F4FxLayer vitCur={vitCur} />
+                        {isDead && (
+                            <Box
+                                sx={{
+                                    position: "absolute",
+                                    right: 44,
+                                    top: "50%",
+                                    transform: "translateY(-50%) rotate(-12deg)",
+                                    fontFamily: "Orbitron, sans-serif",
+                                    fontSize: "0.72rem",
+                                    letterSpacing: "0.28em",
+                                    color: "rgba(255,42,74,0.55)",
+                                    border: "2px solid rgba(255,42,74,0.45)",
+                                    px: "10px",
+                                    py: "4px",
+                                    pointerEvents: "none",
+                                    textShadow: "0 0 12px rgba(255,42,74,0.4)",
+                                    zIndex: 6,
+                                }}
+                            >
+                                VIT · 0
+                            </Box>
+                        )}
+
+                        <Box
+                            sx={{
+                                position: "relative",
+                                width: 72,
+                                height: 72,
+                                flexShrink: 0,
+                                zIndex: 3,
+                                mx: "4px 12px 0 4px",
+                                margin: "0 12px 0 4px",
+                            }}
+                        >
+                            {showPlus && (
+                                <CyberTooltip title="Elegir personaje PRINCIPAL" placement="top">
+                                    <Box
+                                        component="button"
+                                        type="button"
+                                        aria-label="Elegir principal"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleActivatePicker(e.currentTarget);
+                                        }}
+                                        sx={{
+                                            position: "absolute",
+                                            top: "-10px",
+                                            left: "-14px",
+                                            zIndex: 5,
+                                            width: 26,
+                                            height: 26,
+                                            borderRadius: "50%",
+                                            border: "1.5px solid rgba(0,242,234,0.55)",
+                                            bgcolor: "rgba(6,18,20,0.96)",
+                                            color: F4_CYAN,
+                                            boxShadow: "0 0 0 2px rgba(0,0,0,0.55), 0 0 12px rgba(0,242,234,0.25)",
+                                            cursor: "pointer",
+                                            p: 0,
+                                            display: "grid",
+                                            placeItems: "center",
+                                            "&:hover": {
+                                                transform: "scale(1.06)",
+                                                color: "#fff",
+                                                borderColor: F4_CYAN,
+                                            },
+                                        }}
+                                    >
+                                        <F4PlusIcon />
+                                    </Box>
+                                </CyberTooltip>
+                            )}
+                            <VitRingAvatar
+                                char={selected}
+                                size={48}
+                                vitCur={vitCur}
+                                vitMax={vitMax}
+                                onVitChange={handleVitChange}
+                                onPortraitClick={handleOpenDossier}
+                                portraitActive={sheetOpen}
+                                dead={isDead}
+                            />
+                        </Box>
+
+                        <Box
+                            sx={{
+                                minWidth: 0,
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: "5px",
+                                zIndex: 2,
+                                pr: "10px",
+                            }}
+                        >
+                            <Box sx={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0, minHeight: 18 }}>
+                                <Box
+                                    sx={{
+                                        fontFamily: "Orbitron, sans-serif",
+                                        fontSize: "0.66rem",
+                                        letterSpacing: "0.12em",
+                                        whiteSpace: "nowrap",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        flex: 1,
+                                        minWidth: 0,
+                                        color: isDead ? "#c8c8c8" : isBroken ? VIT_RED : "#fff",
+                                        textShadow: vitCur <= 1 ? "0 0 10px rgba(255,42,74,0.35)" : "none",
+                                    }}
+                                >
+                                    {(selected.name || "—").toUpperCase()}
+                                </Box>
+                                <Box sx={{ display: "flex", gap: "3px", flexShrink: 0, flexWrap: "wrap" }}>
+                                    {isBroken && (
+                                        <Box sx={{
+                                            fontFamily: '"Fira Code", monospace',
+                                            fontSize: "0.48rem",
+                                            letterSpacing: "0.04em",
+                                            px: "5px",
+                                            py: "2px",
+                                            borderRadius: "2px",
+                                            border: `1px solid ${VIT_RED}88`,
+                                            color: VIT_RED,
+                                            bgcolor: `${VIT_RED}18`,
+                                            textTransform: "uppercase",
+                                        }}
+                                        >
+                                            BREAK
+                                        </Box>
+                                    )}
+                                    {isExhausted && (
+                                        <Box sx={{
+                                            fontFamily: '"Fira Code", monospace',
+                                            fontSize: "0.48rem",
+                                            letterSpacing: "0.04em",
+                                            px: "5px",
+                                            py: "2px",
+                                            borderRadius: "2px",
+                                            border: "1px solid rgba(249,115,22,0.7)",
+                                            color: "#f97316",
+                                            bgcolor: "rgba(249,115,22,0.14)",
+                                            textTransform: "uppercase",
+                                        }}
+                                        >
+                                            EXHAUSTED
+                                        </Box>
+                                    )}
+                                    {condChips.map((c) => (
+                                        <Box
+                                            key={c.key}
+                                            title={c.title}
+                                            sx={{
+                                                fontFamily: '"Fira Code", monospace',
+                                                fontSize: "0.48rem",
+                                                letterSpacing: "0.04em",
+                                                px: "5px",
+                                                py: "2px",
+                                                borderRadius: "2px",
+                                                border: `1px solid ${c.color}88`,
+                                                color: c.color,
+                                                bgcolor: `${c.color}1f`,
+                                                textTransform: "uppercase",
+                                            }}
+                                        >
+                                            {c.code}
+                                        </Box>
+                                    ))}
+                                </Box>
+                            </Box>
+
+                            <Box
+                                onClick={handleHpBarClick}
+                                sx={{
+                                    position: "relative",
+                                    height: 11,
+                                    bgcolor: isDead ? "#0a0a0c" : "#041016",
+                                    boxShadow: isDead
+                                        ? "inset 0 0 0 1px rgba(255,42,74,0.45)"
+                                        : "inset 0 0 0 1px rgba(0,242,234,0.4)",
+                                    overflow: "hidden",
+                                    cursor: "pointer",
+                                    "&:hover .f4-hp-hover": { opacity: 1, transform: "translateY(0)" },
+                                    "&:hover .f4-hp-fill, &:hover .f4-vig-fill": {
+                                        filter: "brightness(0.45) saturate(0.7)",
+                                    },
+                                }}
+                            >
+                                <Box
+                                    className="f4-hp-fill"
+                                    sx={{
+                                        position: "absolute",
+                                        inset: "0 auto 0 0",
+                                        width: `${hpPct}%`,
+                                        background: isDead
+                                            ? "repeating-linear-gradient(-45deg, #5a5a5e 0 4px, #3a3a3e 4px 8px)"
+                                            : "repeating-linear-gradient(-45deg, #00f2ea 0 4px, #00c4bd 4px 8px)",
+                                        boxShadow: isDead ? "none" : `0 0 10px ${F4_CYAN}80`,
+                                        zIndex: 1,
+                                        transition: "width 0.2s, filter 0.15s",
+                                        opacity: isDead ? 0.55 : 1,
+                                    }}
+                                />
+                                {vigor > 0 && (
+                                    <Box
+                                        className="f4-vig-fill"
+                                        sx={{
+                                            position: "absolute",
+                                            top: 0,
+                                            bottom: 0,
+                                            left: `${hpPct}%`,
+                                            width: `${vigPct}%`,
+                                            background: shaBlocked || isDead
+                                                ? "linear-gradient(90deg, #4a1018, #8a1020)"
+                                                : `linear-gradient(90deg, #8fd92a, ${F4_VIGOR})`,
+                                            zIndex: 1,
+                                            transition: "left 0.2s, width 0.2s",
+                                            opacity: isDead ? 0.7 : 1,
+                                        }}
+                                    />
+                                )}
+                                <Box sx={{ position: "absolute", inset: 0, zIndex: 2, pointerEvents: "none" }}>
+                                    {[25, 50, 75].map((tick) => (
+                                        <Box
+                                            key={tick}
+                                            sx={{
+                                                position: "absolute",
+                                                top: "-1px",
+                                                bottom: "-1px",
+                                                left: `${tick}%`,
+                                                width: "1px",
+                                                background: isDead ? "rgba(255,42,74,0.4)" : "rgba(0,242,234,0.55)",
+                                            }}
+                                        />
+                                    ))}
+                                </Box>
+                                <Box
+                                    className="f4-hp-hover"
+                                    sx={{
+                                        position: "absolute",
+                                        inset: 0,
+                                        zIndex: 4,
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        gap: "8px",
+                                        fontFamily: '"Fira Code", monospace',
+                                        fontSize: "0.62rem",
+                                        fontWeight: 500,
+                                        letterSpacing: "0.06em",
+                                        color: "#fff",
+                                        background: isDead
+                                            ? "linear-gradient(90deg, rgba(8,8,10,0.95), rgba(30,8,12,0.92))"
+                                            : "linear-gradient(90deg, rgba(0,10,14,0.92), rgba(0,30,36,0.88))",
+                                        textShadow: "0 0 8px rgba(0,242,234,0.9), 0 1px 2px #000",
+                                        opacity: 0,
+                                        transform: "translateY(2px)",
+                                        transition: "opacity 0.14s, transform 0.14s",
+                                        pointerEvents: "none",
+                                        border: `1px solid ${isDead ? "rgba(255,42,74,0.55)" : "rgba(0,242,234,0.55)"}`,
+                                    }}
+                                >
+                                    <span>{hpCur}/{sheetHpMax}</span>
+                                    <Box component="span" sx={{ color: "rgba(0,242,234,0.5)" }}>·</Box>
+                                    <Box
+                                        component="span"
+                                        sx={{
+                                            color: shaBlocked ? UI_COLORS.danger : F4_VIGOR,
+                                            textDecoration: shaBlocked ? "line-through" : "none",
+                                            textDecorationThickness: shaBlocked ? "1.5px" : undefined,
+                                            textShadow: shaBlocked
+                                                ? `0 0 8px ${UI_COLORS.dangerGlow}`
+                                                : "0 0 8px rgba(184,255,60,0.7), 0 1px 2px #000",
+                                        }}
+                                    >
+                                        VIG {vigor}
+                                    </Box>
+                                </Box>
+                            </Box>
+
+                            <Box
+                                sx={{
+                                    display: "grid",
+                                    gridTemplateColumns: "1fr 1fr auto",
+                                    gap: "5px",
+                                    alignItems: "center",
+                                    minHeight: 14,
+                                }}
+                            >
+                                {["act1", "act2"].map((key) => {
+                                    const on = Boolean(turn[key]);
+                                    return (
+                                        <Box
+                                            key={key}
+                                            component="button"
+                                            type="button"
+                                            aria-pressed={on}
+                                            aria-label={key === "act1" ? "Action 1" : "Action 2"}
+                                            onClick={() => handleTurnToggle(key)}
+                                            sx={{
+                                                height: 10,
+                                                p: 0,
+                                                border: `1px solid ${on ? "rgba(255,42,74,0.65)" : "rgba(255,42,74,0.28)"}`,
+                                                background: on
+                                                    ? "linear-gradient(90deg, #ff4d6a, #c01030)"
+                                                    : "#2a0a12",
+                                                boxShadow: on ? "0 0 8px rgba(255,42,74,0.4)" : "none",
+                                                cursor: "pointer",
+                                                position: "relative",
+                                                overflow: "hidden",
+                                                alignSelf: "center",
+                                                opacity: on ? 1 : 0.35,
+                                                filter: on ? "none" : "grayscale(0.5)",
+                                                "&::before": on ? {
+                                                    content: '""',
+                                                    position: "absolute",
+                                                    inset: 0,
+                                                    background: "linear-gradient(90deg, transparent 30%, rgba(255,255,255,0.28), transparent 70%)",
+                                                    animation: "f4ApScan 1.8s linear infinite",
+                                                } : {},
+                                                "@keyframes f4ApScan": {
+                                                    from: { transform: "translateX(-100%)" },
+                                                    to: { transform: "translateX(200%)" },
+                                                },
+                                                "@media (prefers-reduced-motion: reduce)": {
+                                                    "&::before": { animation: "none" },
+                                                },
+                                            }}
+                                        />
+                                    );
+                                })}
+                                <Box
+                                    component="button"
+                                    type="button"
+                                    aria-pressed={Boolean(turn.move)}
+                                    aria-label="Move"
+                                    onClick={() => handleTurnToggle("move")}
+                                    sx={{
+                                        width: 54,
+                                        height: 14,
+                                        border: `2px solid ${turn.move ? "rgba(0,242,234,0.9)" : "rgba(0,242,234,0.3)"}`,
+                                        background: turn.move
+                                            ? "linear-gradient(90deg, rgba(0,242,234,0.32), rgba(0,242,234,0.1) 55%, rgba(0,28,32,0.65)), repeating-linear-gradient(-45deg, transparent 0 2px, rgba(0,242,234,0.12) 2px 4px)"
+                                            : "rgba(0,16,20,0.75)",
+                                        color: turn.move ? F4_CYAN : "rgba(0,242,234,0.45)",
+                                        display: "grid",
+                                        gridTemplateColumns: "auto 1fr",
+                                        alignItems: "center",
+                                        gap: "3px",
+                                        px: "5px 4px",
+                                        py: 0,
+                                        cursor: "pointer",
+                                        clipPath: "polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%)",
+                                        boxShadow: turn.move
+                                            ? "0 0 0 1px rgba(0,0,0,0.75), 0 0 10px rgba(0,242,234,0.3), inset 0 1px 0 rgba(255,255,255,0.22)"
+                                            : "none",
+                                        opacity: turn.move ? 1 : 0.4,
+                                        filter: turn.move ? "none" : "grayscale(0.7)",
+                                        "&:hover": { borderColor: "#fff", color: "#fff" },
+                                    }}
+                                >
+                                    <Box
+                                        component="span"
+                                        sx={{
+                                            fontFamily: "Orbitron, sans-serif",
+                                            fontSize: "0.36rem",
+                                            letterSpacing: "0.1em",
+                                            lineHeight: 1,
+                                            fontWeight: 700,
+                                        }}
+                                    >
+                                        MOVE
+                                    </Box>
+                                    <F4MoveGlyph />
+                                </Box>
+                            </Box>
+                        </Box>
+
+                        <Box
+                            role="group"
+                            aria-label="Effort"
+                            sx={{
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                justifyContent: "flex-end",
+                                gap: "3px",
+                                height: 54,
+                                width: 24,
+                                zIndex: 2,
+                                justifySelf: "center",
+                            }}
                         >
                             <Box
                                 sx={{
-                                    height: "100%",
-                                    width: `${hpPct}%`,
-                                    bgcolor: hpPct <= 25 ? "#ff3355" : hpPct <= 50 ? "#f97316" : UI_COLORS.anomaly,
-                                    boxShadow: `0 0 8px ${UI_COLORS.anomaly}33`,
-                                    transition: "width 0.15s, background-color 0.15s",
+                                    fontFamily: "Orbitron, sans-serif",
+                                    fontSize: "0.32rem",
+                                    letterSpacing: "0.1em",
+                                    color: UI_COLORS.textSecondary,
+                                    order: -1,
                                 }}
-                            />
+                            >
+                                EFF
+                            </Box>
+                            {Array.from({ length: effortMax }, (_, i) => {
+                                const unit = effortMax - i;
+                                const idx = unit - 1;
+                                const lit = idx < effortCur;
+                                return (
+                                    <CyberTooltip
+                                        key={unit}
+                                        title={`Effort ${unit}${lit ? " (gastado)" : ""}`}
+                                        placement="top"
+                                    >
+                                        <Box
+                                            component="button"
+                                            type="button"
+                                            aria-label={`Effort ${unit}${lit ? " (gastado)" : ""}`}
+                                            onClick={() => handleEffortBlade(idx)}
+                                            sx={{
+                                                width: 18,
+                                                height: 14,
+                                                p: 0,
+                                                border: `1.5px solid ${
+                                                    isDead
+                                                        ? (lit ? "#888" : "rgba(120,120,128,0.45)")
+                                                        : (lit ? F4_PINK : "rgba(255,102,255,0.55)")
+                                                }`,
+                                                background: lit
+                                                    ? (isDead
+                                                        ? "linear-gradient(180deg, #6a6a70, #3a3a40)"
+                                                        : "linear-gradient(180deg, #ff99ff, #ff66ff 55%, #aa2288)")
+                                                    : (isDead ? "rgba(20,20,24,0.8)" : "rgba(0,0,0,0.45)"),
+                                                borderRadius: "1px",
+                                                cursor: "pointer",
+                                                boxShadow: lit && !isDead
+                                                    ? `0 0 10px ${UI_COLORS.accentGlow}, inset 0 1px 0 rgba(255,255,255,0.25)`
+                                                    : "none",
+                                                filter: isDead && lit ? "grayscale(1)" : "none",
+                                            }}
+                                        />
+                                    </CyberTooltip>
+                                );
+                            })}
                         </Box>
-                    </TrackRow>
 
-                    <TrackRow label="EFFORT" valueLabel={`${effortCur}/${effortMax}`}>
-                        <EffortBar
-                            current={effortCur}
-                            max={effortMax}
-                            onSet={handleEffortSet}
+                        <Box
+                            aria-hidden
+                            title="Separador EFF ↔ tools"
+                            sx={{
+                                width: "1px",
+                                justifySelf: "center",
+                                alignSelf: "stretch",
+                                my: "6px",
+                                background: "repeating-linear-gradient(180deg, rgba(255,102,255,0.6) 0 3px, transparent 3px 6px)",
+                                boxShadow: "0 0 6px rgba(255,102,255,0.3)",
+                                zIndex: 3,
+                            }}
                         />
-                    </TrackRow>
-                    </Box>
-                </Box>
 
-                <Box
-                    sx={{
-                        display: "flex",
-                        flexDirection: "column",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        alignSelf: "stretch",
-                        flexShrink: 0,
-                        py: "2px",
-                    }}
-                >
-                    <CyberTooltip title="Abrir dossier" placement="right">
-                        <IconButton
-                            size="small"
-                            onClick={() => dispatch(openCharacterSheet({ tab: "IDENTIDAD" }))}
-                            aria-pressed={sheetOpen}
-                            aria-label="Abrir dossier"
-                            sx={glassBtnSx(sheetOpen)}
+                        <Box
+                            role="toolbar"
+                            sx={{
+                                display: "flex",
+                                flexDirection: "column",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                alignSelf: "stretch",
+                                gap: "4px",
+                                zIndex: 3,
+                                py: "2px",
+                                justifySelf: "end",
+                            }}
                         >
-                            <BadgeIcon sx={{ fontSize: "1.1rem" }} />
-                        </IconButton>
-                    </CyberTooltip>
-                    {hasStats && (
-                        <CyberTooltip
-                            title={statsOpen ? "Ocultar actions" : "Actions (tiradas)"}
-                            placement="right"
-                        >
-                            <IconButton
-                                size="small"
-                                onClick={() => setStatsOpen((v) => !v)}
-                                aria-pressed={statsOpen}
-                                aria-label="Panel de actions"
-                                sx={glassBtnSx(statsOpen)}
-                            >
-                                <QueryStatsIcon sx={{ fontSize: "1.15rem" }} />
-                            </IconButton>
-                        </CyberTooltip>
-                    )}
-                    {canToggleAbilities && (
-                        <CyberTooltip
-                            title={abilityBarOpen ? "Cerrar macros" : "Macros / habilidades"}
-                            placement="right"
-                        >
-                            <IconButton
-                                size="small"
-                                onClick={onToggleAbilityBar}
-                                aria-pressed={abilityBarOpen}
-                                aria-label="Barra de macros y habilidades"
-                                sx={glassBtnSx(abilityBarOpen)}
-                            >
-                                <BoltIcon sx={{ fontSize: "1.15rem" }} />
-                            </IconButton>
-                        </CyberTooltip>
-                    )}
-                </Box>
+                            {hasStats && (
+                                <CyberTooltip
+                                    title={statsOpen ? "Ocultar actions" : "Actions"}
+                                    placement="right"
+                                >
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => setStatsOpen((v) => !v)}
+                                        aria-pressed={statsOpen}
+                                        aria-label="Panel de actions"
+                                        sx={{
+                                            width: 30,
+                                            height: 30,
+                                            borderRadius: "4px",
+                                            border: `1px solid ${statsOpen ? F4_AMBER : "rgba(255,176,32,0.5)"}`,
+                                            bgcolor: statsOpen ? "rgba(255,176,32,0.12)" : "rgba(8,6,14,0.92)",
+                                            color: F4_AMBER,
+                                            p: 0,
+                                            "&:hover": { color: "#ffd280", filter: "drop-shadow(0 0 8px rgba(255,176,32,0.55))" },
+                                        }}
+                                    >
+                                        <QueryStatsIcon sx={{ fontSize: "0.95rem" }} />
+                                    </IconButton>
+                                </CyberTooltip>
+                            )}
+                            {canToggleAbilities && (
+                                <CyberTooltip
+                                    title={abilityBarOpen ? "Cerrar macros" : "Macros"}
+                                    placement="right"
+                                >
+                                    <IconButton
+                                        size="small"
+                                        onClick={onToggleAbilityBar}
+                                        aria-pressed={abilityBarOpen}
+                                        aria-label="Barra de macros y habilidades"
+                                        sx={{
+                                            width: 30,
+                                            height: 30,
+                                            borderRadius: "4px",
+                                            border: `1px solid ${abilityBarOpen ? F4_MACROS : "rgba(232,121,249,0.5)"}`,
+                                            bgcolor: abilityBarOpen ? "rgba(232,121,249,0.12)" : "rgba(8,6,14,0.92)",
+                                            color: F4_MACROS,
+                                            p: 0,
+                                            "&:hover": { color: "#f0abfc", filter: "drop-shadow(0 0 8px rgba(232,121,249,0.5))" },
+                                        }}
+                                    >
+                                        <BoltIcon sx={{ fontSize: "0.95rem" }} />
+                                    </IconButton>
+                                </CyberTooltip>
+                            )}
+                        </Box>
+                    </Box>
                 </Box>
                 )}
 

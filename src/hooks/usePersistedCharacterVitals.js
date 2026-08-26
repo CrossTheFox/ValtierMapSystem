@@ -17,13 +17,23 @@ function mergeVitalsPatch(prev, partial) {
     if (!partial || typeof partial !== "object") return prev;
     const next = { ...(prev || {}) };
     for (const [key, value] of Object.entries(partial)) {
-        if (key === "effort" && value && typeof value === "object") {
-            next.effort = { ...(prev?.effort || {}), ...value };
+        if ((key === "effort" || key === "turn") && value && typeof value === "object") {
+            next[key] = { ...(prev?.[key] || {}), ...value };
         } else {
             next[key] = value;
         }
     }
     return next;
+}
+
+function nestedEqual(a, b) {
+    if (a === b) return true;
+    if (!a || !b || typeof a !== "object" || typeof b !== "object") return a === b;
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+    for (const key of keys) {
+        if (a[key] !== b[key]) return false;
+    }
+    return true;
 }
 
 function mergeVitalsDisplay(base, overlay) {
@@ -34,7 +44,25 @@ function mergeVitalsDisplay(base, overlay) {
         effort: overlay.effort
             ? { ...base.effort, ...overlay.effort }
             : base.effort,
+        turn: overlay.turn
+            ? { ...base.turn, ...overlay.turn }
+            : base.turn,
     };
+}
+
+/** Drop overlay keys once Redux/base already matches, so dossier writes can win. */
+function pruneAckedOverlay(base, overlay) {
+    if (!overlay || !base) return overlay ?? null;
+    const next = {};
+    for (const [key, value] of Object.entries(overlay)) {
+        if (key === "effort" || key === "turn") {
+            const merged = { ...(base[key] || {}), ...(value || {}) };
+            if (!nestedEqual(base[key], merged)) next[key] = value;
+        } else if (base[key] !== value) {
+            next[key] = value;
+        }
+    }
+    return Object.keys(next).length ? next : null;
 }
 
 /**
@@ -80,6 +108,15 @@ export function usePersistedCharacterVitals(character, options = {}) {
         () => (baseVitals ? mergeVitalsDisplay(baseVitals, localPatch) : null),
         [baseVitals, localPatch],
     );
+
+    useEffect(() => {
+        setLocalPatch((prev) => {
+            const pruned = pruneAckedOverlay(baseVitals, prev);
+            if (pruned == null && prev == null) return prev;
+            if (pruned && prev && nestedEqual(pruned, prev)) return prev;
+            return pruned;
+        });
+    }, [baseVitals]);
 
     const applyOptimisticRedux = useCallback((partial) => {
         const char = characterRef.current;

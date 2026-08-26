@@ -7,7 +7,7 @@ import { CyberText } from "../customs/CustomTexts";
 import CyberTooltip from "../customs/CyberTooltip";
 import AttackBoonDialog from "./AttackBoonDialog";
 import { UI_COLORS } from "../../constants/uiColors";
-import { VTT_HUD } from "../../constants/vttHudTokens";
+import { VTT_GRID, VTT_HUD, vttSpanWidthCss } from "../../constants/vttHudTokens";
 import {
     MACRO_PAGE_COUNT,
     MACRO_SLOT_COUNT,
@@ -34,8 +34,8 @@ import { useLocalDiceReveal } from "../../hooks/useLocalDiceReveal";
 import { mergeUnlockedUpgrades } from "../../utils/mergeUnlockedUpgrades";
 import { resolveAbilityForPlay } from "../../utils/abilityResolve";
 
-/** Fixed dock width so ACTIONS ↔ MACROS share one vertical slab (grow up/down, not sideways). */
-export const COMBAT_DOCK_WIDTH = 560;
+/** Actions/Macros dock — exactly 4 / 12 columns, centered. */
+export const COMBAT_DOCK_WIDTH = vttSpanWidthCss(VTT_GRID.macrosSpan);
 /** Match character life-sheet height only when Actions + Macros are both open. */
 export const COMBAT_DOCK_MIN_HEIGHT = 148;
 
@@ -276,6 +276,7 @@ export default function AbilityHotbar({
             data-no-token-drop
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
+            data-vtt-span={VTT_GRID.macrosSpan}
             sx={{
                 position: "fixed",
                 bottom: VTT_HUD.inset,
@@ -289,7 +290,7 @@ export default function AbilityHotbar({
                 justifyContent: "flex-end",
                 gap: 0.55,
                 width: COMBAT_DOCK_WIDTH,
-                maxWidth: "calc(100vw - 32px)",
+                maxWidth: COMBAT_DOCK_WIDTH,
                 ...(matchCharacterHudHeight ? { minHeight: COMBAT_DOCK_MIN_HEIGHT } : {}),
                 boxSizing: "border-box",
                 px: 1,
