@@ -8,10 +8,11 @@ Decisiones: [`DECISION-LOG.md`](./DECISION-LOG.md) (G1–G12).
 
 ---
 
-## Punto de verdad (agosto 2026)
+## Punto de verdad (24 ago 2026)
 
 - **`main`** incluye el trabajo de dossier/VTT/wiki hasta el merge de `fix/pixi-layer-teardown` (mockups kit en git bajo `docs/mockups/`, **no** solo HTML aislado: también React, Firebase, `firestore.rules`).
-- Rama de trabajo Fase 03: **`phase-03/slice-01-vitals`** (creada desde `main`).
+- Rama de trabajo Fase 03: **`phase-03/slice-02-seam-p3`**. Slice 1 (vitals) mergeado en esta línea; slice 2 en curso.
+- Plan vivo (fuera de git por `.gitignore` de `docs/`): [`../../planes-semanales/2026-08-24-estado-y-plan.md`](../../planes-semanales/2026-08-24-estado-y-plan.md).
 - **`docs/architecture/`** está en `.gitignore` — estos archivos existen en local; usa `git add -f docs/architecture/...` si quieres versionarlos.
 
 ---

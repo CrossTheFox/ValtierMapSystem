@@ -17,6 +17,7 @@ import {
     commitSeamVigChange,
     computeBarPercents,
     scrubDeltaToValue,
+    vigorGainBlocked,
 } from "../../utils/seamVitals";
 import {
     COND_GROUPS,
@@ -29,6 +30,7 @@ import {
 
 const VIGOR = UI_COLORS.vigor;
 const CYAN = UI_COLORS.anomaly;
+const DANGER = UI_COLORS.danger;
 
 /** Seam chip — mockup `.seam-full .cond-zone .cx` (skewed, per-code `--cx` accent). */
 function CxChip({ code, color, registerRef }) {
@@ -227,15 +229,33 @@ function VitChipStepper({
     max,
     open,
     onToggle,
-    onChange,
+    onDelta,
+    onSet,
     onClose,
+    /** When true, + is disabled (ICON Shattered / SHA). */
+    gainBlocked = false,
 }) {
     const isHp = kind === "hp";
-    const accent = isHp ? CYAN : VIGOR;
-    const borderColor = isHp ? "rgba(0,242,234,0.5)" : "rgba(184,255,60,0.5)";
-    const btnBorder = isHp ? "rgba(0,242,234,0.4)" : "rgba(184,255,60,0.4)";
+    const shattered = !isHp && gainBlocked;
+    const accent = isHp ? CYAN : (shattered ? DANGER : VIGOR);
+    const borderColor = isHp
+        ? "rgba(0,242,234,0.5)"
+        : (shattered ? "rgba(255,51,85,0.55)" : "rgba(184,255,60,0.5)");
+    const btnBorder = isHp
+        ? "rgba(0,242,234,0.4)"
+        : (shattered ? "rgba(255,51,85,0.45)" : "rgba(184,255,60,0.4)");
     const display = isHp ? String(value) : (value > 0 ? `+${value}` : "+0");
-    const ghost = !isHp && value === 0;
+    const ghost = !isHp && value === 0 && !shattered;
+    const chipTitle = isHp
+        ? "Click = editar HP"
+        : (gainBlocked
+            ? "VIG bloqueado: condición Shattered (SHA) — no se puede ganar Vigor"
+            : "Click = editar VIG");
+
+    const bump = (d) => {
+        if (d > 0 && gainBlocked) return;
+        onDelta(d);
+    };
 
     return (
         <Box sx={{ position: "relative" }}>
@@ -246,7 +266,8 @@ function VitChipStepper({
                     e.stopPropagation();
                     onToggle();
                 }}
-                title={isHp ? "Click = editar HP" : "Click = editar VIG"}
+                title={chipTitle}
+                aria-description={gainBlocked && !isHp ? "Shattered: vigor gain blocked" : undefined}
                 sx={{
                     display: "inline-flex",
                     alignItems: "center",
@@ -293,7 +314,9 @@ function VitChipStepper({
                         overflow: "hidden",
                         maxWidth: "2.4em",
                         textAlign: "center",
-                        color: isHp ? "#fff" : VIGOR,
+                        color: isHp ? "#fff" : accent,
+                        textDecoration: shattered ? "line-through" : undefined,
+                        textDecorationThickness: shattered ? "1.5px" : undefined,
                         textShadow: `0 0 6px ${accent}8c`,
                     }}
                 >
@@ -304,6 +327,7 @@ function VitChipStepper({
                 <Box
                     role="group"
                     aria-label={isHp ? "Set HP" : "Set Vigor"}
+                    data-vit-step
                     sx={{
                         position: "absolute",
                         zIndex: 40,
@@ -326,10 +350,14 @@ function VitChipStepper({
                     <Box
                         component="button"
                         type="button"
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
+                        onPointerDown={(e) => {
+                            e.preventDefault();
                             e.stopPropagation();
-                            onChange(value - 1);
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            bump(-1);
                         }}
                         sx={{
                             width: 22, height: 20, borderRadius: "2px", p: 0,
@@ -347,7 +375,7 @@ function VitChipStepper({
                         min={0}
                         max={isHp ? max : undefined}
                         value={value}
-                        onChange={(e) => onChange(Number(e.target.value))}
+                        onChange={(e) => onSet(Number(e.target.value))}
                         onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === "Escape") onClose();
                         }}
@@ -372,17 +400,30 @@ function VitChipStepper({
                     <Box
                         component="button"
                         type="button"
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
+                        disabled={gainBlocked && !isHp}
+                        title={gainBlocked && !isHp ? "Shattered (SHA): no se puede ganar Vigor" : undefined}
+                        aria-disabled={gainBlocked && !isHp ? true : undefined}
+                        onPointerDown={(e) => {
+                            e.preventDefault();
                             e.stopPropagation();
-                            onChange(value + 1);
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            bump(1);
                         }}
                         sx={{
                             width: 22, height: 20, borderRadius: "2px", p: 0,
                             fontFamily: "Orbitron, sans-serif", fontSize: "0.7rem",
-                            cursor: "pointer", bgcolor: "rgba(255,255,255,0.05)",
+                            cursor: gainBlocked && !isHp ? "not-allowed" : "pointer",
+                            bgcolor: "rgba(255,255,255,0.05)",
                             border: `1px solid ${btnBorder}`, color: accent,
-                            "&:hover": { bgcolor: "rgba(255,255,255,0.12)" },
+                            opacity: gainBlocked && !isHp ? 0.35 : 1,
+                            "&:hover": {
+                                bgcolor: gainBlocked && !isHp
+                                    ? "rgba(255,255,255,0.05)"
+                                    : "rgba(255,255,255,0.12)",
+                            },
                         }}
                     >
                         +
@@ -404,16 +445,24 @@ export default function DossierSeamP3({ character }) {
         [character],
     );
 
-    const hpCur = vitals?.hpCur ?? 0;
-    const vigor = vitals?.vigor ?? 0;
+    const remoteHp = vitals?.hpCur ?? 0;
+    const remoteVig = vitals?.vigor ?? 0;
     const hpBroken = vitals?.hpBroken ?? false;
     const turn = normalizeTurn(character?.turn ?? DEFAULT_TURN);
 
+    /** Local overlay — paints instantly; parent draft/Firestore catch up debounced. */
+    const [localHp, setLocalHp] = useState(null);
+    const [localVig, setLocalVig] = useState(null);
     const [preview, setPreview] = useState(null);
-    const displayHp = preview ? preview.hp : hpCur;
-    const displayVig = preview ? preview.vig : vigor;
+
+    const hpCur = localHp != null ? localHp : remoteHp;
+    const vigor = localVig != null ? localVig : remoteVig;
+    // Local chip edits must win over bar-scrub preview (stuck preview was masking VIG).
+    const displayHp = localHp != null ? localHp : (preview ? preview.hp : remoteHp);
+    const displayVig = localVig != null ? localVig : (preview ? preview.vig : remoteVig);
     const { hpPct, vigPct } = computeBarPercents(hpMax, displayHp, displayVig);
     const conditions = normalizeCharacterConditions(character?.conditions);
+    const vigGainBlocked = vigorGainBlocked(conditions);
 
     const activeConditions = useMemo(
         () => activeCharacterConditions(character?.conditions),
@@ -445,6 +494,9 @@ export default function DossierSeamP3({ character }) {
     const hpBrokenRef = useRef(hpBroken);
     const conditionsRef = useRef(conditions);
     const patchDraftRef = useRef(patchDraft);
+    const pendingVitalsRef = useRef({});
+    const vitalsTimerRef = useRef(null);
+    const characterId = character?.id ?? null;
 
     hpCurRef.current = hpCur;
     vigorRef.current = vigor;
@@ -453,6 +505,48 @@ export default function DossierSeamP3({ character }) {
     hpBrokenRef.current = hpBroken;
     conditionsRef.current = conditions;
     patchDraftRef.current = patchDraft;
+
+    /** Drop local overlay once remote matches (save / Redux caught up). */
+    useEffect(() => {
+        setLocalHp((prev) => (prev != null && prev === remoteHp ? null : prev));
+        setLocalVig((prev) => (prev != null && prev === remoteVig ? null : prev));
+    }, [remoteHp, remoteVig]);
+
+    useEffect(() => {
+        setLocalHp(null);
+        setLocalVig(null);
+        pendingVitalsRef.current = {};
+        if (vitalsTimerRef.current) {
+            clearTimeout(vitalsTimerRef.current);
+            vitalsTimerRef.current = null;
+        }
+    }, [characterId]);
+
+    const flushVitalsPatch = useCallback(() => {
+        vitalsTimerRef.current = null;
+        const partial = pendingVitalsRef.current;
+        pendingVitalsRef.current = {};
+        if (!partial || !Object.keys(partial).length) return;
+        patchDraftRef.current(partial);
+    }, []);
+
+    const scheduleVitalsPatch = useCallback((partial) => {
+        pendingVitalsRef.current = { ...pendingVitalsRef.current, ...partial };
+        if (vitalsTimerRef.current) clearTimeout(vitalsTimerRef.current);
+        vitalsTimerRef.current = setTimeout(flushVitalsPatch, 350);
+    }, [flushVitalsPatch]);
+
+    useEffect(() => () => {
+        if (vitalsTimerRef.current) {
+            clearTimeout(vitalsTimerRef.current);
+            vitalsTimerRef.current = null;
+            const partial = pendingVitalsRef.current;
+            pendingVitalsRef.current = {};
+            if (partial && Object.keys(partial).length) {
+                patchDraftRef.current(partial);
+            }
+        }
+    }, []);
 
     const closeSteps = useCallback(() => {
         setHpStepOpen(false);
@@ -466,38 +560,64 @@ export default function DossierSeamP3({ character }) {
     }, []);
 
     const applyHpPatch = useCallback((nextRaw) => {
+        // Drop scrub preview so chip edits are never masked.
+        if (previewRef.current) {
+            previewRef.current = null;
+            setPreview(null);
+        }
+        const pending = pendingVitalsRef.current;
+        const base = characterRef.current || {};
+        const charForCascade = {
+            ...base,
+            hpCur: hpCurRef.current,
+            vit: pending.vit !== undefined ? pending.vit : base.vit,
+            hpBroken: pending.hpBroken !== undefined ? pending.hpBroken : hpBrokenRef.current,
+        };
         const patch = commitSeamHpChange(
-            characterRef.current,
+            charForCascade,
             nextRaw,
             {
                 hpMax: hpMaxRef.current,
                 hpCur: hpCurRef.current,
-                hpBroken: hpBrokenRef.current,
+                hpBroken: charForCascade.hpBroken,
             },
         );
+        hpCurRef.current = patch.hpCur;
+        hpBrokenRef.current = patch.hpBroken;
+        setLocalHp(patch.hpCur);
         const partial = {
             hpCur: patch.hpCur,
             hpBroken: patch.hpBroken,
         };
-        if (patch.vit !== characterRef.current?.vit) {
+        if (patch.vit !== base.vit) {
             partial.vit = patch.vit;
         }
-        patchDraftRef.current(partial);
-    }, []);
+        scheduleVitalsPatch(partial);
+    }, [scheduleVitalsPatch]);
 
     const applyVigPatch = useCallback((nextRaw) => {
+        if (previewRef.current) {
+            previewRef.current = null;
+            setPreview(null);
+        }
+        const cur = Number.isFinite(Number(vigorRef.current)) ? Number(vigorRef.current) : 0;
+        const raw = Number(nextRaw);
+        const target = Number.isFinite(raw) ? raw : cur;
         const { vigor: next } = commitSeamVigChange(
-            vigorRef.current,
-            nextRaw,
+            cur,
+            target,
             conditionsRef.current,
         );
-        patchDraftRef.current({ vigor: next });
-    }, []);
+        vigorRef.current = next;
+        setLocalVig(next);
+        scheduleVitalsPatch({ vigor: next });
+    }, [scheduleVitalsPatch]);
 
     useEffect(() => {
         const onDocPointerDown = (e) => {
-            if (!e.target.closest?.("[data-vit-chip-wrap]")) closeSteps();
-            if (!e.target.closest?.("[data-cond-drawer]") && !e.target.closest?.("[data-cond-btn]")) {
+            const t = e.target;
+            if (!t?.closest?.("[data-vit-chip-wrap], [data-vit-step]")) closeSteps();
+            if (!t?.closest?.("[data-cond-drawer]") && !t?.closest?.("[data-cond-btn]")) {
                 setCondDrawerOpen(false);
             }
         };
@@ -646,10 +766,13 @@ export default function DossierSeamP3({ character }) {
                             max={hpMax}
                             open={hpStepOpen}
                             onToggle={() => {
+                                setPreview(null);
+                                previewRef.current = null;
                                 setVigStepOpen(false);
                                 setHpStepOpen((v) => !v);
                             }}
-                            onChange={applyHpPatch}
+                            onDelta={(d) => applyHpPatch(hpCurRef.current + d)}
+                            onSet={applyHpPatch}
                             onClose={closeSteps}
                         />
                     </Box>
@@ -659,11 +782,15 @@ export default function DossierSeamP3({ character }) {
                             value={displayVig}
                             open={vigStepOpen}
                             onToggle={() => {
+                                setPreview(null);
+                                previewRef.current = null;
                                 setHpStepOpen(false);
                                 setVigStepOpen((v) => !v);
                             }}
-                            onChange={applyVigPatch}
+                            onDelta={(d) => applyVigPatch(vigorRef.current + d)}
+                            onSet={applyVigPatch}
                             onClose={closeSteps}
+                            gainBlocked={vigGainBlocked}
                         />
                     </Box>
                 </Box>

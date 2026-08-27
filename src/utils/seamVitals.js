@@ -15,7 +15,14 @@ export const VIGOR_BLOCK_CONDITION_CODES = new Set([
  */
 export function vigorGainBlocked(conditions) {
     if (!Array.isArray(conditions)) return false;
-    return conditions.some((c) => VIGOR_BLOCK_CONDITION_CODES.has(String(c).trim()));
+    return conditions.some((c) => {
+        const raw = String(c).trim();
+        if (!raw) return false;
+        if (VIGOR_BLOCK_CONDITION_CODES.has(raw)) return true;
+        const lower = raw.toLowerCase();
+        const upper = raw.toUpperCase();
+        return VIGOR_BLOCK_CONDITION_CODES.has(lower) || VIGOR_BLOCK_CONDITION_CODES.has(upper);
+    });
 }
 
 export function clampHpCur(n, hpMax) {
