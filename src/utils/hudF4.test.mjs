@@ -6,6 +6,7 @@ import {
     effortBladeCommit,
     toggleTurn,
     hpFromBarRatio,
+    buildHudStatusChips,
 } from "./hudF4.js";
 import {
     applyHpWithVitCascadeOnCharacter,
@@ -140,6 +141,29 @@ describe("hpFromBarRatio → character.hpCur", () => {
         const r = applyHpWithVitCascadeOnCharacter({ vit: 4, hpCur: 8 }, nextHp);
         assert.equal(r.vit, 3);
         assert.equal(r.hpCur, 12);
+    });
+});
+
+describe("buildHudStatusChips", () => {
+    it("puts BREAK and EXHAUSTED first, then SHA ahead of other conditions", () => {
+        const chips = buildHudStatusChips({
+            hpBroken: true,
+            effortExhausted: true,
+            conditions: ["weakened", "shattered", "pacified"],
+        });
+        assert.deepEqual(chips.map((c) => c.code), ["BREAK", "EXHAUSTED", "SHA", "WEA", "PAC"]);
+        assert.equal(chips.every((c) => Boolean(c.title && c.body && c.color)), true);
+    });
+
+    it("omits flags when not active and does not slice the list", () => {
+        const chips = buildHudStatusChips({
+            hpBroken: false,
+            effortExhausted: false,
+            conditions: ["shattered", "weakened", "dazed", "pacified", "sealed"],
+        });
+        assert.equal(chips[0].code, "SHA");
+        assert.equal(chips.length, 5);
+        assert.equal(chips.some((c) => c.code === "BREAK"), false);
     });
 });
 

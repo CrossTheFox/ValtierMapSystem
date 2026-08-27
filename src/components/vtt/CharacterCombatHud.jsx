@@ -28,7 +28,7 @@ import HealingIcon from "@mui/icons-material/Healing";
 import { CyberText, CyberTitle } from "../customs/CustomTexts";
 import CyberTooltip from "../customs/CyberTooltip";
 import { UI_COLORS } from "../../constants/uiColors";
-import { cyberMenuItemSx, cyberMenuPaperSx, TYPO } from "../../constants/designSystem";
+import { cyberMenuItemSx, cyberMenuPaperSx, hudPopoverPaperSx, TYPO } from "../../constants/designSystem";
 import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
 import { VTT_GRID, VTT_HUD, vttGapCss, vttSpanWidthCss } from "../../constants/vttHudTokens";
 import { useStatSystem } from "../../hooks/useStatSystem";
@@ -57,14 +57,20 @@ import {
     effortBladeCommit,
     hpFromBarRatio,
     nextPrincipalAfterEject,
+    buildHudStatusChips,
     shouldShowPrincipalPlus,
     toggleTurn,
 } from "../../utils/hudF4";
-import { activeCharacterConditions } from "../../constants/characterConditions";
+import {
+    hasNegConditions,
+    hasPosConditions,
+    normalizeCharacterConditions,
+} from "../../constants/characterConditions";
+import { useFitChips } from "../../hooks/useFitChips";
+import { ConditionDrawer, ConditionsTagBtn } from "../characters/ConditionDrawer";
 import { normalizeTokenCrop, tokenCropCss } from "../../utils/tokenImageFit";
 import { rollStatInChat } from "../../../firebase/services/chatService";
 import AbilityHotbar from "./AbilityHotbar";
-import BurdenMark from "../characters/BurdenMark";
 import {
     normalizeBurdens,
     formatBurdenEffectSummary,
@@ -99,120 +105,6 @@ function burdenEffectTargetLabel(effect, character) {
         return bp?.title || bp?.name || bp?.label || effect.targetId;
     }
     return effect.targetId;
-}
-
-/** Single “has burdens” mark — tooltip lists every active burden + effect. */
-function ActiveBurdenIcons({ burdens, character }) {
-    const active = listActiveBurdens(burdens);
-    if (!active.length) return null;
-
-    const tip = (
-        <Box sx={{ display: "flex", flexDirection: "column", gap: "8px", textTransform: "none", maxWidth: 280 }}>
-            <Box
-                component="span"
-                sx={{
-                    fontFamily: "Orbitron, sans-serif",
-                    fontSize: "0.55rem",
-                    letterSpacing: "0.1em",
-                    color: UI_COLORS.danger,
-                    textTransform: "uppercase",
-                }}
-            >
-                Burdens · {active.length}
-            </Box>
-            {active.map((b, i) => {
-                const title = (b.title || "").trim() || `Burden ${i + 1}`;
-                const effectLine = formatBurdenEffectSummary(b.effect, {
-                    targetLabel: burdenEffectTargetLabel(b.effect, character),
-                });
-                const note = (b.consequence || b.text || "").trim();
-                return (
-                    <Box key={b.id || i} sx={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                        <Box
-                            component="span"
-                            sx={{
-                                fontFamily: "Orbitron, sans-serif",
-                                fontSize: "0.62rem",
-                                letterSpacing: "0.06em",
-                                color: UI_COLORS.textPrimary,
-                                textTransform: "uppercase",
-                            }}
-                        >
-                            {title}
-                            <Box component="span" sx={{
-                                ml: 0.75,
-                                fontFamily: "'Fira Code', monospace",
-                                fontSize: "0.5rem",
-                                color: UI_COLORS.danger,
-                                textTransform: "none",
-                            }}>
-                                {b.clockFilled}/{b.clockSize}
-                            </Box>
-                        </Box>
-                        {effectLine ? (
-                            <Box
-                                component="span"
-                                sx={{
-                                    fontFamily: "'Fira Code', monospace",
-                                    fontSize: "0.58rem",
-                                    color: UI_COLORS.danger,
-                                }}
-                            >
-                                {effectLine}
-                            </Box>
-                        ) : null}
-                        {note ? (
-                            <Box
-                                component="span"
-                                sx={{
-                                    fontFamily: "'Fira Sans', sans-serif",
-                                    fontSize: "0.7rem",
-                                    color: UI_COLORS.textSecondary,
-                                    lineHeight: 1.35,
-                                    whiteSpace: "pre-wrap",
-                                }}
-                            >
-                                {note}
-                            </Box>
-                        ) : null}
-                    </Box>
-                );
-            })}
-        </Box>
-    );
-
-    return (
-        <Box
-            sx={{
-                display: "flex",
-                alignItems: "flex-start",
-                flexShrink: 0,
-                ml: 0.5,
-                pt: "2px",
-            }}
-        >
-            <CyberTooltip
-                title={tip}
-                placement="top"
-                slotProps={{
-                    tooltip: {
-                        sx: {
-                            maxWidth: 300,
-                            textTransform: "none",
-                            letterSpacing: "normal",
-                        },
-                    },
-                }}
-            >
-                <BurdenMark
-                    filled
-                    size={22}
-                    showClock={false}
-                    aria-label={`Burdens activos: ${active.length}`}
-                />
-            </CyberTooltip>
-        </Box>
-    );
 }
 
 /** Icons tuned to what each ICON action *does* (not generic placeholders). */
@@ -1789,9 +1681,55 @@ function F4StackRow({
     );
 }
 
+function F4StatusChip({ chip, registerRef }) {
+    return (
+        <CyberTooltip
+            title={<HudRichTooltipTitle title={chip.title} body={chip.body} />}
+            placement="top"
+            slotProps={hudRichTooltipSlotProps}
+        >
+            <Box
+                ref={registerRef}
+                sx={{
+                    flexShrink: 0,
+                    fontFamily: '"Fira Code", monospace',
+                    fontSize: "0.48rem",
+                    letterSpacing: "0.04em",
+                    px: "5px",
+                    py: "2px",
+                    borderRadius: "2px",
+                    border: `1px solid ${chip.color}88`,
+                    color: chip.color,
+                    bgcolor: `${chip.color}1f`,
+                    textTransform: "uppercase",
+                    whiteSpace: "nowrap",
+                    cursor: "default",
+                }}
+            >
+                {chip.code}
+            </Box>
+        </CyberTooltip>
+    );
+}
+
 function F4BurdenRail({ burdens, character }) {
     const slots = normalizeBurdens(burdens);
     const active = listActiveBurdens(burdens);
+    const [openIndex, setOpenIndex] = useState(null);
+    const [anchorEl, setAnchorEl] = useState(null);
+    const openBurden = openIndex != null ? slots[openIndex] : null;
+    const effectLine = openBurden
+        ? formatBurdenEffectSummary(openBurden.effect, {
+            targetLabel: burdenEffectTargetLabel(openBurden.effect, character),
+        })
+        : "";
+    const note = (openBurden?.consequence || openBurden?.text || "").trim();
+
+    const close = () => {
+        setOpenIndex(null);
+        setAnchorEl(null);
+    };
+
     return (
         <Box
             role="group"
@@ -1814,19 +1752,23 @@ function F4BurdenRail({ burdens, character }) {
         >
             {slots.map((b, i) => {
                 const on = Boolean(b);
-                const effectLine = b
-                    ? formatBurdenEffectSummary(b.effect, {
-                        targetLabel: burdenEffectTargetLabel(b.effect, character),
-                    })
-                    : "";
-                const note = (b?.consequence || b?.text || "").trim();
                 return (
                     <Box
                         key={b?.id || `empty-${i}`}
                         component="button"
                         type="button"
                         aria-label={on ? (b.title || `Burden ${i + 1}`) : "Slot vacío"}
+                        aria-expanded={openIndex === i}
                         title={on ? undefined : "Slot vacío"}
+                        onClick={(e) => {
+                            if (!on) return;
+                            if (openIndex === i) {
+                                close();
+                                return;
+                            }
+                            setOpenIndex(i);
+                            setAnchorEl(e.currentTarget);
+                        }}
                         sx={{
                             position: "relative",
                             width: 24,
@@ -1835,93 +1777,61 @@ function F4BurdenRail({ burdens, character }) {
                             border: `1px solid ${on ? VIT_RED : "rgba(255,42,74,0.28)"}`,
                             bgcolor: on ? "rgba(255,42,74,0.18)" : "rgba(0,0,0,0.45)",
                             color: VIT_RED,
-                            cursor: "default",
+                            cursor: on ? "pointer" : "default",
                             display: "grid",
                             placeItems: "center",
                             opacity: on ? 1 : 0.32,
                             boxShadow: on ? "0 0 10px rgba(255,42,74,0.35)" : "none",
-                            "&:hover .f4-burden-tip": on ? { opacity: 1 } : {},
+                            "&:hover": on ? { borderColor: "#fff", color: "#fff" } : {},
                         }}
                     >
                         <F4BurdenIcon />
-                        {on && (
-                            <Box
-                                className="f4-burden-tip"
-                                sx={{
-                                    position: "absolute",
-                                    left: "calc(100% + 10px)",
-                                    top: "50%",
-                                    transform: "translateY(-50%)",
-                                    width: 240,
-                                    p: "10px 12px",
-                                    bgcolor: "rgba(8,6,12,0.97)",
-                                    border: "1px solid rgba(255,42,74,0.45)",
-                                    boxShadow: "0 12px 28px rgba(0,0,0,0.55), 0 0 16px rgba(255,42,74,0.15)",
-                                    clipPath: "polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px)",
-                                    opacity: 0,
-                                    pointerEvents: "none",
-                                    transition: "opacity 0.12s",
-                                    zIndex: 20,
-                                    textAlign: "left",
-                                }}
-                            >
-                                <Box
-                                    sx={{
-                                        fontFamily: "Orbitron, sans-serif",
-                                        fontSize: "0.5rem",
-                                        letterSpacing: "0.1em",
-                                        color: VIT_RED,
-                                        textTransform: "uppercase",
-                                        mb: "6px",
-                                    }}
-                                >
-                                    {active.length > 1 ? `Burdens · ${active.length}` : `Burden ${i + 1}`}
-                                </Box>
-                                <Box
-                                    sx={{
-                                        fontFamily: "Orbitron, sans-serif",
-                                        fontSize: "0.62rem",
-                                        letterSpacing: "0.06em",
-                                        color: "#fff",
-                                        textTransform: "uppercase",
-                                        mb: "2px",
-                                    }}
-                                >
-                                    {(b.title || "").trim() || `Burden ${i + 1}`}
-                                    <Box
-                                        component="span"
-                                        sx={{
-                                            fontFamily: '"Fira Code", monospace',
-                                            fontSize: "0.5rem",
-                                            color: VIT_RED,
-                                            ml: "6px",
-                                        }}
-                                    >
-                                        {b.clockFilled}/{b.clockSize}
-                                    </Box>
-                                </Box>
-                                {effectLine && (
-                                    <Box
-                                        sx={{
-                                            fontFamily: '"Fira Code", monospace',
-                                            fontSize: "0.56rem",
-                                            color: VIT_RED,
-                                            my: "4px",
-                                        }}
-                                    >
-                                        {effectLine}
-                                    </Box>
-                                )}
-                                {note && (
-                                    <Box sx={{ fontSize: "0.7rem", color: UI_COLORS.textSecondary, lineHeight: 1.35 }}>
-                                        {note}
-                                    </Box>
-                                )}
-                            </Box>
-                        )}
                     </Box>
                 );
             })}
+            <Popover
+                open={Boolean(anchorEl) && Boolean(openBurden)}
+                anchorEl={anchorEl}
+                onClose={close}
+                anchorOrigin={{ vertical: "center", horizontal: "right" }}
+                transformOrigin={{ vertical: "center", horizontal: "left" }}
+                slotProps={{
+                    paper: {
+                        sx: {
+                            ...hudPopoverPaperSx,
+                            ml: 1.25,
+                            width: 240,
+                            p: "10px 12px",
+                            border: `1px solid ${UI_COLORS.danger}73`,
+                            boxShadow: "0 12px 28px rgba(0,0,0,0.55), 0 0 16px rgba(255,42,74,0.15)",
+                            clipPath: "polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px)",
+                        },
+                    },
+                }}
+            >
+                {openBurden && (
+                    <Box sx={{ textAlign: "left" }}>
+                        <Box
+                            sx={{
+                                fontFamily: "Orbitron, sans-serif",
+                                fontSize: "0.5rem",
+                                letterSpacing: "0.1em",
+                                color: VIT_RED,
+                                textTransform: "uppercase",
+                                mb: "6px",
+                            }}
+                        >
+                            {active.length > 1 ? `Burdens · ${active.length}` : `Burden ${(openIndex ?? 0) + 1}`}
+                        </Box>
+                        <HudRichTooltipTitle
+                            title={(openBurden.title || "").trim() || `Burden ${(openIndex ?? 0) + 1}`}
+                            body={[effectLine, note].filter(Boolean).join("\n\n") || undefined}
+                            meta={`${openBurden.clockFilled}/${openBurden.clockSize}`}
+                            metaColor={VIT_RED}
+                        />
+                    </Box>
+                )}
+            </Popover>
         </Box>
     );
 }
@@ -1942,6 +1852,8 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
     const [statsOpen, setStatsOpen] = useState(false);
     const [activateAnchor, setActivateAnchor] = useState(null);
     const [charMenu, setCharMenu] = useState(null); // { anchorEl, char }
+    const [condDrawerOpen, setCondDrawerOpen] = useState(false);
+    const [condBtnEl, setCondBtnEl] = useState(null);
     /** Exclusive action mod: 0 | +1 | +2 | −1 | −2 */
     const [actionDelta, setActionDelta] = useState(0);
     const [statRolling, setStatRolling] = useState(false);
@@ -2064,7 +1976,11 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         return Math.max(1, Math.floor(Number(effortBase?.maxDefault) || 3));
     }, [resourceTracks]);
 
-    const { vitals, persistVitals } = usePersistedCharacterVitals(selected, { effortMax });
+    const { vitals, persistVitals } = usePersistedCharacterVitals(selected, {
+        effortMax,
+        useSessionPools: false,
+        autoMigrate: false,
+    });
 
     const vitCur = selected
         ? Math.min(Math.max(Math.floor(Number(selected.vit ?? vitMax) || 0), 0), vitMax)
@@ -2074,15 +1990,27 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
     const { hpPct, vigPct } = computeBarPercents(sheetHpMax, hpCur, vigor);
     const effortCur = vitals?.effort?.current ?? 0;
     const turn = normalizeTurn(vitals?.turn);
-    const shaBlocked = vigorGainBlocked(vitals?.conditions || selected?.conditions);
-    const condChips = useMemo(() => {
-        const all = activeCharacterConditions(selected?.conditions);
-        const rank = (c) => (c.key === "shattered" ? 0 : c.group === "statuses" ? 1 : 2);
-        return [...all].sort((a, b) => rank(a) - rank(b)).slice(0, 4);
-    }, [selected?.conditions]);
+    const liveConditions = vitals?.conditions ?? selected?.conditions;
+    const shaBlocked = vigorGainBlocked(liveConditions);
     const isBroken = Boolean(selected && vitals?.hpBroken);
     const isExhausted = Boolean(selected && vitals?.effort?.exhausted);
     const isDead = Boolean(selected && vitCur <= 0);
+    const statusChips = useMemo(
+        () => buildHudStatusChips({
+            hpBroken: isBroken,
+            effortExhausted: isExhausted,
+            conditions: liveConditions,
+        }),
+        [isBroken, isExhausted, liveConditions],
+    );
+    const {
+        containerRef: chipsContainerRef,
+        registerMeasure,
+        visibleItems: visibleStatusChips,
+    } = useFitChips(statusChips, { gap: 3, overflowWidth: 0 });
+    const condNeg = hasNegConditions(liveConditions);
+    const condPos = hasPosConditions(liveConditions);
+    const condKeys = normalizeCharacterConditions(liveConditions);
 
     const resolvePinHp = (char) => {
         const hpMax = resolveCharacterHpMax(char);
@@ -2173,6 +2101,14 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
 
     const handleTurnToggle = (key) => {
         persistVitals({ turn: toggleTurn(turn, key) });
+    };
+
+    const handleToggleCondition = (key) => {
+        const current = normalizeCharacterConditions(liveConditions);
+        const next = current.includes(key)
+            ? current.filter((k) => k !== key)
+            : [...current, key];
+        persistVitals({ conditions: next });
     };
 
     const handleActionDelta = (next) => {
@@ -2401,32 +2337,27 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                             },
                         }}
                     >
-                        <Box
-                            sx={{
-                                position: "absolute",
-                                left: 14,
-                                top: "-11px",
-                                fontFamily: "Orbitron, sans-serif",
-                                fontSize: "0.36rem",
-                                letterSpacing: "0.14em",
-                                color: vitCur <= 0 ? "#ff4d6a" : F4_CYAN,
-                                bgcolor: "rgba(0,0,0,0.92)",
-                                px: "7px",
-                                py: "2px",
-                                border: `1px solid ${vitCur <= 0 ? "rgba(255,42,74,0.5)" : "rgba(0,242,234,0.4)"}`,
-                                zIndex: 6,
-                            }}
-                        >
-                            PRINCIPAL
-                            {activeTurnId && activeTurnId !== selectedId && (
-                                <>
-                                    <Box component="span" sx={{ color: "rgba(255,255,255,0.25)", mx: "4px" }}>·</Box>
-                                    <Box component="span" sx={{ color: F4_AMBER }}>
-                                        ACTIVE: {(roster.find((c) => c.id === activeTurnId)?.name || "—").toUpperCase()}
-                                    </Box>
-                                </>
-                            )}
-                        </Box>
+                        {activeTurnId && activeTurnId !== selectedId && (
+                            <Box
+                                sx={{
+                                    position: "absolute",
+                                    right: 44,
+                                    top: "-11px",
+                                    zIndex: 6,
+                                    pointerEvents: "none",
+                                    fontFamily: "Orbitron, sans-serif",
+                                    fontSize: "0.36rem",
+                                    letterSpacing: "0.14em",
+                                    color: F4_AMBER,
+                                    bgcolor: "rgba(0,0,0,0.92)",
+                                    px: "7px",
+                                    py: "2px",
+                                    border: "1px solid rgba(255,176,32,0.5)",
+                                }}
+                            >
+                                ACTIVE: {(roster.find((c) => c.id === activeTurnId)?.name || "—").toUpperCase()}
+                            </Box>
+                        )}
 
                         <F4FxLayer vitCur={vitCur} />
                         {isDead && (
@@ -2522,7 +2453,7 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                                 pr: "10px",
                             }}
                         >
-                            <Box sx={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0, minHeight: 18 }}>
+                            <Box sx={{ minWidth: 0 }}>
                                 <Box
                                     sx={{
                                         fontFamily: "Orbitron, sans-serif",
@@ -2531,69 +2462,67 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                                         whiteSpace: "nowrap",
                                         overflow: "hidden",
                                         textOverflow: "ellipsis",
-                                        flex: 1,
-                                        minWidth: 0,
                                         color: isDead ? "#c8c8c8" : isBroken ? VIT_RED : "#fff",
                                         textShadow: vitCur <= 1 ? "0 0 10px rgba(255,42,74,0.35)" : "none",
                                     }}
                                 >
                                     {(selected.name || "—").toUpperCase()}
                                 </Box>
-                                <Box sx={{ display: "flex", gap: "3px", flexShrink: 0, flexWrap: "wrap" }}>
-                                    {isBroken && (
-                                        <Box sx={{
-                                            fontFamily: '"Fira Code", monospace',
-                                            fontSize: "0.48rem",
-                                            letterSpacing: "0.04em",
-                                            px: "5px",
-                                            py: "2px",
-                                            borderRadius: "2px",
-                                            border: `1px solid ${VIT_RED}88`,
-                                            color: VIT_RED,
-                                            bgcolor: `${VIT_RED}18`,
-                                            textTransform: "uppercase",
+                                <Box sx={{ position: "relative", display: "flex", alignItems: "center", gap: "4px", minWidth: 0, minHeight: 18, mt: "2px" }}>
+                                    <Box
+                                        ref={chipsContainerRef}
+                                        sx={{
+                                            flex: 1,
+                                            minWidth: 0,
+                                            overflow: "hidden",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: "3px",
                                         }}
-                                        >
-                                            BREAK
-                                        </Box>
-                                    )}
-                                    {isExhausted && (
-                                        <Box sx={{
-                                            fontFamily: '"Fira Code", monospace',
-                                            fontSize: "0.48rem",
-                                            letterSpacing: "0.04em",
-                                            px: "5px",
-                                            py: "2px",
-                                            borderRadius: "2px",
-                                            border: "1px solid rgba(249,115,22,0.7)",
-                                            color: "#f97316",
-                                            bgcolor: "rgba(249,115,22,0.14)",
-                                            textTransform: "uppercase",
+                                    >
+                                        {visibleStatusChips.map((c) => (
+                                            <F4StatusChip key={c.key} chip={c} registerRef={registerMeasure(c.key)} />
+                                        ))}
+                                    </Box>
+                                    <Box
+                                        aria-hidden
+                                        sx={{
+                                            position: "absolute",
+                                            top: -9999,
+                                            left: -9999,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: "3px",
+                                            visibility: "hidden",
+                                            pointerEvents: "none",
                                         }}
-                                        >
-                                            EXHAUSTED
-                                        </Box>
-                                    )}
-                                    {condChips.map((c) => (
-                                        <Box
-                                            key={c.key}
-                                            title={c.title}
-                                            sx={{
-                                                fontFamily: '"Fira Code", monospace',
-                                                fontSize: "0.48rem",
-                                                letterSpacing: "0.04em",
-                                                px: "5px",
-                                                py: "2px",
-                                                borderRadius: "2px",
-                                                border: `1px solid ${c.color}88`,
-                                                color: c.color,
-                                                bgcolor: `${c.color}1f`,
-                                                textTransform: "uppercase",
-                                            }}
-                                        >
-                                            {c.code}
-                                        </Box>
-                                    ))}
+                                    >
+                                        {statusChips.map((c) => (
+                                            <F4StatusChip key={c.key} chip={c} registerRef={registerMeasure(c.key)} />
+                                        ))}
+                                    </Box>
+                                    <ConditionsTagBtn
+                                        ref={setCondBtnEl}
+                                        condNeg={condNeg}
+                                        condPos={condPos}
+                                        activeCount={condKeys.length}
+                                        open={condDrawerOpen}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setCondDrawerOpen((v) => !v);
+                                        }}
+                                    />
+                                    <ConditionDrawer
+                                        open={condDrawerOpen}
+                                        anchorEl={condBtnEl}
+                                        placement="above"
+                                        activeKeys={condKeys}
+                                        onToggle={handleToggleCondition}
+                                        onClose={(event) => {
+                                            if (event?.target && condBtnEl?.contains?.(event.target)) return;
+                                            setCondDrawerOpen(false);
+                                        }}
+                                    />
                                 </Box>
                             </Box>
 

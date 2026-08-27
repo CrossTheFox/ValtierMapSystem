@@ -51,6 +51,15 @@ function mergeVitalsDisplay(base, overlay) {
 }
 
 /** Drop overlay keys once Redux/base already matches, so dossier writes can win. */
+function valuesEqual(a, b) {
+    if (a === b) return true;
+    if (Array.isArray(a) && Array.isArray(b)) {
+        return a.length === b.length && a.every((v, i) => v === b[i]);
+    }
+    if (a && b && typeof a === "object" && typeof b === "object") return nestedEqual(a, b);
+    return false;
+}
+
 function pruneAckedOverlay(base, overlay) {
     if (!overlay || !base) return overlay ?? null;
     const next = {};
@@ -58,7 +67,7 @@ function pruneAckedOverlay(base, overlay) {
         if (key === "effort" || key === "turn") {
             const merged = { ...(base[key] || {}), ...(value || {}) };
             if (!nestedEqual(base[key], merged)) next[key] = value;
-        } else if (base[key] !== value) {
+        } else if (!valuesEqual(base[key], value)) {
             next[key] = value;
         }
     }
@@ -73,14 +82,17 @@ function pruneAckedOverlay(base, overlay) {
  * 2. Redux patch immediately → roster/world stay in sync
  * 3. Debounced Firestore write → durability without blocking scrubbing
  *
- * Falls back to legacy `game.sessionPools.{characterId}` until migrated.
+ * HUD F4 passes `{ useSessionPools: false, autoMigrate: false }` so combat
+ * vitals read/write `characters/{id}` only. Other callers may still fall back
+ * to legacy `game.sessionPools` until a dedicated migration.
  */
 export function usePersistedCharacterVitals(character, options = {}) {
-    const { effortMax = 3, autoMigrate = true } = options;
+    const { effortMax = 3, autoMigrate = true, useSessionPools = true } = options;
     const dispatch = useDispatch();
-    const sessionPoolEntry = useSelector((s) => (
+    const sessionPoolRaw = useSelector((s) => (
         character?.id ? s.game?.sessionPools?.[character.id] ?? null : null
     ));
+    const sessionPoolEntry = useSessionPools ? sessionPoolRaw : null;
     const migratedRef = useRef(new Set());
     const characterId = character?.id ?? null;
 

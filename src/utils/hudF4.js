@@ -1,5 +1,50 @@
 import { DEFAULT_TURN, normalizeTurn } from "./characterVitals.js";
 import { clampHpCur } from "./seamVitals.js";
+import { activeCharacterConditions } from "../constants/characterConditions.js";
+
+const HUD_BREAK_CHIP = {
+    key: "hud-break",
+    code: "BREAK",
+    title: "Break",
+    body: "VIT rota — el personaje está en Break hasta curarlo.",
+    color: "#ff2a4a",
+    kind: "flag",
+};
+
+const HUD_EXHAUSTED_CHIP = {
+    key: "hud-exhausted",
+    code: "EXHAUSTED",
+    title: "Exhausted",
+    body: "Effort agotado — no quedan unidades de effort.",
+    color: "#f97316",
+    kind: "flag",
+};
+
+/**
+ * HUD F4 status row: vitals flags first, then catalog conditions (SHA first).
+ * No hard slice — the HUD fits what the row can hold and parks the rest in the tags drawer.
+ *
+ * @param {{ hpBroken?: boolean, effortExhausted?: boolean, conditions?: unknown }} opts
+ * @returns {Array<{ key: string, code: string, title: string, body: string, color: string, kind: string }>}
+ */
+export function buildHudStatusChips(opts = {}) {
+    const chips = [];
+    if (opts.hpBroken) chips.push({ ...HUD_BREAK_CHIP });
+    if (opts.effortExhausted) chips.push({ ...HUD_EXHAUSTED_CHIP });
+    const rank = (c) => (c.key === "shattered" ? 0 : 1);
+    const conds = [...activeCharacterConditions(opts.conditions)].sort((a, b) => rank(a) - rank(b));
+    for (const c of conds) {
+        chips.push({
+            key: c.key,
+            code: c.code,
+            title: c.title,
+            body: c.effect,
+            color: c.color,
+            kind: "condition",
+        });
+    }
+    return chips;
+}
 
 const TURN_KEYS = new Set(["act1", "act2", "move"]);
 
