@@ -4,6 +4,7 @@ import { UI_COLORS } from "../../../constants/uiColors";
 import { MACRO_SLOT_TYPES } from "../../../constants/macroBar";
 import { isAbilityCut } from "../../../utils/characterBurdens";
 import { isKitNodeUnlocked } from "../../../utils/kitProgression";
+import { toggleHasAttackPatch } from "../../../utils/abilityAplus";
 import { KitSvgCross, KitSvgPulse } from "../../../constants/kitSvg";
 import MacroPinButton from "../MacroPinButton";
 import PlayButton from "./PlayButton";
@@ -11,7 +12,7 @@ import DeleteAbilityButton from "./DeleteAbilityButton";
 import KitCardBodyB2 from "./KitCardBodyB2";
 import { CostChip, RangeChip, AoeChip, UnlockBadge } from "./KitHeaderChips";
 import KitTagBtn from "./KitTagBtn";
-import { abilityTone, CARD_BASE_SX, CHEVRON_SX, toneAccent, toneBorder } from "./kitCardChrome";
+import { abilityTone, CARD_BASE_SX, CARD_HD_GRID_SX, CHEVRON_SX, HD_DIV_SX, toneAccent, toneBorder } from "./kitCardChrome";
 
 export default function AbilityVerticalMicro({
     ability,
@@ -45,15 +46,11 @@ export default function AbilityVerticalMicro({
             }}
         >
             <Box
-                onClick={() => setOpen((v) => !v)}
+                onClick={() => {
+                    if (!kitEdit) setOpen((v) => !v);
+                }}
                 sx={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(12, minmax(0, 1fr))",
-                    columnGap: "3px",
-                    alignItems: "center",
-                    minHeight: 48,
-                    px: "8px",
-                    py: "6px",
+                    ...CARD_HD_GRID_SX,
                     cursor: "pointer",
                     userSelect: "none",
                     boxShadow: `inset 4px 0 0 ${accent}`,
@@ -68,11 +65,13 @@ export default function AbilityVerticalMicro({
                         minWidth: 0,
                         pr: "6px",
                         overflow: "hidden",
-                        borderRight: "1px solid rgba(255,102,255,0.45)",
                         minHeight: 28,
                     }}
                     title={kitEdit ? undefined : "Cost · Range · AoE"}
-                    onClick={kitEdit ? (e) => e.stopPropagation() : undefined}
+                    onClick={(e) => {
+                        if (kitEdit) e.stopPropagation();
+                        else setOpen((v) => !v);
+                    }}
                 >
                     <CostChip
                         value={ability.actionCost}
@@ -92,13 +91,19 @@ export default function AbilityVerticalMicro({
                         gap: "6px",
                         minWidth: 0,
                     }}
+                    onClick={(e) => {
+                        if (!kitEdit) {
+                            e.stopPropagation();
+                            setOpen((v) => !v);
+                        }
+                    }}
                 >
                     <Box
                         title={ability.hasAttack ? "Attack" : "Standard"}
                         onClick={(e) => {
                             if (!kitEdit) return;
                             e.stopPropagation();
-                            onPatch?.({ hasAttack: !ability.hasAttack });
+                            onPatch?.(toggleHasAttackPatch(!ability.hasAttack));
                         }}
                         sx={{
                             width: 20,
@@ -176,6 +181,7 @@ export default function AbilityVerticalMicro({
                     }}
                     onClick={(e) => e.stopPropagation()}
                 >
+                    <Box sx={HD_DIV_SX} aria-hidden />
                     {kitEdit && (
                         <Box
                             component="button"
@@ -226,7 +232,11 @@ export default function AbilityVerticalMicro({
                     )}
                     <Box
                         component="span"
-                        sx={{ ...CHEVRON_SX, transform: open ? "rotate(90deg)" : "none" }}
+                        sx={{
+                            ...CHEVRON_SX,
+                            transform: open ? "rotate(90deg)" : "none",
+                            color: open ? accent : CHEVRON_SX.color,
+                        }}
                         onClick={() => setOpen((v) => !v)}
                     >
                         ▸

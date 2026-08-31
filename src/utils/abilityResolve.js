@@ -2,35 +2,15 @@ import { mergeUnlockedUpgrades } from "./mergeUnlockedUpgrades.js";
 import { substituteFormulaTokens } from "./abilityFormula.js";
 import { rollResolvedFormula } from "./abilityRollCommands.js";
 import { rollAttackD20 } from "./attackRoll.js";
+import { inferDefaultActionsSpent } from "./abilityAplus.js";
+import { deriveAbilityFlavorText } from "./abilityContentParser.js";
 
 /**
- * One resolve bundle for a unified Play click (Slice 6) — merges unlocked
- * talent/mastery upgrades (G11), rolls the attack d20 once (if needed), and
- * resolves every `DamagePacket.formula` + effect `[]` macro token into a
- * concrete number, all in a single pass. No chat/Firestore writes happen
- * here — `firebase/services/launchToChat.js` posts the returned bundle.
- *
- * Ticket set mirrors `KitCardBodyB2`'s `AttackTicketRow` (Slice 5, already
- * shipped) so the dossier body preview and the chat card always agree:
- * Light + Heavy always resolved, Miss only when `!autoHit`, AoE only when
- * the merged attack carries a `damageAoe` packet.
- *
- * @param {object|null} node — A+ ability/trait/LB (flattened by `useCharacterJobData`).
- * @param {Record<string, unknown>|null|undefined} character
- * @param {{ ctx?: { ownedBaseNodeIds?: string[] }, formulaCtx?: object, isLb?: boolean, attackMods?: { boons?: number, curses?: number } }} [opts]
- * @returns {{
- *   tone: "atk"|"std"|"lb",
- *   hasAttack: boolean,
- *   atk: null|{ autoHit: boolean, outcome: "AUTOHIT"|"HIT"|"MISS"|"CRIT", raw: number|null, total: number|null,
- *     mod: number, polarity: "none"|"boon"|"curse", modifierDice: number[],
- *     light: object|null, heavy: object|null, miss: object|null, aoe: object|null },
- *   effects: Array<{ id: string, lane: string, label: string, resolvedText: string, rolls: object[], from: string|null }>,
- *   range: string|null, aoe: string|null, tags: string[], resolveCost: number|null,
- *   actionCost: unknown, title: string, flavor: string,
- * }}
+ * One resolve bundle for a unified Play click (Slice 6).
+ * Three-tier attack: LIGHT (1D hit) / HEAVY (2D hit) / CRIT (2×max D) / MISS.
  */
 export function resolveAbilityForPlay(node, character, opts = {}) {
-    const { ctx = {}, formulaCtx = {}, isLb = false, attackMods = null } = opts;
+    const { ctx = {}, formulaCtx = {}, isLb = false, attackMods = null, actionsSpent = null } = opts;
     const merged = mergeUnlockedUpgrades(node, character, { ...ctx, isLb }) || {};
     const patches = merged._mergeMeta?.attackPatches || {};
     const effectSources = merged._mergeMeta?.effectSources || {};
@@ -39,7 +19,11 @@ export function resolveAbilityForPlay(node, character, opts = {}) {
     const hasAttack = Boolean(merged.hasAttack && attack);
     const autoHit = Boolean(attack?.autoHit);
 
-    const atk = hasAttack ? buildAttackBundle(attack, attackMods, autoHit, formulaCtx, patches) : null;
+    const spent = actionsSpent != null
+        ? Number(actionsSpent)
+        : inferDefaultActionsSpent(merged);
+
+    const atk = hasAttack ? buildAttackBundle(attack, attackMods, autoHit, formulaCtx, patches, spent) : null;
     const effects = resolveEffects(merged.effects, formulaCtx, effectSources);
 
     return {
@@ -53,11 +37,35 @@ export function resolveAbilityForPlay(node, character, opts = {}) {
         resolveCost: merged.resolveCost ?? null,
         actionCost: merged.actionCost ?? null,
         title: merged.label || merged.title || "",
-        flavor: merged.blurb || merged.description || "",
+        flavor: deriveAbilityFlavorText(merged),
     };
 }
 
-function buildAttackBundle(attack, attackMods, autoHit, formulaCtx, patches) {
+function resolvePacket(attack, key, label, formulaCtx, patches) {
+    const packet = attack[key];
+    if (!packet || packet.formula == null || packet.formula === "") return null;
+    const display = substituteFormulaTokens(packet.formula, formulaCtx);
+    const rolled = rollResolvedFormula(display);
+    return {
+        key,
+        label,
+        total: rolled ? rolled.total : (Number(display) || 0),
+        detail: rolled
+            ? `${rolled.formula} → [${rolled.rolls.join(", ")}]${rolled.mod ? (rolled.mod > 0 ? `+${rolled.mod}` : rolled.mod) : ""}`
+            : display,
+        fromUp: patches[key] || null,
+    };
+}
+
+function pickActivePacketKey(outcome, actionsSpent, hasHeavyTier) {
+    if (outcome === "AUTOHIT") return null;
+    if (outcome === "MISS") return "miss";
+    if (outcome === "CRIT") return "crit";
+    if (outcome === "HIT" && actionsSpent >= 2 && hasHeavyTier) return "heavy";
+    return "light";
+}
+
+function buildAttackBundle(attack, attackMods, autoHit, formulaCtx, patches, actionsSpent) {
     const d20Result = autoHit ? null : rollAttackD20(attackMods || {});
     let outcome = "AUTOHIT";
     if (d20Result) {
@@ -66,21 +74,17 @@ function buildAttackBundle(attack, attackMods, autoHit, formulaCtx, patches) {
         else outcome = "HIT";
     }
 
-    const resolvePacket = (key, label) => {
-        const packet = attack[key];
-        if (!packet || packet.formula == null || packet.formula === "") return null;
-        const display = substituteFormulaTokens(packet.formula, formulaCtx);
-        const rolled = rollResolvedFormula(display);
-        return {
-            key,
-            label,
-            total: rolled ? rolled.total : (Number(display) || 0),
-            detail: rolled
-                ? `${rolled.formula} → [${rolled.rolls.join(", ")}]${rolled.mod ? (rolled.mod > 0 ? `+${rolled.mod}` : rolled.mod) : ""}`
-                : display,
-            fromUp: patches[key] || null,
-        };
-    };
+    const light = resolvePacket(attack, "damageOnHit", "LIGHT", formulaCtx, patches);
+    const heavy = attack.damageOnHeavy?.formula
+        ? resolvePacket(attack, "damageOnHeavy", "HEAVY", formulaCtx, patches)
+        : null;
+    const crit = resolvePacket(attack, "damageOnCrit", "CRIT", formulaCtx, patches);
+    const miss = autoHit ? null : resolvePacket(attack, "damageOnMiss", "MISS", formulaCtx, patches);
+    const aoe = attack.damageAoe?.formula
+        ? resolvePacket(attack, "damageAoe", "AOE", formulaCtx, patches)
+        : null;
+
+    const activePacket = pickActivePacketKey(outcome, actionsSpent, Boolean(heavy));
 
     return {
         autoHit,
@@ -90,10 +94,13 @@ function buildAttackBundle(attack, attackMods, autoHit, formulaCtx, patches) {
         mod: d20Result?.mod ?? 0,
         polarity: d20Result?.polarity ?? "none",
         modifierDice: d20Result?.modifierDice ?? [],
-        light: resolvePacket("damageOnHit", "LIGHT"),
-        heavy: resolvePacket("damageOnCrit", "HEAVY"),
-        miss: autoHit ? null : resolvePacket("damageOnMiss", "MISS"),
-        aoe: attack.damageAoe ? resolvePacket("damageAoe", "AOE") : null,
+        light,
+        heavy,
+        crit,
+        miss,
+        aoe,
+        activePacket,
+        actionsSpent,
     };
 }
 

@@ -32,17 +32,66 @@ export const CHEVRON_SX = {
     fontSize: "0.6rem",
     color: UI_COLORS.textSecondary,
     cursor: "pointer",
-    width: 16,
+    width: 14,
     textAlign: "center",
     flexShrink: 0,
     userSelect: "none",
-    transition: "transform 0.15s",
+    transition: "transform 0.15s, color 0.15s",
     "&:hover": { color: UI_COLORS.anomaly },
 };
 
+/** Magenta column divider in card header tools — mockup `.hd-div`. */
+export const HD_DIV_SX = {
+    width: "1px",
+    alignSelf: "stretch",
+    minHeight: 22,
+    background: "rgba(255,102,255,0.45)",
+    margin: "2px 2px 2px 0",
+    flexShrink: 0,
+};
+
+/** Header icon button — mockup `.hd-tools .ico-btn` (22×22). */
+export const ICO_BTN_SX = {
+    width: 22,
+    height: 22,
+    minWidth: 22,
+    minHeight: 22,
+    p: 0,
+    display: "inline-grid",
+    placeItems: "center",
+    borderRadius: "2px",
+    border: "1px solid rgba(255,255,255,0.22)",
+    bgcolor: "rgba(0,0,0,0.45)",
+    cursor: "pointer",
+    flexShrink: 0,
+    color: UI_COLORS.textPrimary,
+    "&:hover": {
+        borderColor: UI_COLORS.anomaly,
+        bgcolor: "rgba(0,242,234,0.08)",
+    },
+};
+
+export const CARD_HD_GRID_SX = {
+    display: "grid",
+    gridTemplateColumns: "repeat(12, minmax(0, 1fr))",
+    columnGap: "3px",
+    alignItems: "center",
+    minHeight: 48,
+    px: "8px",
+    py: "6px",
+};
+
+export const VPACK_SX = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    flexShrink: 0,
+    minWidth: 0,
+};
+
 export const CARD_BASE_SX = {
-    borderRadius: "6px",
-    background: "rgba(0,0,0,0.3)",
+    borderRadius: "4px",
+    background: "rgba(0,0,0,0.32)",
     overflow: "visible",
     flexShrink: 0,
 };

@@ -12,6 +12,8 @@ describe("substituteFormulaTokens", () => {
     it("substitutes [damageDie] with the live die, keeping a leading count", () => {
         assert.equal(substituteFormulaTokens("[damageDie]+[fray]", { damageDie: 8, fray: 1 }), "d8+1");
         assert.equal(substituteFormulaTokens("2[damageDie]", { damageDie: 10 }), "2d10");
+        assert.equal(substituteFormulaTokens("2d[damageDie]+[fray]", { damageDie: 8, fray: 2 }), "2d8+2");
+        assert.equal(substituteFormulaTokens("4d[damageDie]+[fray]", { damageDie: 8, fray: 2 }), "4d8+2");
     });
 
     it("substitutes [fray] and [mechanicResource] with live values", () => {

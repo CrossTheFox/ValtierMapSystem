@@ -1,5 +1,7 @@
 import { useCallback, useState } from "react";
 import { Box } from "@mui/material";
+import { deriveCritFormula } from "../../../utils/abilityDamageD";
+import { deriveAbilityFlavorText } from "../../../utils/abilityContentParser";
 import { mergeUnlockedUpgrades } from "../../../utils/mergeUnlockedUpgrades";
 import { substituteFormulaTokens, viewPacketFormula } from "../../../utils/abilityFormula";
 import { isKitNodeUnlocked } from "../../../utils/kitProgression";
@@ -10,9 +12,9 @@ import { ABILITY_TEXTAREA_SX } from "./kitStyles";
 import { FxRail, FX_LANE_COLOR, FX_LANE_LABEL } from "./FxRail";
 
 export function kitFlavorText(node) {
-    return String(
-        node?.description || node?.blurb || node?.body || node?.content || node?.text || node?.summary || "",
-    );
+    const derived = deriveAbilityFlavorText(node);
+    if (derived) return derived;
+    return String(node?.body || node?.summary || "");
 }
 
 function FlavorBlock({ node, kitEdit, onPatch }) {
@@ -91,6 +93,84 @@ function extractMacroTokens(text) {
     return String(text || "").match(MACRO_RE) || [];
 }
 
+function TicketSlotEdit({ label, value, onChange, variant = "hit" }) {
+    const top = variant === "aoe"
+        ? "#00f2ea"
+        : variant === "miss"
+            ? "rgba(255,255,255,0.35)"
+            : "#ff8a3d";
+    const border = variant === "aoe"
+        ? "rgba(0,242,234,0.45)"
+        : variant === "miss"
+            ? "rgba(255,255,255,0.14)"
+            : "rgba(255,138,61,0.35)";
+    const lblColor = variant === "aoe" ? "#00f2ea" : variant === "miss" ? "rgba(255,255,255,0.5)" : "#ff8a3d";
+    const text = useLocalText(value, onChange);
+    return (
+        <Box sx={{
+            flex: 1,
+            minWidth: 0,
+            p: "7px 8px",
+            borderRadius: "3px",
+            border: `1px ${variant === "aoe" ? "dashed" : "solid"} ${border}`,
+            borderTop: `2px solid ${top}`,
+            bgcolor: variant === "aoe" ? "rgba(0,242,234,0.06)" : "rgba(0,0,0,0.4)",
+        }}>
+            <Box sx={{
+                fontFamily: "Orbitron, sans-serif",
+                fontSize: "0.38rem",
+                letterSpacing: "0.1em",
+                color: lblColor,
+                mb: "4px",
+            }}>
+                {label}
+            </Box>
+            <Box
+                component="input"
+                value={text.value}
+                onFocus={text.onFocus}
+                onBlur={text.onBlur}
+                onChange={(e) => text.setValue(e.target.value)}
+                placeholder="fórmula A+"
+                sx={{
+                    width: "100%",
+                    fontFamily: "'Fira Code', monospace",
+                    fontSize: "0.82rem",
+                    color: "#fff",
+                    bgcolor: "rgba(0,0,0,0.35)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    borderRadius: "2px",
+                    px: "6px",
+                    py: "4px",
+                }}
+            />
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: "4px", mt: "4px" }}>
+                {MACRO_TOKENS.map((tok) => (
+                    <Box
+                        key={tok}
+                        component="button"
+                        type="button"
+                        onClick={() => text.setValue(`${text.value || ""}${tok}`, { commitNow: true })}
+                        sx={{
+                            fontFamily: "'Fira Code', monospace",
+                            fontSize: "0.55rem",
+                            px: "5px",
+                            py: "2px",
+                            borderRadius: "2px",
+                            cursor: "pointer",
+                            color: "#00f2ea",
+                            border: "1px solid rgba(0,242,234,0.45)",
+                            bgcolor: "transparent",
+                        }}
+                    >
+                        {tok}
+                    </Box>
+                ))}
+            </Box>
+        </Box>
+    );
+}
+
 function TicketSlot({ label, packet, formulaCtx, fromUp, variant = "hit" }) {
     const top = variant === "aoe"
         ? "#00f2ea"
@@ -133,16 +213,35 @@ function TicketSlot({ label, packet, formulaCtx, fromUp, variant = "hit" }) {
     );
 }
 
-function AttackTicketRow({ node, formulaCtx }) {
+function AttackTicketRow({ node, formulaCtx, kitEdit, onPatch }) {
     const atk = node?.attack;
     if (!node?.hasAttack || !atk) return null;
     const patches = node._mergeMeta?.attackPatches || {};
     const slots = [
-        { key: "damageOnHit", label: "LIGHT", variant: "hit" },
-        { key: "damageOnCrit", label: "HEAVY", variant: "hit" },
+        { key: "damageOnHit", label: "LIGHT", variant: "hit", deriveCrit: true },
     ];
-    if (!atk.autoHit) slots.push({ key: "damageOnMiss", label: "MISS", variant: "miss" });
-    if (atk.damageAoe) slots.push({ key: "damageAoe", label: "AOE", variant: "aoe" });
+    if (atk.damageOnHeavy?.formula || kitEdit) {
+        slots.push({ key: "damageOnHeavy", label: "HEAVY", variant: "hit", deriveCrit: true });
+    }
+    slots.push({ key: "damageOnCrit", label: "CRIT", variant: "hit", deriveCrit: false });
+    if (!atk.autoHit) slots.push({ key: "damageOnMiss", label: "MISS", variant: "miss", deriveCrit: false });
+    if (atk.damageAoe?.formula) slots.push({ key: "damageOnAoe", label: "AOE", variant: "aoe", deriveCrit: false });
+
+    const patchFormula = (key, formula, shouldDeriveCrit) => {
+        const nextAtk = {
+            ...atk,
+            [key]: formula ? { formula } : null,
+        };
+        if (shouldDeriveCrit && (key === "damageOnHit" || key === "damageOnHeavy")) {
+            const light = key === "damageOnHit" ? formula : (nextAtk.damageOnHit?.formula || "");
+            const heavy = key === "damageOnHeavy" ? formula : (nextAtk.damageOnHeavy?.formula || "");
+            if (light) {
+                nextAtk.damageOnCrit = { formula: deriveCritFormula(light, heavy) };
+            }
+        }
+        onPatch?.({ attack: nextAtk });
+    };
+
     return (
         <Box sx={{ display: "flex", flexDirection: "column", gap: "6px", my: "8px 10px" }}>
             <Box sx={{ display: "flex", alignItems: "stretch", gap: "6px", flexWrap: "wrap" }}>
@@ -164,14 +263,24 @@ function AttackTicketRow({ node, formulaCtx }) {
                     {atk.autoHit ? "AUTOHIT" : `+${atk.toHit?.boons || 0} BOONS`}
                 </Box>
                 {slots.map((s) => (
-                    <TicketSlot
-                        key={s.key}
-                        label={s.label}
-                        packet={atk[s.key]}
-                        formulaCtx={formulaCtx}
-                        fromUp={patches[s.key]}
-                        variant={s.variant}
-                    />
+                    kitEdit ? (
+                        <TicketSlotEdit
+                            key={s.key}
+                            label={s.label}
+                            value={atk[s.key]?.formula || ""}
+                            variant={s.variant}
+                            onChange={(formula) => patchFormula(s.key, formula, s.deriveCrit)}
+                        />
+                    ) : (
+                        <TicketSlot
+                            key={s.key}
+                            label={s.label}
+                            packet={atk[s.key]}
+                            formulaCtx={formulaCtx}
+                            fromUp={patches[s.key]}
+                            variant={s.variant}
+                        />
+                    )
                 ))}
             </Box>
         </Box>
@@ -468,7 +577,7 @@ export default function KitCardBodyB2({ node, character, ctx = {}, kitEdit, form
     return (
         <Box sx={{ mt: 1, display: "flex", flexDirection: "column", gap: "6px", position: "relative", overflow: "visible" }}>
             <FlavorBlock node={displayNode} kitEdit={kitEdit} onPatch={onPatch} />
-            <AttackTicketRow node={displayNode} formulaCtx={formulaCtx} />
+            <AttackTicketRow node={displayNode} formulaCtx={formulaCtx} kitEdit={kitEdit} onPatch={onPatch} />
             <EffectsRows node={displayNode} kitEdit={kitEdit} onPatch={onPatch} formulaCtx={formulaCtx} />
             <UpgradesRow node={node} character={character} ctx={ctx} isLb={isLb} onUnlockNode={onUnlockNode} />
         </Box>

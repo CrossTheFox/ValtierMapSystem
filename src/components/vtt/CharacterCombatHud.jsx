@@ -28,7 +28,8 @@ import HealingIcon from "@mui/icons-material/Healing";
 import { CyberText, CyberTitle } from "../customs/CustomTexts";
 import CyberTooltip from "../customs/CyberTooltip";
 import { UI_COLORS } from "../../constants/uiColors";
-import { cyberMenuItemSx, cyberMenuPaperSx, hudPopoverPaperSx, TYPO } from "../../constants/designSystem";
+import { cyberMenuItemSx, cyberMenuPaperSx, HUD_SURFACE, hudPopoverPaperSx, TYPO } from "../../constants/designSystem";
+import { CxChip, CxMoreChip } from "../shared/CxChip";
 import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
 import { VTT_GRID, VTT_HUD, vttGapCss, vttSpanWidthCss } from "../../constants/vttHudTokens";
 import { useStatSystem } from "../../hooks/useStatSystem";
@@ -1688,25 +1689,13 @@ function F4StatusChip({ chip, registerRef }) {
             placement="top"
             slotProps={hudRichTooltipSlotProps}
         >
-            <Box
-                ref={registerRef}
-                sx={{
-                    flexShrink: 0,
-                    fontFamily: '"Fira Code", monospace',
-                    fontSize: "0.48rem",
-                    letterSpacing: "0.04em",
-                    px: "5px",
-                    py: "2px",
-                    borderRadius: "2px",
-                    border: `1px solid ${chip.color}88`,
-                    color: chip.color,
-                    bgcolor: `${chip.color}1f`,
-                    textTransform: "uppercase",
-                    whiteSpace: "nowrap",
-                    cursor: "default",
-                }}
-            >
-                {chip.code}
+            <Box component="span" sx={{ display: "inline-flex" }}>
+                <CxChip
+                    code={chip.code}
+                    color={chip.color}
+                    registerRef={registerRef}
+                    title={chip.title}
+                />
             </Box>
         </CyberTooltip>
     );
@@ -1920,7 +1909,14 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         setActivatedIds((prev) => (prev.includes(selectedId) ? prev : [...prev, selectedId]));
     }, [selectedId]);
 
-    /** Session stack: principal first (column-reverse → nearest the HUD), then added/pinned. */
+    const assignedIds = useMemo(() => {
+        if (Array.isArray(profile?.characterIds) && profile.characterIds.length) {
+            return profile.characterIds.filter((id) => roster.some((c) => c.id === id));
+        }
+        return roster.map((c) => c.id);
+    }, [profile?.characterIds, roster]);
+
+    /** Session stack: principal first (column-reverse → nearest the HUD), then assigned/added/pinned. */
     const stripChars = useMemo(() => {
         const order = [];
         const seen = new Set();
@@ -1931,20 +1927,21 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
             seen.add(id);
             order.push(c);
         };
+        const multiAssigned = !isDM && assignedIds.length > 1;
+        if (multiAssigned) {
+            if (selectedId) push(selectedId);
+            assignedIds.forEach((id) => push(id));
+            pinnedIds.forEach((id) => push(id));
+            return order;
+        }
         if (selectedId) push(selectedId);
         activatedIds.forEach(push);
         pinnedIds.forEach(push);
         return order;
-    }, [activatedIds, pinnedIds, roster, selectedId]);
+    }, [activatedIds, assignedIds, isDM, pinnedIds, roster, selectedId]);
 
-    const showStack = stripChars.length > 1 || stripChars.some((c) => c.id !== selectedId);
-
-    const assignedIds = useMemo(() => {
-        if (Array.isArray(profile?.characterIds) && profile.characterIds.length) {
-            return profile.characterIds.filter((id) => roster.some((c) => c.id === id));
-        }
-        return roster.map((c) => c.id);
-    }, [profile?.characterIds, roster]);
+    const showStack = stripChars.length > 1
+        || (!isDM && assignedIds.length > 1 && stripChars.length > 0);
 
     const assignedCount = isDM ? roster.length : assignedIds.length;
     const showPlus = shouldShowPrincipalPlus({ assignedCount, isDm: isDM });
@@ -2007,7 +2004,8 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         containerRef: chipsContainerRef,
         registerMeasure,
         visibleItems: visibleStatusChips,
-    } = useFitChips(statusChips, { gap: 3, overflowWidth: 0 });
+        overflowCount: statusOverflowCount,
+    } = useFitChips(statusChips, { gap: 3, overflowWidth: 34 });
     const condNeg = hasNegConditions(liveConditions);
     const condPos = hasPosConditions(liveConditions);
     const condKeys = normalizeCharacterConditions(liveConditions);
@@ -2297,24 +2295,28 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                             columnGap: 0,
                             alignItems: "center",
                             width: "100%",
-                            p: "12px 12px 12px 16px",
-                            minHeight: 92,
+                            minWidth: 0,
+                            p: "14px 14px 14px 18px",
+                            minHeight: 96,
                             overflow: "visible",
                             zIndex: 2,
                             clipPath: "polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px))",
+                            ...HUD_SURFACE,
                             border: `1px solid ${
                                 vitCur <= 0
                                     ? "rgba(255,42,74,0.85)"
                                     : vitCur <= 1
                                         ? "rgba(255,42,74,0.7)"
-                                        : "rgba(255,42,74,0.34)"
+                                        : VTT_HUD.glassBorder
                             }`,
                             bgcolor: vitCur <= 0
                                 ? undefined
-                                : "rgba(0,0,0,0.78)",
+                                : HUD_SURFACE.bgcolor,
+                            backdropFilter: "blur(14px)",
+                            WebkitBackdropFilter: "blur(14px)",
                             background: vitCur <= 0
-                                ? "radial-gradient(ellipse at 15% 50%, rgba(80,10,18,0.35), transparent 50%), linear-gradient(145deg, #0c0c0e 0%, #161618 45%, #0a0a0c 100%)"
-                                : "radial-gradient(ellipse at 18% 50%, rgba(255,42,74,0.08), transparent 52%), rgba(0,0,0,0.78)",
+                                ? "radial-gradient(ellipse at 15% 50%, rgba(80,10,18,0.35), transparent 50%), linear-gradient(145deg, rgba(12,12,20,0.97) 0%, rgba(22,22,28,0.94) 45%, rgba(10,10,15,0.98) 100%)"
+                                : `radial-gradient(ellipse at 18% 50%, rgba(255,42,74,0.08), transparent 52%), ${VTT_HUD.glassBg}`,
                             boxShadow: vitCur <= 0
                                 ? "0 0 36px rgba(255,42,74,0.35), inset 0 0 50px rgba(0,0,0,0.65), inset 0 -20px 40px rgba(255,42,74,0.12)"
                                 : vitCur === 1
@@ -2483,6 +2485,14 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                                         {visibleStatusChips.map((c) => (
                                             <F4StatusChip key={c.key} chip={c} registerRef={registerMeasure(c.key)} />
                                         ))}
+                                        {statusOverflowCount > 0 && (
+                                            <CxMoreChip
+                                                n={statusOverflowCount}
+                                                onClick={() => setCondDrawerOpen(true)}
+                                                registerRef={registerMeasure("__overflow__")}
+                                                title={`${statusOverflowCount} más — abrir Conditions`}
+                                            />
+                                        )}
                                     </Box>
                                     <Box
                                         aria-hidden
@@ -2500,6 +2510,12 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                                         {statusChips.map((c) => (
                                             <F4StatusChip key={c.key} chip={c} registerRef={registerMeasure(c.key)} />
                                         ))}
+                                        {statusOverflowCount > 0 && (
+                                            <CxMoreChip
+                                                n={statusOverflowCount}
+                                                registerRef={registerMeasure("__overflow__")}
+                                            />
+                                        )}
                                     </Box>
                                     <ConditionsTagBtn
                                         ref={setCondBtnEl}
@@ -2550,8 +2566,8 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                                         inset: "0 auto 0 0",
                                         width: `${hpPct}%`,
                                         background: isDead
-                                            ? "repeating-linear-gradient(-45deg, #5a5a5e 0 4px, #3a3a3e 4px 8px)"
-                                            : "repeating-linear-gradient(-45deg, #00f2ea 0 4px, #00c4bd 4px 8px)",
+                                            ? "repeating-linear-gradient(-45deg, #5a5a5e 0 3px, #3a3a3e 3px 6px)"
+                                            : "repeating-linear-gradient(-45deg, #00f2ea 0 3px, #00c4bd 3px 6px)",
                                         boxShadow: isDead ? "none" : `0 0 10px ${F4_CYAN}80`,
                                         zIndex: 1,
                                         transition: "width 0.2s, filter 0.15s",
@@ -2808,9 +2824,9 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                                 width: "1px",
                                 justifySelf: "center",
                                 alignSelf: "stretch",
-                                my: "6px",
-                                background: "repeating-linear-gradient(180deg, rgba(255,102,255,0.6) 0 3px, transparent 3px 6px)",
-                                boxShadow: "0 0 6px rgba(255,102,255,0.3)",
+                                my: "4px",
+                                background: "rgba(255,102,255,0.45)",
+                                boxShadow: "0 0 6px rgba(255,102,255,0.35)",
                                 zIndex: 3,
                             }}
                         />

@@ -15,7 +15,8 @@ function baseAbility(overrides = {}) {
         attack: {
             autoHit: false,
             damageOnHit: { formula: "[damageDie]+[fray]" },
-            damageOnCrit: { formula: "2[damageDie]+[fray]" },
+            damageOnHeavy: { formula: "2d[damageDie]+[fray]" },
+            damageOnCrit: { formula: "4d[damageDie]+[fray]" },
             damageOnMiss: { formula: "[fray]" },
         },
         effects: [{ id: "e1", lane: "hit", label: "ON HIT", text: "Mark the target." }],

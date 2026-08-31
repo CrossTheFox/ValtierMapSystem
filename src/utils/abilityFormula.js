@@ -22,7 +22,9 @@ export function substituteFormulaTokens(raw, ctx = {}) {
     const mech = Math.max(0, Math.floor(Number(ctx.mechanicResource) || 0));
 
     let s = String(raw).replace(/\s+/g, "");
-    s = s.replace(/(\d*)\[(?:damageDie|D)\]/gi, (_m, n) => `${n || ""}d${die}`);
+    s = s.replace(/(\d+)d\[(?:damageDie|D)\]/gi, (_m, n) => `${n}d${die}`);
+    s = s.replace(/(\d+)\[(?:damageDie|D)\]/gi, (_m, n) => `${n}d${die}`);
+    s = s.replace(/\[(?:damageDie|D)\]/gi, () => `d${die}`);
     s = s.replace(/\[fray\]/gi, String(fray));
     s = s.replace(/\[mechanicResource\]/gi, String(mech));
     s = s.replace(/\[(\d*)d(\d+)\]/gi, (_m, n, sides) => `${n || ""}d${sides}`);

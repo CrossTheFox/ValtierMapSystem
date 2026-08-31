@@ -129,6 +129,8 @@ export function normalizeTraitCategory(raw) {
     return TRAIT_CATEGORIES.SIMPLE;
 }
 
+const HIDDEN_TAG_KEYS = new Set(["homebrew"]);
+
 /** @param {unknown} raw */
 export function sanitizeTagKeys(raw) {
     if (!Array.isArray(raw)) return [];
@@ -140,7 +142,7 @@ export function sanitizeTagKeys(raw) {
             .toLowerCase()
             .replace(/[^a-z0-9_-]+/g, "-")
             .replace(/^-|-$/g, "");
-        if (!key || seen.has(key)) continue;
+        if (!key || seen.has(key) || HIDDEN_TAG_KEYS.has(key)) continue;
         seen.add(key);
         out.push(key);
     }

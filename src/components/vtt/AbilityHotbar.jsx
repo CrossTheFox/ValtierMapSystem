@@ -6,6 +6,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { CyberText } from "../customs/CustomTexts";
 import CyberTooltip from "../customs/CyberTooltip";
 import AttackBoonDialog from "./AttackBoonDialog";
+import { getPlayLaunchDialogProps, needsPlayLaunchDialog } from "../../utils/abilityAplus";
 import { UI_COLORS } from "../../constants/uiColors";
 import { VTT_GRID, VTT_HUD, vttSpanWidthCss } from "../../constants/vttHudTokens";
 import {
@@ -162,7 +163,7 @@ export default function AbilityHotbar({
     const handleClose = () => dispatch(setAbilityBarOpen(false));
 
     /** One unified Play call — mirrors `PlayButton`'s `fire()` (dossier). */
-    const fireLaunch = useCallback(async (kind, node, attackMods = null) => {
+    const fireLaunch = useCallback(async (kind, node, { attackMods = null, actionsSpent = null } = {}) => {
         if (!campaignId || !character || !node || busy) return;
         setBusy(true);
         try {
@@ -172,7 +173,7 @@ export default function AbilityHotbar({
             }
             const isLb = kind === "limit_break";
             const resolved = resolveAbilityForPlay(node, character, {
-                ctx: kitCtx, formulaCtx, isLb, attackMods,
+                ctx: kitCtx, formulaCtx, isLb, attackMods, actionsSpent,
             });
             if (resolved.hasAttack && resolved.atk && !resolved.atk.autoHit) {
                 await revealDice(resolved.atk, {
@@ -226,22 +227,24 @@ export default function AbilityHotbar({
         }
         const { node, kind } = entry;
 
-        if (kind !== "trait") {
-            const merged = mergeUnlockedUpgrades(node, character, { ...kitCtx, isLb: kind === "limit_break" });
-            if (merged?.hasAttack && merged?.attack && !merged.attack.autoHit) {
-                setAttackPending({ kind, node });
-                return;
-            }
+        const isLb = kind === "limit_break";
+        const merged = mergeUnlockedUpgrades(node, character, { ...kitCtx, isLb });
+        if (needsPlayLaunchDialog(merged, { kind })) {
+            setAttackPending({ kind, node, launchProps: getPlayLaunchDialogProps(merged) });
+            return;
         }
 
         await fireLaunch(kind, node);
     }, [busy, campaignId, character, dispatch, burdens, nodeIndex, kitCtx, fireLaunch]);
 
-    const handleAttackConfirm = useCallback(async ({ boons, curses }) => {
+    const handleAttackConfirm = useCallback(async ({ actionsSpent, boons, curses }) => {
         const pending = attackPending;
         setAttackPending(null);
         if (!pending?.node) return;
-        await fireLaunch(pending.kind, pending.node, { boons, curses });
+        await fireLaunch(pending.kind, pending.node, {
+            attackMods: { boons, curses },
+            actionsSpent,
+        });
     }, [attackPending, fireLaunch]);
 
     const handleClearSlot = useCallback(async (slotIndex, e) => {
@@ -329,7 +332,7 @@ export default function AbilityHotbar({
                                 fontFamily: "monospace",
                                 fontSize: "0.42rem",
                                 letterSpacing: "0.12em",
-                                color: UI_COLORS.anomaly,
+                                color: "#ffb020",
                                 lineHeight: 1,
                                 flexShrink: 0,
                             }}
@@ -370,7 +373,7 @@ export default function AbilityHotbar({
                         fontFamily: "monospace",
                         fontSize: "0.42rem",
                         letterSpacing: "0.12em",
-                        color: UI_COLORS.anomaly,
+                        color: UI_COLORS.accent,
                         lineHeight: 1,
                     }}
                 >
@@ -489,7 +492,12 @@ export default function AbilityHotbar({
             >
                 {Array.from({ length: MACRO_SLOT_COUNT }, (_, i) => {
                     const slot = pageSlots[i];
-                    const accent = slot ? macroTypeAccent(slot.type) : UI_COLORS.border;
+                    const isStubType = slot && (
+                        slot.type === MACRO_SLOT_TYPES.OBJECT || slot.type === MACRO_SLOT_TYPES.CUSTOM
+                    );
+                    const accent = slot
+                        ? (isStubType ? UI_COLORS.textSecondary : macroTypeAccent(slot.type))
+                        : UI_COLORS.border;
                     const burdenBlocked = Boolean(slot && isMacroSlotDisabledByBurden(burdens, slot));
                     const tipTitle = burdenBlocked
                         ? (
@@ -510,15 +518,15 @@ export default function AbilityHotbar({
                         >
                             <IconButton
                                 size="small"
-                                disabled={busy || !slot || burdenBlocked}
-                                onClick={() => slot && !burdenBlocked && handleCall(slot)}
+                                disabled={busy || !slot || burdenBlocked || isStubType}
+                                onClick={() => slot && !burdenBlocked && !isStubType && handleCall(slot)}
                                 onContextMenu={(e) => slot && handleClearSlot(i, e)}
                                 sx={{
                                     width: "100%",
-                                    height: 40,
-                                    borderRadius: 1,
+                                    height: 42,
+                                    borderRadius: "3px",
                                     border: `1px solid ${slot
-                                        ? (burdenBlocked ? UI_COLORS.danger : accent)
+                                        ? (burdenBlocked ? UI_COLORS.danger : (isStubType ? "rgba(255,255,255,0.15)" : accent))
                                         : "rgba(255,255,255,0.22)"}`,
                                     color: burdenBlocked
                                         ? UI_COLORS.danger
@@ -554,7 +562,7 @@ export default function AbilityHotbar({
                             >
                                 {slot?.type === MACRO_SLOT_TYPES.ULTIMATE ? (
                                     <WhatshotIcon sx={{ fontSize: "1.15rem", color: accent }} />
-                                ) : (slot ? macroSlotShortLabel(slot) : "·")}
+                                ) : (slot ? (isStubType ? "—" : macroSlotShortLabel(slot)) : "·")}
                             </IconButton>
                         </CyberTooltip>
                     );
@@ -583,6 +591,11 @@ export default function AbilityHotbar({
         <AttackBoonDialog
             open={!!attackPending}
             abilityLabel={attackPending?.node?.label || "Ataque"}
+            showActions={attackPending?.launchProps?.showActions ?? false}
+            showBoons={attackPending?.launchProps?.showBoons ?? true}
+            actionMin={attackPending?.launchProps?.actionMin ?? 1}
+            actionMax={attackPending?.launchProps?.actionMax ?? 2}
+            defaultActionsSpent={attackPending?.launchProps?.defaultActionsSpent ?? 1}
             onClose={() => setAttackPending(null)}
             onConfirm={handleAttackConfirm}
         />

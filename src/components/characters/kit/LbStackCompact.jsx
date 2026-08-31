@@ -7,6 +7,7 @@ import MacroPinButton from "../MacroPinButton";
 import PlayButton from "./PlayButton";
 import DeleteAbilityButton from "./DeleteAbilityButton";
 import KitCardBodyB2 from "./KitCardBodyB2";
+import { toggleHasAttackPatch } from "../../../utils/abilityAplus";
 import { CostChip, RangeChip, AoeChip, ResolveChip, AtkToggleMark } from "./KitHeaderChips";
 import KitTagBtn from "./KitTagBtn";
 import { CARD_BASE_SX, CHEVRON_SX, KIT_DANGER, KIT_LB } from "./kitCardChrome";
@@ -73,7 +74,7 @@ export default function LbStackCompact({
                             flex: 1,
                             minWidth: 0,
                             fontFamily: "Orbitron, sans-serif",
-                            fontSize: "0.72rem",
+                            fontSize: "0.82rem",
                             letterSpacing: "0.05em",
                             color: "#ffffff",
                             lineHeight: 1.2,
@@ -174,7 +175,7 @@ export default function LbStackCompact({
                                 <AtkToggleMark
                                     hasAttack={hasAttack}
                                     kitEdit={kitEdit}
-                                    onToggle={() => onPatch?.({ hasAttack: !hasAttack })}
+                                    onToggle={() => onPatch?.(toggleHasAttackPatch(!hasAttack))}
                                 />
                             )}
                             <KitTagBtn

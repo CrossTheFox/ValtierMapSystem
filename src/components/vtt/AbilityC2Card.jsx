@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Box, Menu, MenuItem } from "@mui/material";
 import { cyberMenuPaperSx, cyberMenuItemSx } from "../../constants/designSystem";
 import { KitSvgCross, KitSvgPulse, KitSvgLbStar, KitSvgTag } from "../../constants/kitSvg";
 import { RangeChip, AoeChip, ResolveChip } from "../characters/kit/KitHeaderChips";
 import { FxRail } from "../characters/kit/FxRail";
 import { ChatTime, RawAvatar, faceMode } from "./chatCardShared";
+import { useFitChips } from "../../hooks/useFitChips";
+import { looksLikeStructuredKitBody } from "../../utils/abilityContentParser";
 
 /**
  * C2 chat card — Slice 6 (`PHASE-03-GUIDE.md` §6.4). Ports `cardC2()` from the
@@ -131,11 +133,11 @@ function C2Head({ msg, avatarByCharacterId, palette, tone, hasAttack }) {
                 </Box>
             </Box>
             <Box sx={{ display: "flex", alignItems: "center", gap: "6px", px: 1, pt: 0.75, pb: 0.25 }}>
-                <Box sx={{ width: tone === "lb" ? 16 : 14, height: tone === "lb" ? 16 : 14, flexShrink: 0, color: palette.accent, display: "flex" }}>
-                    <Mark size={tone === "lb" ? 16 : 14} />
+                <Box sx={{ width: 20, height: 20, flexShrink: 0, color: palette.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Mark size={tone === "lb" ? 18 : 18} />
                 </Box>
                 <Box sx={{
-                    flex: 1, minWidth: 0, fontFamily: "Orbitron, sans-serif", fontSize: "0.66rem",
+                    flex: 1, minWidth: 0, fontFamily: "Orbitron, sans-serif", fontSize: "0.86rem",
                     letterSpacing: "0.08em", color: "#fff", textTransform: "uppercase",
                     whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                 }}>
@@ -146,40 +148,125 @@ function C2Head({ msg, avatarByCharacterId, palette, tone, hasAttack }) {
     );
 }
 
-function C2TagPopover({ tags }) {
-    const [anchor, setAnchor] = useState(null);
-    if (!tags?.length) return null;
+function TagPill({ label, registerRef }) {
     return (
-        <>
+        <Box
+            ref={registerRef}
+            component="span"
+            title={label}
+            sx={{
+                fontFamily: "Orbitron, sans-serif",
+                fontSize: "0.52rem",
+                letterSpacing: "0.06em",
+                px: "5px",
+                py: "2px",
+                borderRadius: "2px",
+                border: "1px solid rgba(255,255,255,0.22)",
+                color: "rgba(255,255,255,0.88)",
+                bgcolor: "rgba(0,0,0,0.45)",
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+                boxShadow: "0 0 0 1px rgba(0,0,0,0.5)",
+            }}
+        >
+            {label}
+        </Box>
+    );
+}
+
+function C2FitTags({ tags }) {
+    const [anchor, setAnchor] = useState(null);
+    const items = useMemo(
+        () => (Array.isArray(tags) ? tags : []).map((t) => ({ key: String(t), label: String(t) })),
+        [tags],
+    );
+    const {
+        containerRef,
+        registerMeasure,
+        visibleItems,
+        overflowCount,
+    } = useFitChips(items, { gap: 4, overflowWidth: 34 });
+
+    if (!items.length) return null;
+
+    const overflowTags = items.slice(visibleItems.length);
+
+    return (
+        <Box
+            ref={containerRef}
+            sx={{
+                position: "relative",
+                ml: "auto",
+                flex: "1 1 0",
+                minWidth: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "flex-end",
+                gap: "4px",
+            }}
+        >
             <Box
-                component="button"
-                type="button"
-                onClick={(e) => setAnchor(e.currentTarget)}
-                title="Tags"
                 sx={{
-                    ml: "auto", display: "inline-flex", alignItems: "center", gap: "3px",
-                    height: 22, px: "6px", borderRadius: "3px", cursor: "pointer",
-                    color: "#c4b5fd", border: "1px solid rgba(167,139,250,0.5)", bgcolor: "rgba(167,139,250,0.1)",
+                    position: "absolute",
+                    visibility: "hidden",
+                    pointerEvents: "none",
+                    display: "flex",
+                    gap: "4px",
+                    whiteSpace: "nowrap",
                 }}
+                aria-hidden
             >
-                <KitSvgTag size={12} />
-                <Box component="span" sx={{ fontFamily: "'Fira Code', monospace", fontSize: "0.62rem" }}>{tags.length}</Box>
-            </Box>
-            <Menu
-                anchorEl={anchor}
-                open={Boolean(anchor)}
-                onClose={() => setAnchor(null)}
-                anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-                transformOrigin={{ vertical: "top", horizontal: "right" }}
-                slotProps={{ paper: { sx: { ...cyberMenuPaperSx, minWidth: 132, border: "1px solid rgba(167,139,250,0.55)" } } }}
-            >
-                {tags.map((t) => (
-                    <MenuItem key={t} disableRipple sx={{ ...cyberMenuItemSx, fontSize: "0.68rem", fontFamily: "'Fira Code', monospace", cursor: "default" }}>
-                        {t}
-                    </MenuItem>
+                {items.map((t) => (
+                    <TagPill key={t.key} label={t.label} registerRef={registerMeasure(t.key)} />
                 ))}
-            </Menu>
-        </>
+                <Box ref={registerMeasure("__overflow__")} sx={{ minWidth: 34, height: 22 }} />
+            </Box>
+            {visibleItems.map((t) => (
+                <TagPill key={t.key} label={t.label} />
+            ))}
+            {overflowCount > 0 && (
+                <>
+                    <Box
+                        component="button"
+                        type="button"
+                        onClick={(e) => setAnchor(e.currentTarget)}
+                        title={`${overflowCount} tags más`}
+                        sx={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "3px",
+                            height: 22,
+                            px: "6px",
+                            borderRadius: "3px",
+                            cursor: "pointer",
+                            color: "#c4b5fd",
+                            border: "1px solid rgba(167,139,250,0.5)",
+                            bgcolor: "rgba(167,139,250,0.1)",
+                            flexShrink: 0,
+                        }}
+                    >
+                        <KitSvgTag size={12} />
+                        <Box component="span" sx={{ fontFamily: "'Fira Code', monospace", fontSize: "0.62rem" }}>
+                            +{overflowCount}
+                        </Box>
+                    </Box>
+                    <Menu
+                        anchorEl={anchor}
+                        open={Boolean(anchor)}
+                        onClose={() => setAnchor(null)}
+                        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+                        transformOrigin={{ vertical: "top", horizontal: "right" }}
+                        slotProps={{ paper: { sx: { ...cyberMenuPaperSx, minWidth: 132, border: "1px solid rgba(167,139,250,0.55)" } } }}
+                    >
+                        {overflowTags.map((t) => (
+                            <MenuItem key={t.key} disableRipple sx={{ ...cyberMenuItemSx, fontSize: "0.68rem", fontFamily: "'Fira Code', monospace", cursor: "default" }}>
+                                {t.label}
+                            </MenuItem>
+                        ))}
+                    </Menu>
+                </>
+            )}
+        </Box>
     );
 }
 
@@ -194,7 +281,7 @@ function C2Chips({ msg }) {
             {hasRange && <RangeChip value={msg.abilityRange} />}
             {hasAoe && <AoeChip value={msg.abilityAoe} />}
             {hasRes && <ResolveChip value={msg.abilityResolveCost} />}
-            <C2TagPopover tags={tags} />
+            <C2FitTags tags={tags} />
         </Box>
     );
 }
@@ -235,6 +322,11 @@ function C2RollBand({ atk }) {
                 <Box sx={{ fontFamily: "Orbitron, sans-serif", fontSize: "0.62rem", letterSpacing: "0.12em", color: t.label }}>
                     Autohit
                 </Box>
+                {atk.actionsSpent != null && (
+                    <Box sx={{ fontFamily: "Orbitron, sans-serif", fontSize: "0.5rem", letterSpacing: "0.1em", color: "rgba(255,255,255,0.55)" }}>
+                        {atk.actionsSpent} {atk.actionsSpent === 1 ? "ACCIÓN" : "ACCIONES"}
+                    </Box>
+                )}
             </Box>
         );
     }
@@ -250,6 +342,11 @@ function C2RollBand({ atk }) {
             <Box sx={{ fontFamily: "Orbitron, sans-serif", fontSize: "0.42rem", letterSpacing: "0.14em", color: t.label, minWidth: 52 }}>
                 {atk.outcome}
             </Box>
+            {atk.actionsSpent != null && (
+                <Box sx={{ fontFamily: "Orbitron, sans-serif", fontSize: "0.46rem", letterSpacing: "0.08em", color: "rgba(255,255,255,0.55)" }}>
+                    {atk.actionsSpent}A
+                </Box>
+            )}
             <Box sx={{
                 fontFamily: "Orbitron, sans-serif", fontSize: "1.42rem", letterSpacing: "0.06em",
                 color: "#fff", lineHeight: 1, textShadow: t.totalShadow, flexShrink: 0,
@@ -276,6 +373,7 @@ function C2RollBand({ atk }) {
 function stripLabel(key) {
     if (key === "light") return "Light";
     if (key === "heavy") return "Heavy";
+    if (key === "crit") return "Crit";
     if (key === "miss") return "Miss";
     return "AoE";
 }
@@ -286,15 +384,19 @@ function C2Strip({ atk }) {
     const cells = [];
     if (atk.light) cells.push({ key: "light", ...atk.light });
     if (atk.heavy) cells.push({ key: "heavy", ...atk.heavy });
+    if (atk.crit) cells.push({ key: "crit", ...atk.crit });
     if (atk.miss) cells.push({ key: "miss", ...atk.miss });
     if (atk.aoe) cells.push({ key: "aoe", ...atk.aoe });
     if (!cells.length) return null;
+    const active = atk.activePacket || null;
     return (
         <Box sx={{ display: "flex", flexWrap: "nowrap", borderTop: "1px solid rgba(255,255,255,0.12)", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
             {cells.map((c, i) => {
                 const isAoe = c.key === "aoe";
+                const isCrit = c.key === "crit";
+                const isActive = active === c.key;
                 const isOpen = openKey === c.key;
-                const labelColor = isAoe ? "#00f2ea" : "#ff8a3d";
+                const labelColor = isAoe ? "#00f2ea" : isCrit ? "#ffcc33" : "#ff8a3d";
                 return (
                     <Box
                         key={c.key}
@@ -306,7 +408,10 @@ function C2Strip({ atk }) {
                             font: "inherit", color: "inherit", cursor: "pointer", border: 0,
                             borderRight: i < cells.length - 1 ? "1px solid rgba(255,255,255,0.1)" : 0,
                             borderLeft: isAoe ? "1px dashed rgba(0,242,234,0.4)" : 0,
-                            bgcolor: isOpen ? (isAoe ? "rgba(0,242,234,0.1)" : "rgba(255,138,61,0.08)") : (isAoe ? "rgba(0,242,234,0.05)" : "transparent"),
+                            bgcolor: isActive
+                                ? (isCrit ? "rgba(255,204,51,0.16)" : isAoe ? "rgba(0,242,234,0.12)" : "rgba(255,138,61,0.12)")
+                                : isOpen ? (isAoe ? "rgba(0,242,234,0.1)" : "rgba(255,138,61,0.08)") : (isAoe ? "rgba(0,242,234,0.05)" : "transparent"),
+                            boxShadow: isActive ? `inset 0 -2px 0 ${labelColor}` : "none",
                             "&:hover": { bgcolor: isAoe ? "rgba(0,242,234,0.1)" : "rgba(255,255,255,0.04)" },
                         }}
                     >
@@ -376,6 +481,14 @@ function C2FxLine({ fx }) {
     );
 }
 
+function shouldShowFlavor(msg) {
+    const text = String(msg.text || "").trim();
+    if (!text) return false;
+    const hasStructured = Boolean(msg.abilityAttack || msg.abilityEffects?.length);
+    if (hasStructured && looksLikeStructuredKitBody(text)) return false;
+    return true;
+}
+
 export default function AbilityC2Card({ msg, avatarByCharacterId }) {
     const tone = msg.abilityTone === "lb" ? "lb" : msg.abilityTone === "std" ? "std" : "atk";
     const hasAttack = Boolean(msg.abilityAttack);
@@ -389,7 +502,7 @@ export default function AbilityC2Card({ msg, avatarByCharacterId }) {
         }}>
             <C2Head msg={msg} avatarByCharacterId={avatarByCharacterId} palette={palette} tone={tone} hasAttack={hasAttack} />
             <C2Chips msg={msg} />
-            {msg.text ? (
+            {shouldShowFlavor(msg) ? (
                 <Box component="p" sx={{ m: 0, px: "10px", pt: "2px", pb: 1, fontSize: "0.82rem", lineHeight: 1.4, color: "rgba(255,255,255,0.78)", fontStyle: "italic" }}>
                     {msg.text}
                 </Box>

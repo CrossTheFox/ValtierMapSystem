@@ -20,7 +20,7 @@ import DeleteAbilityButton from "./DeleteAbilityButton";
 import KitCardBodyB2 from "./KitCardBodyB2";
 import { CostChip, RangeChip, AoeChip, TraitModeChip } from "./KitHeaderChips";
 import KitTagBtn from "./KitTagBtn";
-import { CARD_BASE_SX, CHEVRON_SX } from "./kitCardChrome";
+import { CARD_BASE_SX, CHEVRON_SX, HD_DIV_SX } from "./kitCardChrome";
 
 const MODE_ICON = {
     [TRAIT_MODES.PASSIVE]: KitSvgModePassive,
@@ -108,14 +108,17 @@ export default function TraitCategoryRail({
             }}
         >
             <Box
-                onClick={() => setOpen((v) => !v)}
+                onClick={() => {
+                    if (!kitEdit) setOpen((v) => !v);
+                }}
                 sx={{
                     display: "grid",
                     gridTemplateColumns: "36px minmax(0, 1fr) auto",
-                    minHeight: 38,
+                    minHeight: 48,
                     cursor: "pointer",
                     userSelect: "none",
                     alignItems: "stretch",
+                    boxShadow: `inset 4px 0 0 ${accent}`,
                 }}
             >
                 <Box
@@ -194,10 +197,10 @@ export default function TraitCategoryRail({
                         alignItems: "center",
                         gap: "4px",
                         px: "6px",
-                        borderLeft: "1px solid rgba(255,255,255,0.08)",
                     }}
                     onClick={(e) => e.stopPropagation()}
                 >
+                    <Box sx={HD_DIV_SX} aria-hidden />
                     <MacroPinButton
                         character={character}
                         size="tiny"
@@ -225,7 +228,11 @@ export default function TraitCategoryRail({
                     )}
                     <Box
                         component="span"
-                        sx={{ ...CHEVRON_SX, transform: open ? "rotate(90deg)" : "none" }}
+                        sx={{
+                            ...CHEVRON_SX,
+                            transform: open ? "rotate(90deg)" : "none",
+                            color: open ? accent : CHEVRON_SX.color,
+                        }}
                         onClick={() => setOpen((v) => !v)}
                     >
                         ▸

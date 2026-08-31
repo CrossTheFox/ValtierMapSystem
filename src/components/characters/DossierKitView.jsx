@@ -864,11 +864,11 @@ export default function DossierKitView({ character, initialMaletinOpen = false }
                     mx: "8px",
                     mt: "7px",
                     mb: "7px",
-                    border: "1px solid rgba(255,102,255,0.32)",
+                    border: "1px solid rgba(255,102,255,0.38)",
                     borderRadius: "8px",
                     overflow: "visible",
-                    background: "rgba(0,0,0,0.72)",
-                    boxShadow: "none",
+                    background: "rgba(7,7,12,0.92)",
+                    boxShadow: "inset 0 0 0 1px rgba(255,102,255,0.08)",
                 }}
             >
                 <DossierSeamP3 character={character} />

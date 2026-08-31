@@ -14,7 +14,8 @@ function baseAbility(overrides = {}) {
         attack: {
             autoHit: false,
             damageOnHit: { formula: "[damageDie]+[fray]" },
-            damageOnCrit: { formula: "2[damageDie]+[fray]" },
+            damageOnHeavy: { formula: "2d[damageDie]+[fray]" },
+            damageOnCrit: { formula: "4d[damageDie]+[fray]" },
             damageOnMiss: { formula: "[fray]" },
         },
         effects: [{ id: "e1", lane: "hit", label: "ON HIT", text: "Mark the target. [damageDie]" }],
@@ -26,7 +27,7 @@ function baseAbility(overrides = {}) {
 }
 
 describe("resolveAbilityForPlay — autohit ability", () => {
-    it("skips the d20 roll and resolves Light/Heavy tickets, no Miss", () => {
+    it("skips the d20 roll and resolves Light/Heavy/Crit tickets, no Miss", () => {
         const node = baseAbility({ attack: { ...baseAbility().attack, autoHit: true } });
         const resolved = resolveAbilityForPlay(node, { unlockedKitNodes: [] }, { formulaCtx });
         assert.equal(resolved.hasAttack, true);
@@ -35,15 +36,18 @@ describe("resolveAbilityForPlay — autohit ability", () => {
         assert.equal(resolved.atk.outcome, "AUTOHIT");
         assert.equal(resolved.atk.raw, null);
         assert.ok(resolved.atk.light);
-        assert.ok(resolved.atk.light.total >= 3 && resolved.atk.light.total <= 10); // 1d8+2
+        assert.ok(resolved.atk.light.total >= 3 && resolved.atk.light.total <= 10);
         assert.ok(resolved.atk.heavy);
-        assert.ok(resolved.atk.heavy.total >= 4 && resolved.atk.heavy.total <= 18); // 2d8+2
+        assert.ok(resolved.atk.heavy.total >= 6 && resolved.atk.heavy.total <= 18);
+        assert.ok(resolved.atk.crit);
+        assert.ok(resolved.atk.crit.total >= 10 && resolved.atk.crit.total <= 34);
         assert.equal(resolved.atk.miss, null);
+        assert.equal(resolved.atk.activePacket, null);
     });
 });
 
 describe("resolveAbilityForPlay — non-autohit attack with boons", () => {
-    it("rolls the d20 with the given attackMods and resolves Light/Heavy/Miss", () => {
+    it("rolls the d20 and resolves Light/Heavy/Crit/Miss", () => {
         const node = baseAbility();
         const resolved = resolveAbilityForPlay(node, { unlockedKitNodes: [] }, {
             formulaCtx,
@@ -55,9 +59,45 @@ describe("resolveAbilityForPlay — non-autohit attack with boons", () => {
         assert.equal(resolved.atk.polarity, "boon");
         assert.ok(["HIT", "MISS", "CRIT"].includes(resolved.atk.outcome));
         assert.ok(resolved.atk.light.total >= 3 && resolved.atk.light.total <= 10);
-        assert.ok(resolved.atk.heavy.total >= 4 && resolved.atk.heavy.total <= 18);
+        assert.ok(resolved.atk.heavy.total >= 6 && resolved.atk.heavy.total <= 18);
+        assert.ok(resolved.atk.crit.total >= 10 && resolved.atk.crit.total <= 34);
         assert.ok(resolved.atk.miss);
         assert.equal(resolved.atk.miss.total, 2);
+        if (resolved.atk.outcome === "CRIT") assert.equal(resolved.atk.activePacket, "crit");
+    });
+
+    it("uses heavy packet on HIT when actionsSpent is 2", () => {
+        const node = baseAbility({ actionCost: 2, actionCostFlex: true, actionCostMin: 1 });
+        let sawHeavy = false;
+        for (let i = 0; i < 40; i += 1) {
+            const resolved = resolveAbilityForPlay(node, { unlockedKitNodes: [] }, {
+                formulaCtx,
+                actionsSpent: 2,
+            });
+            if (resolved.atk.outcome === "HIT") {
+                assert.equal(resolved.atk.activePacket, "heavy");
+                sawHeavy = true;
+                break;
+            }
+        }
+        assert.ok(sawHeavy, "expected at least one HIT in 40 rolls");
+    });
+
+    it("uses light packet on HIT when actionsSpent is 1", () => {
+        const node = baseAbility({ actionCost: 2, actionCostFlex: true, actionCostMin: 1 });
+        let sawLight = false;
+        for (let i = 0; i < 40; i += 1) {
+            const resolved = resolveAbilityForPlay(node, { unlockedKitNodes: [] }, {
+                formulaCtx,
+                actionsSpent: 1,
+            });
+            if (resolved.atk.outcome === "HIT") {
+                assert.equal(resolved.atk.activePacket, "light");
+                sawLight = true;
+                break;
+            }
+        }
+        assert.ok(sawLight, "expected at least one HIT in 40 rolls");
     });
 
     it("resolves [] macro tokens inside effect text exactly once", () => {
@@ -65,7 +105,7 @@ describe("resolveAbilityForPlay — non-autohit attack with boons", () => {
         const resolved = resolveAbilityForPlay(node, { unlockedKitNodes: [] }, { formulaCtx });
         assert.equal(resolved.effects.length, 1);
         assert.match(resolved.effects[0].resolvedText, /^Mark the target\. \d+$/);
-        assert.equal(resolved.effects[0].rolls.length, 1); // [damageDie] → 1d8 roll
+        assert.equal(resolved.effects[0].rolls.length, 1);
     });
 });
 
@@ -89,5 +129,20 @@ describe("resolveAbilityForPlay — trait/mech (no attack branch)", () => {
         assert.equal(resolved.hasAttack, false);
         assert.equal(resolved.atk, null);
         assert.equal(resolved.tone, "std");
+    });
+});
+
+describe("resolveAbilityForPlay — flavor hygiene", () => {
+    it("strips structured blurb/content from flavor when effects exist", () => {
+        const node = baseAbility({
+            blurb: `Light: [2d[damageDie]]
+Heavy: [3d[damageDie]]
+Efecto: foo
+Narrativo: Solo narrativa.`,
+            content: `Light: [2d[damageDie]]`,
+            description: `Light: [2d[damageDie]]`,
+        });
+        const resolved = resolveAbilityForPlay(node, { unlockedKitNodes: [] }, { formulaCtx });
+        assert.equal(resolved.flavor, "Solo narrativa.");
     });
 });

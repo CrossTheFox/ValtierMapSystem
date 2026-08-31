@@ -1,0 +1,125 @@
+{
+  "judeth-ability-meridiano-cenit": {
+    "abilityKind": "attack",
+    "hasAttack": true,
+    "attack": {
+      "autoHit": false,
+      "toHit": { "boons": 0 },
+      "damageOnHit": { "formula": "1d[damageDie]+[fray]" },
+      "damageOnHeavy": { "formula": "2d[damageDie]+[fray]" },
+      "damageOnCrit": { "formula": "4d[damageDie]+[fray]" },
+      "damageOnMiss": { "formula": "[fray]" }
+    },
+    "effects": [
+      {
+        "id": "fx1",
+        "lane": "mech",
+        "label": "STACK",
+        "text": "Si el objetivo es el mismo que el último hit con Cenit en este combate, la siguiente damage resolution contra él suma +[fray] por contador (stack +1 al acertar, cap +3). Reset al miss natural o al elegir otro objetivo."
+      },
+      {
+        "id": "fx2",
+        "lane": "mech",
+        "label": "SOBRECALENTAMIENTO",
+        "text": "Cada uso marca +1 tick en un reloj personal (p. ej. 4 segmentos); al llenarse, no podés usar Meridiano hasta Clear de campamento o acción GM."
+      }
+    ]
+  },
+  "judeth-ability-meridiano-nadir": {
+    "abilityKind": "attack",
+    "hasAttack": true,
+    "attack": {
+      "autoHit": false,
+      "toHit": { "boons": -1 },
+      "damageOnHit": { "formula": "1d[damageDie]+[fray]" },
+      "damageOnHeavy": { "formula": "2d[damageDie]+[fray]" },
+      "damageOnCrit": { "formula": "4d[damageDie]+[fray]" },
+      "damageOnMiss": { "formula": "[fray]" }
+    },
+    "effects": [
+      {
+        "id": "fx1",
+        "lane": "mech",
+        "label": "FORK",
+        "text": "Repartís dados de light entre dos objetivos en la misma banda de alcance. Miss (ambos fallan si un solo roll): +1 Strain a Judeth. Comparte reloj Sobrecalentamiento con Cenit."
+      }
+    ]
+  },
+  "veritas_execution": {
+    "abilityKind": "attack",
+    "hasAttack": true,
+    "attack": {
+      "autoHit": false,
+      "toHit": { "boons": 0 },
+      "damageOnHit": { "formula": "1d[damageDie]+[fray]" },
+      "damageOnHeavy": { "formula": "2d[damageDie]+[fray]" },
+      "damageOnCrit": { "formula": "4d[damageDie]+[fray]" },
+      "damageOnMiss": { "formula": "[fray]" }
+    },
+    "effects": [
+      {
+        "id": "fx1",
+        "lane": "hit",
+        "label": "ON HIT",
+        "text": "Ataca a un enemigo adyacente a la espada. Si Oni no está adyacente al objetivo, el daño aumenta (+[fray] o +1D según mesa)."
+      }
+    ]
+  },
+  "judeth-ability-anathema": {
+    "actionCost": 2,
+    "actionCostMin": 1,
+    "actionCostFlex": true,
+    "attack": {
+      "autoHit": false,
+      "toHit": { "boons": 0 },
+      "damageOnHit": { "formula": "2d[damageDie]" },
+      "damageOnHeavy": { "formula": "3d[damageDie]" },
+      "damageOnCrit": { "formula": "6d[damageDie]" },
+      "damageOnMiss": { "formula": "1d[damageDie]" }
+    }
+  },
+  "judeth-lb-consumo-paralelo": {
+    "resolveCost": 3,
+    "abilityKind": "standard",
+    "hasAttack": false,
+    "attack": null
+  },
+  "veritas_limit_break": {
+    "resolveCost": 3,
+    "abilityKind": "standard",
+    "hasAttack": false,
+    "attack": null
+  },
+  "caelum-trait-reality-loader": { "traitMode": "trigger" },
+  "caelum-trait-reality-payback": { "traitMode": "trigger" },
+  "caelum-trait-succor": { "traitMode": "active" },
+  "judeth-trait-into-the-abyss": { "traitMode": "trigger" },
+  "princess_sense": { "traitMode": "trigger" },
+  "veritas_position": { "traitMode": "trigger" },
+  "zymthe-trait-hiddeous-apex": { "traitMode": "trigger" },
+  "judeth-ability-anchor": {
+    "actionCost": 2,
+    "actionCostMin": 1,
+    "actionCostFlex": true
+  },
+  "krell-ability-chain-haul": {
+    "actionCost": 2,
+    "actionCostMin": 1,
+    "actionCostFlex": true
+  },
+  "nyssara-ability-predatory-attack": {
+    "actionCost": 2,
+    "actionCostMin": 1,
+    "actionCostFlex": true
+  },
+  "caelum-ability-destruction-dome": {
+    "actionCost": 2,
+    "actionCostMin": 1,
+    "actionCostFlex": true
+  },
+  "caelum-ability-stabilization-dome": {
+    "actionCost": 2,
+    "actionCostMin": 1,
+    "actionCostFlex": true
+  }
+}

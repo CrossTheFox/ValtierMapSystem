@@ -1,6 +1,14 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeAbilityAplus, defaultAttackBlank } from "./abilityAplus.js";
+import {
+    normalizeAbilityAplus,
+    defaultAttackBlank,
+    parseActionCostText,
+    toggleHasAttackPatch,
+    needsPlayLaunchDialog,
+    getPlayLaunchDialogProps,
+    inferDefaultActionsSpent,
+} from "./abilityAplus.js";
 
 describe("normalizeAbilityAplus — blank-safe defaults", () => {
     it("fills every A+ field from an empty doc", () => {
@@ -9,6 +17,8 @@ describe("normalizeAbilityAplus — blank-safe defaults", () => {
         assert.equal(a.description, "");
         assert.equal(a.hasAttack, false);
         assert.equal(a.actionCost, 1);
+        assert.equal(a.actionCostMin, 1);
+        assert.equal(a.actionCostFlex, false);
         assert.equal(a.range, null);
         assert.equal(a.aoe, null);
         assert.deepEqual(a.tags, []);
@@ -45,6 +55,19 @@ describe("normalizeAbilityAplus — blank-safe defaults", () => {
         assert.deepEqual(a.tagKeys, ["mark"]);
     });
 
+    it("migrates legacy two-packet docs to three-tier shape", () => {
+        const a = normalizeAbilityAplus({
+            hasAttack: true,
+            attack: {
+                damageOnHit: { formula: "1d[damageDie]+[fray]" },
+                damageOnCrit: { formula: "2d[damageDie]+[fray]" },
+            },
+        });
+        assert.equal(a.attack.damageOnHit.formula, "1d[damageDie]+[fray]");
+        assert.equal(a.attack.damageOnHeavy.formula, "2d[damageDie]+[fray]");
+        assert.equal(a.attack.damageOnCrit.formula, "4d[damageDie]+[fray]");
+    });
+
     it("keeps a real attack doc intact (partial packets preserved)", () => {
         const a = normalizeAbilityAplus({
             hasAttack: true,
@@ -78,5 +101,68 @@ describe("normalizeAbilityAplus — blank-safe defaults", () => {
         assert.equal(normalizeAbilityAplus({ actionCost: "superheavy" }).actionCost, "superheavy");
         assert.equal(normalizeAbilityAplus({ actionCost: 2 }).actionCost, 2);
         assert.equal(normalizeAbilityAplus({ actionCost: "2" }).actionCost, 2);
+    });
+
+    it("parses 1|2 Actions from legacy cost field", () => {
+        const a = normalizeAbilityAplus({
+            cost: "1–3 Z-Gems · 1|2 Actions",
+            content: "Light: [damageDie]",
+        });
+        assert.equal(a.actionCost, 2);
+        assert.equal(a.actionCostMin, 1);
+        assert.equal(a.actionCostFlex, true);
+    });
+
+    it("toggleHasAttackPatch writes full attack blank", () => {
+        const on = toggleHasAttackPatch(true);
+        assert.equal(on.hasAttack, true);
+        assert.equal(on.abilityKind, "attack");
+        assert.ok(on.attack.damageOnHeavy);
+        const off = toggleHasAttackPatch(false);
+        assert.equal(off.hasAttack, false);
+        assert.equal(off.attack, null);
+    });
+});
+
+describe("parseActionCostText", () => {
+    it("detects flexible 1|2 and 1/2", () => {
+        assert.deepEqual(parseActionCostText("Range 1 · 1|2 Actions"), {
+            actionCost: 2, actionCostMin: 1, actionCostFlex: true,
+        });
+        assert.deepEqual(parseActionCostText("4–10 Z-Gems · 1/2 Actions"), {
+            actionCost: 2, actionCostMin: 1, actionCostFlex: true,
+        });
+    });
+});
+
+describe("play launch helpers", () => {
+    it("needs dialog for flex cost or non-autohit attack", () => {
+        assert.equal(needsPlayLaunchDialog({ actionCostFlex: true }), true);
+        assert.equal(needsPlayLaunchDialog({
+            hasAttack: true,
+            attack: { autoHit: false },
+        }), true);
+        assert.equal(needsPlayLaunchDialog({
+            hasAttack: true,
+            attack: { autoHit: true },
+            actionCost: 1,
+        }), false);
+    });
+
+    it("infers default actions spent from flex vs fixed cost", () => {
+        assert.equal(inferDefaultActionsSpent({ actionCostFlex: true, actionCostMin: 1 }), 1);
+        assert.equal(inferDefaultActionsSpent({ actionCost: 2 }), 2);
+    });
+
+    it("exposes dialog sections for flex attacks", () => {
+        const props = getPlayLaunchDialogProps({
+            actionCostFlex: true,
+            actionCost: 2,
+            actionCostMin: 1,
+            hasAttack: true,
+            attack: { autoHit: false },
+        });
+        assert.equal(props.showActions, true);
+        assert.equal(props.showBoons, true);
     });
 });

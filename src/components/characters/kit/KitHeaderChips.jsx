@@ -33,7 +33,7 @@ const VCHIP_SX = {
     lineHeight: 1,
 };
 
-function VChip({ label, color, borderColor, icon, small, ghost, editable, onClick, title }) {
+function VChip({ label, color, borderColor, icon, small, ghost, editable, onClick, title, sx: sxExtra }) {
     return (
         <Box
             component={editable ? "button" : "span"}
@@ -47,6 +47,7 @@ function VChip({ label, color, borderColor, icon, small, ghost, editable, onClic
                 cursor: editable ? "pointer" : "default",
                 opacity: ghost ? 0.45 : 1,
                 "&:hover": editable ? { bgcolor: "rgba(0,242,234,0.08)", boxShadow: "0 0 0 1px rgba(0,242,234,0.55)" } : undefined,
+                ...sxExtra,
             }}
         >
             {icon ? (
@@ -173,6 +174,10 @@ function costVChip(value, { ghost = false, editable = false, onClick } = {}) {
             editable={editable}
             onClick={onClick}
             title={tip}
+            sx={isSh ? {
+                bgcolor: "rgba(255,51,85,0.14)",
+                boxShadow: "0 0 10px rgba(255,51,85,0.25)",
+            } : undefined}
         />
     );
 }

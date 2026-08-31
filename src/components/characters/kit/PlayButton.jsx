@@ -5,6 +5,7 @@ import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import CyberTooltip from "../../customs/CyberTooltip";
 import AttackBoonDialog from "../../vtt/AttackBoonDialog";
 import { mergeUnlockedUpgrades } from "../../../utils/mergeUnlockedUpgrades";
+import { getPlayLaunchDialogProps, needsPlayLaunchDialog } from "../../../utils/abilityAplus";
 import { resolveAbilityForPlay } from "../../../utils/abilityResolve";
 import { useLocalDiceReveal } from "../../../hooks/useLocalDiceReveal";
 import { launchToChat } from "../../../../firebase/services/launchToChat";
@@ -12,13 +13,11 @@ import { UI_COLORS } from "../../../constants/uiColors";
 import { showSnackbar } from "../../../store/uiSlice";
 
 /**
- * Unified Play button (Slice 6) — wired to `launchToChat`. One instance per
- * ability/trait/limit-break header. Owns the boon/curse gate for attacks: if
- * the merged node has an attack that isn't `autoHit`, opens `AttackBoonDialog`
- * before resolving; otherwise fires straight through.
+ * Unified Play button (Slice 6) — wired to `launchToChat`. Opens PlayLaunchDialog
+ * when the node needs action spend and/or boon/curse before resolving.
  */
 export default function PlayButton({
-    kind, // "ability" | "trait" | "limit_break"
+    kind,
     node,
     character,
     isLb = false,
@@ -31,17 +30,16 @@ export default function PlayButton({
     const dispatch = useDispatch();
     const revealDice = useLocalDiceReveal();
     const [busy, setBusy] = useState(false);
-    const [pendingBoon, setPendingBoon] = useState(false);
+    const [pendingLaunch, setPendingLaunch] = useState(false);
 
     if (!node) return null;
 
-    const needsBoonDialog = () => {
-        if (kind === "trait") return false;
-        const merged = mergeUnlockedUpgrades(node, character, { ...kitCtx, isLb });
-        return Boolean(merged?.hasAttack && merged?.attack && !merged.attack.autoHit);
-    };
+    const mergedForDialog = mergeUnlockedUpgrades(node, character, { ...kitCtx, isLb });
+    const launchProps = getPlayLaunchDialogProps(mergedForDialog);
 
-    const fire = async (attackMods = null) => {
+    const needsDialog = () => needsPlayLaunchDialog(mergedForDialog, { kind });
+
+    const fire = async ({ attackMods = null, actionsSpent = null } = {}) => {
         if (!campaignId || !character || busy) return;
         setBusy(true);
         try {
@@ -50,7 +48,7 @@ export default function PlayButton({
                 return;
             }
             const resolved = resolveAbilityForPlay(node, character, {
-                ctx: kitCtx, formulaCtx, isLb, attackMods,
+                ctx: kitCtx, formulaCtx, isLb, attackMods, actionsSpent,
             });
             if (resolved.hasAttack && resolved.atk && !resolved.atk.autoHit) {
                 await revealDice(resolved.atk, {
@@ -70,8 +68,8 @@ export default function PlayButton({
     };
 
     const handleClick = () => {
-        if (needsBoonDialog()) {
-            setPendingBoon(true);
+        if (needsDialog()) {
+            setPendingLaunch(true);
             return;
         }
         fire();
@@ -101,12 +99,17 @@ export default function PlayButton({
                 </span>
             </CyberTooltip>
             <AttackBoonDialog
-                open={pendingBoon}
+                open={pendingLaunch}
                 abilityLabel={node.label || node.title || "Ataque"}
-                onClose={() => setPendingBoon(false)}
-                onConfirm={({ boons, curses }) => {
-                    setPendingBoon(false);
-                    fire({ boons, curses });
+                showActions={launchProps.showActions}
+                showBoons={launchProps.showBoons}
+                actionMin={launchProps.actionMin}
+                actionMax={launchProps.actionMax}
+                defaultActionsSpent={launchProps.defaultActionsSpent}
+                onClose={() => setPendingLaunch(false)}
+                onConfirm={({ actionsSpent, boons, curses }) => {
+                    setPendingLaunch(false);
+                    fire({ attackMods: { boons, curses }, actionsSpent });
                 }}
             />
         </>
