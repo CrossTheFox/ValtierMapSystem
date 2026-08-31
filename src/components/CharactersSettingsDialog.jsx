@@ -18,10 +18,12 @@ import { useStatSystem } from "../hooks/useStatSystem";
 import { useCampaignWikiEntities } from "../hooks/useCampaignWikiEntities";
 import { updateCharacterFields } from "../../firebase/services/characterService";
 import { normalizeBurdens } from "../utils/characterBurdens";
+import { buildOptimisticVitalsReduxPatch } from "../utils/seamVitals";
 import DraggableResizablePaper from "./DraggableResizablePaper";
 import usePopout from "../hooks/usePopout";
 import CharacterSheetBody from "./characters/CharacterSheetBody";
 import { SHEET_TABS, normalizeSheetTab, isMaletinIntent } from "./characters/CharacterSheetTabs";
+import { DebouncedBoxInput } from "./customs/DebouncedField";
 
 /** Debounce for text / click edits before Firestore write. */
 const AUTOSAVE_MS = 600;
@@ -180,6 +182,13 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                 tokenImageUrl: fromList.tokenImageUrl ?? fromWorld.tokenImageUrl ?? null,
                 ap: fromList.ap ?? fromWorld.ap ?? 0,
                 level: fromList.level ?? fromWorld.level ?? 0,
+                hpCur: fromList.hpCur ?? fromWorld.hpCur,
+                vigor: fromList.vigor ?? fromWorld.vigor,
+                effort: fromList.effort ?? fromWorld.effort,
+                turn: fromList.turn ?? fromWorld.turn,
+                conditions: fromList.conditions ?? fromWorld.conditions,
+                hpBroken: fromList.hpBroken ?? fromWorld.hpBroken,
+                vit: fromList.vit ?? fromWorld.vit,
             };
         }
         if (fromList) {
@@ -228,6 +237,12 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
             vit: draft.vit ?? selectedCharacter.vit,
             jobResources: draft.jobResources ?? selectedCharacter.jobResources,
             macroBar: draft.macroBar ?? selectedCharacter.macroBar,
+            hpCur: draft.hpCur !== undefined ? draft.hpCur : selectedCharacter.hpCur,
+            vigor: draft.vigor !== undefined ? draft.vigor : selectedCharacter.vigor,
+            effort: draft.effort ?? selectedCharacter.effort,
+            turn: draft.turn ?? selectedCharacter.turn,
+            conditions: draft.conditions ?? selectedCharacter.conditions,
+            hpBroken: draft.hpBroken ?? selectedCharacter.hpBroken,
         };
     }, [selectedCharacter, draft]);
 
@@ -317,13 +332,33 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
             if (partial.stats) {
                 next.stats = { ...(base.stats || {}), ...partial.stats };
             }
+            if (partial.turn) {
+                next.turn = { ...(base.turn || {}), ...partial.turn };
+            }
+            if (partial.effort) {
+                next.effort = { ...(base.effort || {}), ...partial.effort };
+            }
             draftRef.current = next;
             return next;
         });
+
+        const char = selectedCharacter;
+        if (char?.id) {
+            const vitalsPatch = buildOptimisticVitalsReduxPatch(char, partial);
+            if (Object.keys(vitalsPatch).length) {
+                dispatch(updateCharacterInList({ id: char.id, data: vitalsPatch }));
+                dispatch(updateCharacterInState({
+                    id: char.id,
+                    locationId: char.locationId,
+                    data: vitalsPatch,
+                }));
+            }
+        }
+
         dirtyRef.current = true;
         setDirty(true);
         scheduleAutosave();
-    }, [scheduleAutosave]);
+    }, [scheduleAutosave, selectedCharacter, dispatch]);
 
     const discardDraft = useCallback(() => {
         clearAutosaveTimer();
@@ -424,6 +459,30 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
             if (liveDraft.jobResources !== undefined) {
                 payload.jobResources = liveDraft.jobResources;
                 reduxPatch.jobResources = liveDraft.jobResources;
+            }
+            if (liveDraft.hpCur !== undefined) {
+                payload.hpCur = liveDraft.hpCur;
+                reduxPatch.hpCur = liveDraft.hpCur;
+            }
+            if (liveDraft.vigor !== undefined) {
+                payload.vigor = liveDraft.vigor;
+                reduxPatch.vigor = liveDraft.vigor;
+            }
+            if (liveDraft.effort !== undefined) {
+                payload.effort = liveDraft.effort;
+                reduxPatch.effort = liveDraft.effort;
+            }
+            if (liveDraft.turn !== undefined) {
+                payload.turn = liveDraft.turn;
+                reduxPatch.turn = liveDraft.turn;
+            }
+            if (liveDraft.conditions !== undefined) {
+                payload.conditions = liveDraft.conditions;
+                reduxPatch.conditions = liveDraft.conditions;
+            }
+            if (liveDraft.hpBroken !== undefined) {
+                payload.hpBroken = liveDraft.hpBroken;
+                reduxPatch.hpBroken = liveDraft.hpBroken;
             }
             if (Object.keys(payload).length) {
                 await updateCharacterFields(selectedCharacter.id, payload);
@@ -647,8 +706,8 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                 })}
             </Box>
 
-            {/* CENTER — character name + LV + AP (always editable) */}
-            {activeTab !== "MESH" ? (
+            {/* CENTER — name + LV + AP on ID/NAR only. KIT owns them on the plate. */}
+            {activeTab !== "MESH" && activeTab !== "KIT" ? (
                 <Box
                     sx={{
                         position: "absolute",
@@ -665,11 +724,10 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
                     onClick={(e) => e.stopPropagation()}
                     onMouseDown={(e) => e.stopPropagation()}
                 >
-                    <Box
-                        component="input"
+                    <DebouncedBoxInput
                         value={viewCharacter?.name ?? ""}
-                        onChange={(e) => patchDraft({ name: e.target.value })}
-                        onBlur={() => { flushSave(); }}
+                        onCommit={(next) => patchDraft({ name: next })}
+                        onBlurExtra={() => { flushSave(); }}
                         placeholder="NOMBRE"
                         sx={{
                             fontFamily: "Orbitron, sans-serif",
@@ -793,44 +851,48 @@ export default function CharactersSettingsDialog({ open, onClose, popupMode = fa
 
             {/* RIGHT — autosave chip + window controls */}
             <Box sx={{ display: "flex", alignItems: "center", gap: "6px", zIndex: 1 }} className="dialog-no-drag">
-                {saveStatus !== "idle" && (
-                    <Box
-                        sx={{
-                            fontFamily: "Orbitron, sans-serif",
-                            fontSize: "0.42rem",
-                            letterSpacing: "0.1em",
-                            px: 0.85,
-                            py: 0.45,
-                            borderRadius: "3px",
-                            border: `1px solid ${
-                                saveStatus === "error"
-                                    ? UI_COLORS.danger
-                                    : saveStatus === "saved"
-                                        ? UI_COLORS.anomaly
-                                        : UI_COLORS.border
-                            }`,
-                            color: saveStatus === "error"
+                <Box
+                    aria-live="polite"
+                    sx={{
+                        fontFamily: "Orbitron, sans-serif",
+                        fontSize: "0.42rem",
+                        letterSpacing: "0.1em",
+                        px: 0.85,
+                        py: 0.45,
+                        borderRadius: "3px",
+                        border: `1px solid ${
+                            saveStatus === "error"
                                 ? UI_COLORS.danger
                                 : saveStatus === "saved"
                                     ? UI_COLORS.anomaly
-                                    : UI_COLORS.textSecondary,
-                            bgcolor: saveStatus === "error"
-                                ? `${UI_COLORS.danger}14`
-                                : saveStatus === "saved"
-                                    ? `${UI_COLORS.anomaly}12`
-                                    : "rgba(0,0,0,0.35)",
-                            whiteSpace: "nowrap",
-                            minWidth: 72,
-                            textAlign: "center",
-                        }}
-                        title={saveStatus === "error" ? "Error al guardar" : undefined}
-                    >
-                        {saveStatus === "pending" && "…"}
-                        {saveStatus === "saving" && "GUARDANDO"}
-                        {saveStatus === "saved" && "GUARDADO"}
-                        {saveStatus === "error" && "ERROR"}
-                    </Box>
-                )}
+                                    : UI_COLORS.border
+                        }`,
+                        color: saveStatus === "error"
+                            ? UI_COLORS.danger
+                            : saveStatus === "saved"
+                                ? UI_COLORS.anomaly
+                                : UI_COLORS.textSecondary,
+                        bgcolor: saveStatus === "error"
+                            ? `${UI_COLORS.danger}14`
+                            : saveStatus === "saved"
+                                ? `${UI_COLORS.anomaly}12`
+                                : "rgba(0,0,0,0.35)",
+                        whiteSpace: "nowrap",
+                        minWidth: 72,
+                        textAlign: "center",
+                        flexShrink: 0,
+                        opacity: saveStatus !== "idle" ? 1 : 0,
+                        visibility: saveStatus !== "idle" ? "visible" : "hidden",
+                        transition: "opacity 0.15s ease",
+                    }}
+                    title={saveStatus === "error" ? "Error al guardar" : undefined}
+                >
+                    {saveStatus === "pending" && "…"}
+                    {saveStatus === "saving" && "GUARDANDO"}
+                    {saveStatus === "saved" && "GUARDADO"}
+                    {saveStatus === "error" && "ERROR"}
+                    {saveStatus === "idle" && "\u00a0"}
+                </Box>
                 {!popupMode && (
                     <>
                         <Box

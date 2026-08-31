@@ -1,11 +1,12 @@
 import { memo } from "react";
 import { Box } from "@mui/material";
 import DiceRevealOverlay from "./DiceRevealOverlay";
+import LocalDiceRevealHost from "./LocalDiceRevealHost";
 import VttChatPanel from "./VttChatPanel";
 import TokenDeployPanel from "./TokenDeployPanel";
 import CharacterRosterPanel from "./CharacterRosterPanel";
 import useDiceRevealController from "../../hooks/useDiceRevealController";
-import { VTT_RIGHT_DOCK } from "../../constants/vttHudTokens";
+import { VTT_GRID, VTT_HUD, VTT_RIGHT_DOCK, vttGapCss } from "../../constants/vttHudTokens";
 
 /** Neither depends on `messages`, so they must not re-render per chat update. */
 const MemoDiceRevealOverlay = memo(DiceRevealOverlay);
@@ -46,14 +47,17 @@ export default function VttDiceChatDock({
                 onDone={onDiceRevealDone}
                 onSkip={skipDiceReveal}
             />
+            <LocalDiceRevealHost />
             <Box
                 data-no-token-drop
+                data-vtt-span={VTT_GRID.chatSpan}
                 sx={{
                     position: "fixed",
                     top: VTT_RIGHT_DOCK.top,
-                    right: 16,
+                    right: VTT_HUD.inset,
                     bottom: VTT_RIGHT_DOCK.bottom,
                     width: VTT_RIGHT_DOCK.width,
+                    ml: vttGapCss(),
                     zIndex: 1250,
                     // `display: none` (not visibility/content-visibility) — a hidden
                     // subtree that still participates in layout re-paints on every

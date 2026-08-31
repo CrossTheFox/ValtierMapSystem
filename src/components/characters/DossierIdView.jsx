@@ -8,7 +8,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { UI_COLORS } from "../../constants/uiColors";
 import { updateCharacterFields } from "../../../firebase/services/characterService";
 import { uploadCharacterImage } from "../../../firebase/services/assetLoader";
-import { callAbilityInChat } from "../../../firebase/services/chatService";
+import { launchToChat } from "../../../firebase/services/launchToChat";
 import { useAssetUrl } from "../../hooks/useAssetUrl";
 import { useDossier } from "../CharactersSettingsDialog";
 import MacroPinButton from "./MacroPinButton";
@@ -31,6 +31,7 @@ import { updateCharacterInList } from "../../store/characterSlice";
 import { updateCharacterInState } from "../../store/worldSlice";
 import { isDmRole } from "../../utils/tokenControl";
 import { useSkillMatrixAbilities } from "../tabs/subtabs/skillMatrix/skillMatrixUtils";
+import { DebouncedBoxInput } from "../customs/DebouncedField";
 
 /* ── colour tokens ──────────────────────────────────────────────── */
 const C = {
@@ -284,12 +285,11 @@ function NarrCard({
                     </Box>
                 )}
                 {canEditTitle ? (
-                    <Box
-                        component="input"
+                    <DebouncedBoxInput
                         value={title || ""}
                         placeholder="TÍTULO"
                         onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => onSaveTitle(e.target.value)}
+                        onCommit={(next) => onSaveTitle(next)}
                         sx={{ ...metaInputSx, flex: "1 1 140px", maxWidth: "100%" }}
                     />
                 ) : (
@@ -306,12 +306,11 @@ function NarrCard({
                 )}
                 {(canEditFrequency || (frequency != null && String(frequency).trim() !== "")) && (
                     canEditFrequency ? (
-                        <Box
-                            component="input"
+                        <DebouncedBoxInput
                             value={frequency || ""}
                             placeholder="FRECUENCIA · ej. 1/sesión"
                             onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => onSaveFrequency(e.target.value)}
+                            onCommit={(next) => onSaveFrequency(next)}
                             sx={{
                                 ...metaInputSx,
                                 flex: "0 1 200px",
@@ -396,22 +395,24 @@ function NarrCard({
             </Box>
 
             {editing ? (
-                <textarea
+                <DebouncedBoxInput
+                    component="textarea"
                     value={text || ""}
                     onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => onSave && onSave(e.target.value)}
-                    style={{
+                    onCommit={(next) => onSave?.(next)}
+                    sx={{
                         width: "100%",
                         minHeight: isBond ? "110px" : "72px",
-                        marginTop: "4px",
+                        mt: "4px",
                         resize: "vertical",
-                        background: "rgba(0,0,0,0.45)",
+                        bgcolor: "rgba(0,0,0,0.45)",
                         border: `1px solid rgba(255,102,255,0.35)`,
                         color: "#ffffff",
                         fontFamily: '"Fira Sans", sans-serif',
                         fontSize: "0.9rem",
-                        padding: "8px",
+                        p: "8px",
                         borderRadius: "4px",
+                        outline: "none",
                     }}
                 />
             ) : (
@@ -861,19 +862,17 @@ export default function DossierIdView({ character }) {
     const sendNarrativeToChat = useCallback(async ({ kind, title, text, id }) => {
         if (!campaignId || !character) return;
         try {
-            await callAbilityInChat(
-                campaignId,
-                profile,
-                {
+            await launchToChat({
+                kind: "mech",
+                node: {
                     id: id || `narrative:${kind}`,
                     label: `${kind} · ${title}`,
                     content: text || "",
-                    characterId: character.id,
-                    characterName: character.name,
-                    characterAvatarUrl: character.tokenImageUrl || character.imageUrl || null,
                 },
-                { character },
-            );
+                character,
+                campaignId,
+                profile,
+            });
         } catch (err) {
             console.error("[DossierIdView] chat:", err);
         }
@@ -1068,11 +1067,10 @@ export default function DossierIdView({ character }) {
                             </Box>
 
                             <Box sx={{ display: "flex", flexDirection: "column", gap: 0.85 }}>
-                                <Box
-                                    component="input"
+                                <DebouncedBoxInput
                                     value={activeBurden.title || ""}
                                     placeholder="TÍTULO DEL TRAUMA"
-                                    onChange={(e) => patchBurden(activeBurdenIndex, { title: e.target.value })}
+                                    onCommit={(next) => patchBurden(activeBurdenIndex, { title: next })}
                                     sx={{
                                         width: "100%",
                                         fontFamily: "Orbitron, sans-serif",
@@ -1090,11 +1088,11 @@ export default function DossierIdView({ character }) {
                                     }}
                                 />
 
-                                <Box
+                                <DebouncedBoxInput
                                     component="textarea"
                                     value={activeBurden.text || ""}
                                     placeholder="Descripción: daño físico/mental, extremidad, trauma…"
-                                    onChange={(e) => patchBurden(activeBurdenIndex, { text: e.target.value })}
+                                    onCommit={(next) => patchBurden(activeBurdenIndex, { text: next })}
                                     sx={{
                                         width: "100%",
                                         minHeight: 72,
@@ -1189,11 +1187,11 @@ export default function DossierIdView({ character }) {
                                 }}>
                                     NOTA / CONSECUENCIA
                                 </Box>
-                                <Box
+                                <DebouncedBoxInput
                                     component="textarea"
                                     value={activeBurden.consequence || ""}
                                     placeholder="Nota narrativa opcional…"
-                                    onChange={(e) => patchBurden(activeBurdenIndex, { consequence: e.target.value })}
+                                    onCommit={(next) => patchBurden(activeBurdenIndex, { consequence: next })}
                                     sx={{
                                         width: "100%",
                                         minHeight: 52,
@@ -1479,12 +1477,11 @@ export default function DossierIdView({ character }) {
                                                 {`0${i + 1}`}
                                             </Box>
                                             {isEditingIdeal ? (
-                                                <Box
-                                                    component="input"
+                                                <DebouncedBoxInput
                                                     value={text || ""}
                                                     maxLength={80}
                                                     autoFocus
-                                                    onChange={(e) => saveIdeal(i, e.target.value)}
+                                                    onCommit={(next) => saveIdeal(i, next)}
                                                     onClick={(e) => e.stopPropagation()}
                                                     sx={{
                                                         flex: 1, minWidth: 0, border: "none", background: "transparent",

@@ -10,15 +10,15 @@ import {
 import { snapWorldToGridPoint } from "../utils/gridMath";
 import {
     publishMapPing,
-    updateTokenConditions,
     updateTokenVisibility,
 } from "../../firebase/services/gameService";
+import { updateCharacterFields } from "../../firebase/services/characterService";
 import { UI_COLORS } from "../constants/uiColors";
 import { CYBER_SCROLL_STYLE } from "../constants/cyberScrollStyle";
 import {
-    filterTokenConditions,
-    normalizeTokenConditions,
-} from "../constants/tokenConditions";
+    filterCharacterConditions,
+    normalizeCharacterConditions,
+} from "../constants/characterConditions";
 import { canControlToken, isDmRole } from "../utils/tokenControl";
 
 const CYAN = UI_COLORS.anomaly || "#00f2ea";
@@ -56,7 +56,7 @@ export default function MapContextMenu() {
     }, [contextMenu.open, dispatch]);
 
     const filteredConditions = useMemo(
-        () => filterTokenConditions(condQuery),
+        () => filterCharacterConditions(condQuery),
         [condQuery],
     );
 
@@ -68,7 +68,10 @@ export default function MapContextMenu() {
     const char = isToken ? charactersById[tokenId] : null;
     const canEdit = isToken && canControlToken(char || { id: tokenId }, profile);
     const isDM = isDmRole(profile?.role);
-    const conditions = normalizeTokenConditions(pos?.conditions);
+    // G12: character.conditions[] is the single source of truth — map-only
+    // markers with no linked character doc simply show zero active conditions
+    // and toggling is a no-op (guarded in handleToggleCondition below).
+    const conditions = normalizeCharacterConditions(char?.conditions);
     const isHidden = pos?.visible === false;
 
     const pointLabel = isToken
@@ -110,11 +113,13 @@ export default function MapContextMenu() {
     };
 
     const handleToggleCondition = (key) => {
-        if (!campaignId || !mapId || !tokenId || !pos) return;
+        // G12: only character-linked tokens have a real conditions store; a
+        // map-only marker (no `char`) has nothing to write to.
+        if (!tokenId || !char) return;
         const next = conditions.includes(key)
             ? conditions.filter((k) => k !== key)
             : [...conditions, key];
-        updateTokenConditions(campaignId, mapId, tokenId, next, pos).catch((err) => {
+        updateCharacterFields(tokenId, { conditions: next }).catch((err) => {
             console.error(err);
             dispatch(showSnackbar({ message: "No se pudo actualizar condición", severity: "error" }));
         });
@@ -158,7 +163,7 @@ export default function MapContextMenu() {
                     </button>
                 )}
 
-                {isToken && canEdit && (
+                {isToken && canEdit && char && (
                     <>
                         <div className="menu-section">CONDICIONES</div>
                         <Box
@@ -224,9 +229,10 @@ export default function MapContextMenu() {
                                             type="button"
                                             className={`menu-item cond ${on ? "active" : ""}`}
                                             onClick={() => handleToggleCondition(c.key)}
+                                            title={c.effect}
                                         >
                                             <span className="item-icon">{on ? "▣" : "□"}</span>
-                                            {c.label.toUpperCase()}
+                                            {c.code} · {c.title.toUpperCase()}
                                         </button>
                                     );
                                 })

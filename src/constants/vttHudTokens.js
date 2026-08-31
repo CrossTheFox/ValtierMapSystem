@@ -1,10 +1,20 @@
+import {
+    VTT_GRID,
+    VTT_GRID_INSET,
+    vttGapCss,
+    vttSpanWidthCss,
+} from "../utils/vttGrid.js";
+
+export { VTT_GRID, VTT_GRID_INSET, vttGapCss, vttSpanWidthCss };
+
 /**
  * HUD + dialog sizing tokens from docs/memoria/propuestas-ui-vtt/_vtt-shared.css
  * and propuesta-c-radial-hud.html. Primary target: 1920×1080 @ 100%.
+ * Main `/map` overlay widths use the 12-col grid (`VTT_GRID`) — do not hardcode px spans.
  */
 
 export const VTT_HUD = {
-    inset: 16,
+    inset: VTT_GRID_INSET,
     mapControlsInset: 16,
     titleFontSize: "9px",
     titleLetterSpacing: "2px",
@@ -31,7 +41,8 @@ export const VTT_HUD = {
 
 /** Right-side VTT dock: fills space between profile pill and zoom controls. */
 export const VTT_RIGHT_DOCK = {
-    width: 340,
+    /** Chat + roster + tokens — permanently 2.5 / 12 columns. */
+    width: vttSpanWidthCss(VTT_GRID.chatSpan),
     gap: 8,
     /** top inset + profile height + gap */
     get top() {

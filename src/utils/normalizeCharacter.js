@@ -8,6 +8,13 @@ import { normalizeTokenCrop } from "./tokenImageFit";
 import { normalizeBurdens } from "./characterBurdens";
 import { resolveCharacterTypeTag } from "./characterRosterKind";
 import { normalizeBriefcase } from "./briefcaseGrid";
+import {
+    DEFAULT_TURN,
+    normalizeCharacterVitals,
+    normalizeConditions,
+    normalizeEffort,
+    normalizeTurn,
+} from "./characterVitals";
 
 /**
  * Convierte Timestamp de Firestore (SDK web u objeto {seconds,nanoseconds}) a ISO string
@@ -65,6 +72,12 @@ export function normalizeCharacterDoc(char) {
             ? { ...char.combatOverrides }
             : {};
 
+    const vitals = normalizeCharacterVitals({ ...char, vit });
+    const effort = normalizeEffort(char.effort);
+    const turn = char.turn != null ? normalizeTurn(char.turn) : { ...DEFAULT_TURN };
+    const conditions = normalizeConditions(char.conditions);
+    const hpBroken = typeof char.hpBroken === "boolean" ? char.hpBroken : vitals.hpBroken;
+
     return {
         ...char,
         assignedClassIds,
@@ -73,6 +86,12 @@ export function normalizeCharacterDoc(char) {
         level,
         ap,
         combatOverrides,
+        hpCur: vitals.hpCur,
+        vigor: vitals.vigor,
+        effort,
+        turn,
+        conditions,
+        hpBroken,
         tokenCrop: normalizeTokenCrop(char.tokenCrop),
         stats: {
             ...defaultStatsFromDefinitions(DEFAULT_STAT_SYSTEM),

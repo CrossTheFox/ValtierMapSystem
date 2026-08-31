@@ -35,3 +35,6 @@ docs/
 
 # Firebase
 valtier-map-system-firebase-admins.json
+
+# Local Firestore snapshots (scripts/exportFirestoreBackup.mjs)
+backups/

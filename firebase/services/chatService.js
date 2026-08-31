@@ -24,13 +24,8 @@ export { rollIconActionDice };
 
 const messagesCol = (campaignId) => collection(db, "campaigns", campaignId, "messages");
 
-export const CHAT_MESSAGE_TYPES = {
-    TEXT: "text",
-    DICE: "dice",
-    ABILITY: "ability",
-    ITEM: "item",
-    SYSTEM: "system",
-};
+export { CHAT_MESSAGE_TYPES } from "../../src/constants/chatMessageTypes.js";
+import { CHAT_MESSAGE_TYPES } from "../../src/constants/chatMessageTypes.js";
 
 export async function sendChatMessage(campaignId, {
     type = CHAT_MESSAGE_TYPES.TEXT,
@@ -47,6 +42,14 @@ export async function sendChatMessage(campaignId, {
     abilityKind,
     abilityCost,
     abilityInlineRolls,
+    // A+ unified Play payload (Slice 6, `launchToChat`) — optional, additive.
+    // Historic ABILITY messages (pre-Slice-6) simply have these as `null`.
+    abilityRange = null,
+    abilityAoe = null,
+    abilityResolveCost = null,
+    abilityAttack = null,
+    abilityEffects = null,
+    abilityTone = null,
     diceResult,
     diceFormula,
     itemCard = null,
@@ -66,6 +69,12 @@ export async function sendChatMessage(campaignId, {
         abilityKind: abilityKind ?? null,
         abilityCost: abilityCost ?? null,
         abilityInlineRolls: Array.isArray(abilityInlineRolls) ? abilityInlineRolls : null,
+        abilityRange: abilityRange ?? null,
+        abilityAoe: abilityAoe ?? null,
+        abilityResolveCost: abilityResolveCost ?? null,
+        abilityAttack: abilityAttack && typeof abilityAttack === "object" ? abilityAttack : null,
+        abilityEffects: Array.isArray(abilityEffects) ? abilityEffects : null,
+        abilityTone: abilityTone ?? null,
         diceResult: diceResult ?? null,
         diceFormula: diceFormula ?? null,
         itemCard: itemCard && typeof itemCard === "object" ? itemCard : null,
@@ -272,7 +281,14 @@ export async function rollDiceInChat(campaignId, profile, character, formula) {
     return diceResult;
 }
 
-/** Post an ICON attack d20 (+boons / −curses) into chat. */
+/**
+ * Post an ICON attack d20 (+boons / −curses) into chat.
+ * @deprecated Slice 6 (`launchToChat`) rolls the attack d20 locally
+ * (`useLocalDiceReveal`) and embeds the result into the single ABILITY card
+ * instead of a separate DICE message — no live Play call site uses this
+ * anymore. Kept exported only in case some other future flow needs a
+ * standalone animated attack roll.
+ */
 export async function rollAttackD20InChat(campaignId, profile, character, attackMods = {}) {
     const diceResult = rollAttackD20(attackMods);
     const who = character?.name || profile?.nickname || "Jugador";
@@ -295,6 +311,9 @@ export async function rollAttackD20InChat(campaignId, profile, character, attack
  * Post a callable ability into campaign chat.
  * Damage / secondary dice resolve inline on the card (Roll20-style numbers).
  * Attacks: options.attackMods → animated d20 only (no damage dice animation).
+ * @deprecated Slice 6 replaces this with `firebase/services/launchToChat.js`
+ * (`kind: "ability"|"limit_break"`) for every live Play call site. Kept only
+ * for reference / any leftover legacy flat-ability integrations.
  */
 export async function callAbilityInChat(campaignId, profile, ability, options = {}) {
     const abilityKind = normalizeAbilityKind(ability.abilityKind);
@@ -380,6 +399,8 @@ export async function callAbilityInChat(campaignId, profile, ability, options = 
 /**
  * Post a Kit dossier card to chat (Job / Special Mechanic / Trait / etc.).
  * Never forces an attack d20. Inline dice only if the content already has roll cues.
+ * @deprecated Slice 6 replaces this with `firebase/services/launchToChat.js`
+ * (`kind: "trait"|"mech"`) for every live Play call site.
  */
 export async function callKitCardInChat(campaignId, profile, card, options = {}) {
     const content = String(card?.content ?? card?.text ?? card?.blurb ?? "");

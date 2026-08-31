@@ -3,6 +3,7 @@ import {
     collection,
     documentId,
     doc,
+    deleteDoc,
     getDoc,
     getDocs,
     query,
@@ -114,6 +115,21 @@ export async function linkAbilityToClase(classId, abilityKey) {
         { abilityKey, linkedAt: serverTimestamp() },
         { merge: true },
     );
+}
+
+/**
+ * Delete an ability/trait/LB doc and unlink it from its job (G9 — irreversible).
+ * Does not touch character docs (loadout / macroBar / unlockedKitNodes stripping is
+ * the caller's job, scoped to whichever character's dossier triggered the delete).
+ * @param {string} classId
+ * @param {string} abilityKey
+ */
+export async function deleteAbilityFromJob(classId, abilityKey) {
+    if (!classId || !abilityKey) return;
+    await Promise.all([
+        deleteDoc(doc(db, "clases", classId, "abilities", abilityKey)),
+        deleteDoc(doc(db, "abilities", abilityKey)),
+    ]);
 }
 
 /**

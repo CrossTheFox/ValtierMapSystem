@@ -26,45 +26,14 @@ import { showSnackbar } from "../../store/uiSlice";
 import ClearChatDialog from "./ClearChatDialog";
 import ItemSilhouette from "../characters/inventory/itemSilhouette";
 import { itemRarityMeta, itemTypeMeta } from "../../utils/campaignItems";
+import { ChatTime, RawAvatar, faceMode } from "./chatCardShared";
+import AbilityC2Card from "./AbilityC2Card";
 
 const MSG_BODY_SX = {
     fontSize: "0.8rem",
     color: UI_COLORS.textPrimary,
     lineHeight: 1.45,
 };
-
-/** Format Firestore Timestamp / Date / ms → HH:mm */
-function formatChatTime(createdAt) {
-    if (!createdAt) return null;
-    let d = null;
-    if (typeof createdAt?.toDate === "function") d = createdAt.toDate();
-    else if (createdAt instanceof Date) d = createdAt;
-    else if (typeof createdAt === "number") d = new Date(createdAt);
-    else if (typeof createdAt?.seconds === "number") d = new Date(createdAt.seconds * 1000);
-    if (!d || Number.isNaN(d.getTime())) return null;
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mm = String(d.getMinutes()).padStart(2, "0");
-    return `${hh}:${mm}`;
-}
-
-function ChatTime({ createdAt }) {
-    const t = formatChatTime(createdAt);
-    if (!t) return null;
-    return (
-        <Box
-            component="span"
-            sx={{
-                fontFamily: "monospace",
-                fontSize: "0.52rem",
-                color: UI_COLORS.textSecondary,
-                ml: 0.75,
-                flexShrink: 0,
-            }}
-        >
-            {t}
-        </Box>
-    );
-}
 
 const fieldSx = {
     "& .MuiOutlinedInput-root": {
@@ -281,30 +250,6 @@ function diceVars(accent) {
 }
 
 /** Plain-DOM avatar: styling comes from the parent card class, not emotion. */
-function RawAvatar({ path, name, className = "dc-avatar" }) {
-    const src = useAssetUrl(path || null);
-    if (src) {
-        return (
-            <img
-                className={className}
-                src={src}
-                alt={name}
-                decoding="sync"
-                loading="eager"
-            />
-        );
-    }
-    return <span className={className}>{(name || "?").slice(0, 1).toUpperCase()}</span>;
-}
-
-function faceMode(value, sides) {
-    const s = Math.max(2, Math.floor(Number(sides) || 20));
-    const r = Math.floor(Number(value) || 0);
-    if (r === 1) return "fail";
-    if (r === s) return "crit";
-    return "normal";
-}
-
 function DiceChatCard({ msg, avatarByCharacterId }) {
     const dr = msg.diceResult || {};
     const rolls = Array.isArray(dr.rolls) ? dr.rolls : [];
@@ -609,7 +554,12 @@ function AbilityInlineBody({ text, inlineRolls }) {
     return <>{nodes}</>;
 }
 
-function AbilityChatCard({ msg, avatarByCharacterId }) {
+/**
+ * Historic-only fallback — messages posted before Slice 6 (`abilityTone` is
+ * absent) don't carry the resolved A+ bundle the new `AbilityC2Card` needs,
+ * so they keep rendering with this simpler legacy layout.
+ */
+function AbilityChatCardLegacy({ msg, avatarByCharacterId }) {
     const isAttack = msg.abilityKind === "attack";
     const accent = isAttack ? UI_COLORS.accent : UI_COLORS.anomaly;
     const name = msg.characterName || msg.senderName || "???";
@@ -765,7 +715,10 @@ function ChatMessage({ msg, glossaryEntities, avatarByCharacterId }) {
     }
 
     if (msg.type === CHAT_MESSAGE_TYPES.ABILITY) {
-        return <AbilityChatCard msg={msg} avatarByCharacterId={avatarByCharacterId} />;
+        if (msg.abilityTone) {
+            return <AbilityC2Card msg={msg} avatarByCharacterId={avatarByCharacterId} />;
+        }
+        return <AbilityChatCardLegacy msg={msg} avatarByCharacterId={avatarByCharacterId} />;
     }
 
     if (msg.type === CHAT_MESSAGE_TYPES.ITEM) {
