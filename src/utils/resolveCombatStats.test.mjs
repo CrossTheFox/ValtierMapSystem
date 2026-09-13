@@ -22,16 +22,17 @@ describe("resolveCombatStats", () => {
         assert.equal(s.armor, ARCHETYPE_COMBAT_DEFAULTS.stalwart.armor);
     });
 
-    it("applies character overrides last", () => {
+    it("applies character combatOverrides last", () => {
         const s = resolveCombatStats(
-            { combatOverrides: { fray: 5, speed: 6 }, vit: 9 },
+            { combatOverrides: { fray: 5, speed: 6, vit: 9 }, vit: 2 },
             { classArchetype: "vagabond", combatStats: { fray: 1 } },
         );
         assert.equal(s.fray, 5);
         assert.equal(s.speed, 6);
         assert.equal(s.dash, 3);
-        // legacy vit when no combatOverrides.vit
+        // session character.vit must not shrink plate vit / hpMax
         assert.equal(s.vit, 9);
+        assert.equal(s.hpMax, 36);
     });
 
     describe("plate parity (Slice 3 — no VIG cell)", () => {

@@ -38,7 +38,7 @@ import { resolveAbilityForPlay } from "../../utils/abilityResolve";
 /** Actions/Macros dock — exactly 4 / 12 columns, centered. */
 export const COMBAT_DOCK_WIDTH = vttSpanWidthCss(VTT_GRID.macrosSpan);
 /** Match character life-sheet height only when Actions + Macros are both open. */
-export const COMBAT_DOCK_MIN_HEIGHT = 148;
+export const COMBAT_DOCK_MIN_HEIGHT = 100;
 
 function MacroHoverTitle({ slot }) {
     if (!slot) return <HudRichTooltipTitle title="Vacío" />;
@@ -291,13 +291,13 @@ export default function AbilityHotbar({
                 flexDirection: "column",
                 alignItems: "stretch",
                 justifyContent: "flex-end",
-                gap: 0.55,
+                gap: 0.4,
                 width: COMBAT_DOCK_WIDTH,
                 maxWidth: COMBAT_DOCK_WIDTH,
-                ...(matchCharacterHudHeight ? { minHeight: COMBAT_DOCK_MIN_HEIGHT } : {}),
+                ...(matchCharacterHudHeight ? { maxHeight: COMBAT_DOCK_MIN_HEIGHT, overflow: "hidden" } : {}),
                 boxSizing: "border-box",
-                px: 1,
-                py: 0.65,
+                px: 0.85,
+                py: 0.45,
                 borderRadius: `${VTT_HUD.borderRadius}px`,
                 border: `1px solid ${VTT_HUD.glassBorder}`,
                 bgcolor: VTT_HUD.glassBg,
@@ -310,10 +310,10 @@ export default function AbilityHotbar({
                     sx={{
                         display: "flex",
                         flexDirection: "column",
-                        gap: 0.55,
+                        gap: 0.4,
                         width: "100%",
-                        px: 0.25,
-                        pb: open ? 0.65 : 0.15,
+                        px: 0.2,
+                        pb: open ? 0.4 : 0.1,
                         borderBottom: open ? `1px solid ${UI_COLORS.border}` : "none",
                         boxSizing: "border-box",
                     }}
@@ -324,7 +324,7 @@ export default function AbilityHotbar({
                             alignItems: "center",
                             justifyContent: "space-between",
                             gap: 1,
-                            minHeight: 22,
+                            minHeight: 18,
                         }}
                     >
                         <CyberText
@@ -523,7 +523,7 @@ export default function AbilityHotbar({
                                 onContextMenu={(e) => slot && handleClearSlot(i, e)}
                                 sx={{
                                     width: "100%",
-                                    height: 42,
+                                    height: 32,
                                     borderRadius: "3px",
                                     border: `1px solid ${slot
                                         ? (burdenBlocked ? UI_COLORS.danger : (isStubType ? "rgba(255,255,255,0.15)" : accent))

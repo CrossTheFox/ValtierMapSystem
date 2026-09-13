@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSelector, useDispatch } from "react-redux";
-import styled from "@emotion/styled";
 import { Box } from "@mui/material";
+import PersonAddIcon from "@mui/icons-material/PersonAdd";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 import {
     closeContextMenu,
     openLocation,
     showSnackbar,
 } from "../store/uiSlice";
+import { setActiveCharacterId, persistActiveCharacter } from "../store/playerSlice";
 import { snapWorldToGridPoint } from "../utils/gridMath";
 import {
     publishMapPing,
@@ -15,15 +18,20 @@ import {
 import { updateCharacterFields } from "../../firebase/services/characterService";
 import { UI_COLORS } from "../constants/uiColors";
 import { CYBER_SCROLL_STYLE } from "../constants/cyberScrollStyle";
+import { HUD_SURFACE } from "../constants/designSystem";
+import { VTT_HUD } from "../constants/vttHudTokens";
+import { CyberText, CyberTitle } from "./customs/CustomTexts";
 import {
     filterCharacterConditions,
     normalizeCharacterConditions,
 } from "../constants/characterConditions";
+import { ConditionsPanel } from "./characters/ConditionDrawer";
 import { canControlToken, isDmRole } from "../utils/tokenControl";
+import { useHudActivatedCharacters } from "../hooks/useHudActivatedCharacters";
+import { ShowCharacterToTableContextRow } from "./vtt/ShowCharacterToTableAction";
 
-const CYAN = UI_COLORS.anomaly || "#00f2ea";
-/** ~8 condition rows at current .cond padding */
-const COND_LIST_MAX_H = 8 * 34;
+const PANEL_W = 300;
+const COND_LIST_MAX_H = 280;
 
 export default function MapContextMenu() {
     const dispatch = useDispatch();
@@ -37,6 +45,7 @@ export default function MapContextMenu() {
     const charactersById = useSelector((s) => s.world.charactersById ?? {});
     const menuRef = useRef(null);
     const [condQuery, setCondQuery] = useState("");
+    const { addActivated } = useHudActivatedCharacters(profile?.uid, campaignId);
 
     useEffect(() => {
         if (!contextMenu.open) {
@@ -68,14 +77,14 @@ export default function MapContextMenu() {
     const char = isToken ? charactersById[tokenId] : null;
     const canEdit = isToken && canControlToken(char || { id: tokenId }, profile);
     const isDM = isDmRole(profile?.role);
-    // G12: character.conditions[] is the single source of truth — map-only
-    // markers with no linked character doc simply show zero active conditions
-    // and toggling is a no-op (guarded in handleToggleCondition below).
     const conditions = normalizeCharacterConditions(char?.conditions);
     const isHidden = pos?.visible === false;
+    const charName = (char?.name || contextMenu.tokenName || tokenId || "TOKEN").toUpperCase();
+    const activePrincipalId = profile?.activeCharacterId || null;
+    const isPrincipal = Boolean(tokenId && activePrincipalId === tokenId);
 
     const pointLabel = isToken
-        ? (contextMenu.tokenName || tokenId || "TOKEN").toUpperCase()
+        ? charName
         : contextMenu.location?.name
             ? contextMenu.location.name.toUpperCase()
             : `(${Math.round(contextMenu.worldX)}, ${Math.round(contextMenu.worldY)})`;
@@ -113,8 +122,6 @@ export default function MapContextMenu() {
     };
 
     const handleToggleCondition = (key) => {
-        // G12: only character-linked tokens have a real conditions store; a
-        // map-only marker (no `char`) has nothing to write to.
         if (!tokenId || !char) return;
         const next = conditions.includes(key)
             ? conditions.filter((k) => k !== key)
@@ -133,39 +140,157 @@ export default function MapContextMenu() {
         });
     };
 
-    const menuW = 260;
-    const menuH = isToken ? 420 : contextMenu.type === "location" ? 140 : 100;
-    const x = Math.min(contextMenu.screenX, window.innerWidth - menuW - 8);
+    const handleAddToHud = () => {
+        if (!isDM || !tokenId || !char || !profile?.uid) return;
+        dispatch(setActiveCharacterId(tokenId));
+        dispatch(persistActiveCharacter({ uid: profile.uid, characterId: tokenId }));
+        addActivated(tokenId);
+        dispatch(closeContextMenu());
+        dispatch(showSnackbar({
+            message: `${char.name || "Personaje"} agregado al HUD`,
+            severity: "success",
+        }));
+    };
+
+    const menuH = isToken ? 460 : contextMenu.type === "location" ? 140 : 100;
+    const x = Math.min(contextMenu.screenX, window.innerWidth - PANEL_W - 8);
     const y = Math.min(contextMenu.screenY, window.innerHeight - menuH - 8);
+
+    const hudBtnSx = {
+        display: "flex",
+        alignItems: "center",
+        gap: 1,
+        width: "100%",
+        px: 1.25,
+        py: 0.85,
+        border: "none",
+        borderTop: `1px solid ${VTT_HUD.glassBorder}`,
+        bgcolor: "transparent",
+        color: UI_COLORS.textPrimary,
+        fontFamily: "'Fira Code', monospace",
+        fontSize: "0.68rem",
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        cursor: "pointer",
+        textAlign: "left",
+        transition: "background-color 0.12s, color 0.12s",
+        "&:hover": {
+            bgcolor: `${UI_COLORS.accent}14`,
+            color: UI_COLORS.accent,
+        },
+    };
 
     return (
         <>
-            <div
-                style={{ position: "fixed", inset: 0, zIndex: 1999, pointerEvents: "none" }}
-            />
-            <StyledMenu ref={menuRef} style={{ left: x, top: y }}>
-                <div className="menu-header">
-                    {isToken ? "◉ TOKEN" : contextMenu.type === "location" ? "◉ LOCATION" : "◉ MAP_POINT"}
-                    <span className="menu-label">{pointLabel}</span>
-                </div>
+            <div style={{ position: "fixed", inset: 0, zIndex: 1999, pointerEvents: "none" }} />
+            <Box
+                ref={menuRef}
+                data-map-context-menu
+                sx={{
+                    position: "fixed",
+                    left: x,
+                    top: y,
+                    zIndex: 2000,
+                    pointerEvents: "auto",
+                    width: PANEL_W,
+                    maxHeight: "min(520px, calc(100vh - 24px))",
+                    display: "flex",
+                    flexDirection: "column",
+                    overflow: "hidden",
+                    clipPath: "polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px))",
+                    ...HUD_SURFACE,
+                    backdropFilter: "blur(14px)",
+                    WebkitBackdropFilter: "blur(14px)",
+                    boxShadow: "0 12px 32px rgba(0,0,0,0.45), 0 0 18px rgba(255,102,255,0.12)",
+                    animation: "mapCtxIn 0.12s cubic-bezier(0.2, 0, 0.2, 1)",
+                    "@keyframes mapCtxIn": {
+                        from: { opacity: 0, transform: "scale(0.96) translateY(-4px)" },
+                        to: { opacity: 1, transform: "scale(1) translateY(0)" },
+                    },
+                    "@media (prefers-reduced-motion: reduce)": {
+                        animation: "none",
+                    },
+                }}
+            >
+                <Box
+                    sx={{
+                        px: 1.5,
+                        py: 1,
+                        borderBottom: `1px solid ${VTT_HUD.glassBorder}`,
+                        flexShrink: 0,
+                    }}
+                >
+                    <CyberTitle
+                        sx={{
+                            fontSize: "0.48rem",
+                            letterSpacing: "0.18em",
+                            color: UI_COLORS.anomaly,
+                            lineHeight: 1.2,
+                            mb: 0.35,
+                        }}
+                    >
+                        {isToken ? "TOKEN" : contextMenu.type === "location" ? "LOCATION" : "MAP POINT"}
+                    </CyberTitle>
+                    <CyberText
+                        sx={{
+                            fontSize: "0.72rem",
+                            color: UI_COLORS.textPrimary,
+                            letterSpacing: "0.06em",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                        }}
+                    >
+                        {pointLabel}
+                    </CyberText>
+                </Box>
 
                 {contextMenu.type === "location" && (
-                    <button type="button" className="menu-item" onClick={handleViewLocation}>
-                        <span className="item-icon">⬡</span>
-                        VIEW_LOCATION
-                    </button>
+                    <Box component="button" type="button" onClick={handleViewLocation} sx={hudBtnSx}>
+                        VIEW LOCATION
+                    </Box>
                 )}
 
                 {!isToken && (
-                    <button type="button" className="menu-item ping" onClick={handlePing}>
-                        <span className="item-icon">◎</span>
-                        HACER_PING
-                    </button>
+                    <Box component="button" type="button" onClick={handlePing} sx={hudBtnSx}>
+                        HACER PING
+                    </Box>
+                )}
+
+                {isToken && isDM && char && (
+                    <Box
+                        component="button"
+                        type="button"
+                        onClick={handleAddToHud}
+                        sx={{
+                            ...hudBtnSx,
+                            color: isPrincipal ? UI_COLORS.anomaly : UI_COLORS.textPrimary,
+                            borderBottom: `1px solid ${VTT_HUD.glassBorder}`,
+                        }}
+                    >
+                        <PersonAddIcon sx={{ fontSize: "1rem", color: UI_COLORS.anomaly }} />
+                        {isPrincipal ? "PRINCIPAL EN HUD" : "ELEGIR COMO PRINCIPAL"}
+                    </Box>
+                )}
+
+                {isToken && char && (
+                    <ShowCharacterToTableContextRow
+                        character={char}
+                        hudBtnSx={hudBtnSx}
+                        onDone={() => dispatch(closeContextMenu())}
+                    />
                 )}
 
                 {isToken && canEdit && char && (
-                    <>
-                        <div className="menu-section">CONDICIONES</div>
+                    <Box
+                        sx={{
+                            display: "flex",
+                            flexDirection: "column",
+                            flex: "1 1 auto",
+                            minHeight: 0,
+                            borderTop: `1px solid ${VTT_HUD.glassBorder}`,
+                        }}
+                    >
                         <Box
                             component="input"
                             type="search"
@@ -176,197 +301,83 @@ export default function MapContextMenu() {
                             onMouseDown={(e) => e.stopPropagation()}
                             sx={{
                                 display: "block",
-                                width: "calc(100% - 16px)",
-                                mx: "8px",
+                                width: "calc(100% - 20px)",
+                                mx: "10px",
+                                mt: 1,
                                 mb: 0.5,
                                 px: 1,
                                 py: 0.6,
                                 bgcolor: "rgba(0,0,0,0.45)",
-                                border: `1px solid ${CYAN}55`,
+                                border: `1px solid ${VTT_HUD.glassBorder}`,
                                 borderRadius: 0.5,
                                 color: UI_COLORS.textPrimary,
                                 fontFamily: "'Fira Code', monospace",
                                 fontSize: "0.62rem",
                                 letterSpacing: "0.08em",
                                 outline: "none",
+                                flexShrink: 0,
                                 "&::placeholder": {
                                     color: UI_COLORS.textSecondary,
                                     opacity: 0.85,
                                 },
                                 "&:focus": {
-                                    borderColor: CYAN,
-                                    boxShadow: `0 0 8px ${CYAN}33`,
+                                    borderColor: UI_COLORS.anomaly,
+                                    boxShadow: `0 0 8px ${UI_COLORS.anomaly}33`,
                                 },
                             }}
                         />
                         <Box
-                            className="cond-list"
                             sx={{
+                                flex: "1 1 auto",
+                                minHeight: 0,
+                                minWidth: 0,
                                 maxHeight: COND_LIST_MAX_H,
                                 overflowY: "auto",
+                                overflowX: "hidden",
                                 ...CYBER_SCROLL_STYLE,
                             }}
                         >
                             {filteredConditions.length === 0 ? (
-                                <Box
+                                <CyberText
                                     sx={{
                                         px: 1.5,
                                         py: 1,
-                                        fontFamily: "'Fira Code', monospace",
                                         fontSize: "0.58rem",
                                         color: UI_COLORS.textSecondary,
                                         letterSpacing: "0.08em",
                                     }}
                                 >
                                     SIN RESULTADOS
-                                </Box>
+                                </CyberText>
                             ) : (
-                                filteredConditions.map((c) => {
-                                    const on = conditions.includes(c.key);
-                                    return (
-                                        <button
-                                            key={c.key}
-                                            type="button"
-                                            className={`menu-item cond ${on ? "active" : ""}`}
-                                            onClick={() => handleToggleCondition(c.key)}
-                                            title={c.effect}
-                                        >
-                                            <span className="item-icon">{on ? "▣" : "□"}</span>
-                                            {c.code} · {c.title.toUpperCase()}
-                                        </button>
-                                    );
-                                })
+                                <ConditionsPanel
+                                    activeKeys={conditions}
+                                    onToggle={handleToggleCondition}
+                                    filterQuery={condQuery}
+                                    embedded
+                                    showHeader
+                                    onClose={null}
+                                    sx={{ p: "6px 10px 10px" }}
+                                />
                             )}
                         </Box>
-                    </>
+                    </Box>
                 )}
 
                 {isToken && isDM && (
-                    <button type="button" className="menu-item ping" onClick={handleToggleVisibility}>
-                        <span className="item-icon">{isHidden ? "◎" : "◌"}</span>
-                        {isHidden ? "MOSTRAR_A_JUGADORES" : "OCULTAR_A_JUGADORES"}
-                    </button>
+                    <Box
+                        component="button"
+                        type="button"
+                        onClick={handleToggleVisibility}
+                        sx={hudBtnSx}
+                    >
+                        {isHidden
+                            ? <VisibilityIcon sx={{ fontSize: "1rem", color: UI_COLORS.anomaly }} />
+                            : <VisibilityOffIcon sx={{ fontSize: "1rem", color: UI_COLORS.textSecondary }} />}
+                        {isHidden ? "MOSTRAR A JUGADORES" : "OCULTAR A JUGADORES"}
+                    </Box>
                 )}
-            </StyledMenu>
+            </Box>
         </>
     );
 }
-
-const StyledMenu = styled.div`
-  position: fixed;
-  z-index: 2000;
-  pointer-events: auto;
-  min-width: 240px;
-  max-width: 280px;
-  max-height: min(520px, calc(100vh - 24px));
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  background: rgba(4, 4, 8, 0.97);
-  border: 1px solid ${CYAN};
-  box-shadow: 0 0 24px ${CYAN}44, 0 0 6px ${CYAN}22, inset 0 0 20px ${CYAN}08;
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%);
-  animation: menuAppear 0.1s cubic-bezier(0.2, 0, 0.2, 1);
-  user-select: none;
-
-  .menu-header {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 8px 12px 7px;
-    font-family: "Fira Code", monospace;
-    font-size: 0.6rem;
-    color: ${CYAN};
-    opacity: 0.7;
-    letter-spacing: 2px;
-    border-bottom: 1px solid ${CYAN}33;
-    text-transform: uppercase;
-    flex-shrink: 0;
-  }
-
-  .menu-label {
-    font-size: 0.7rem;
-    opacity: 1;
-    color: #fff;
-    letter-spacing: 1px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 240px;
-  }
-
-  .menu-section {
-    padding: 6px 12px 2px;
-    font-family: "Fira Code", monospace;
-    font-size: 0.52rem;
-    letter-spacing: 0.14em;
-    color: ${UI_COLORS.textSecondary};
-    flex-shrink: 0;
-  }
-
-  .cond-list {
-    flex: 0 1 auto;
-    border-top: 1px solid ${CYAN}18;
-    border-bottom: 1px solid ${CYAN}18;
-  }
-
-  .menu-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    padding: 10px 12px;
-    background: transparent;
-    border: none;
-    border-left: 2px solid transparent;
-    color: ${UI_COLORS.textPrimary};
-    font-family: "Fira Code", monospace;
-    font-size: 0.75rem;
-    text-align: left;
-    cursor: pointer;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    transition: background 0.12s, border-color 0.12s, color 0.12s, padding-left 0.12s;
-
-    .item-icon {
-      font-size: 0.85rem;
-      opacity: 0.7;
-      flex-shrink: 0;
-    }
-
-    &:hover {
-      background: ${CYAN}18;
-      border-left-color: ${CYAN};
-      color: ${CYAN};
-      padding-left: 16px;
-    }
-
-    &.active {
-      color: ${UI_COLORS.accent};
-      border-left-color: ${UI_COLORS.accent};
-      background: ${UI_COLORS.accent}12;
-    }
-
-    &.ping:hover {
-      color: ${UI_COLORS.accent};
-      border-left-color: ${UI_COLORS.accent};
-      background: ${UI_COLORS.accent}14;
-    }
-
-    &.cond {
-      padding: 7px 12px;
-      font-size: 0.68rem;
-    }
-  }
-
-  @keyframes menuAppear {
-    from {
-      opacity: 0;
-      transform: scale(0.94) translateY(-6px);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1) translateY(0);
-    }
-  }
-`;

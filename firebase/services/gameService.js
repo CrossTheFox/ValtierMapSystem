@@ -1,6 +1,11 @@
 import { db } from "../firebaseConfig";
-import { doc, getDoc, setDoc, onSnapshot, deleteField, updateDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, onSnapshot, deleteField, updateDoc, collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { updateCharacterFields } from "./characterService";
+import {
+    normalizeClockHistory,
+    normalizeClockList,
+    normalizeSessionClocksOpen,
+} from "../../src/utils/clockInstance";
 
 const gameRef = (campaignId) => doc(db, "game", campaignId);
 
@@ -26,6 +31,9 @@ export async function getOrCreateGameSession(campaignId) {
                 activeIndex: 0,
                 round: 1,
             },
+            clocks: [],
+            clockHistory: [],
+            sessionClocks: { open: true },
         };
         await setDoc(docRef, initial);
         return initial;
@@ -314,6 +322,27 @@ export async function publishMapPing(campaignId, ping, { ttlMs = 5000 } = {}) {
     return payload;
 }
 
+/**
+ * Broadcast a full-screen character reveal (Roll20-style "show to players").
+ * Each publish gets a fresh `id` so clients re-show even if the same character.
+ */
+export async function publishCharacterSpotlight(campaignId, char, { publishedBy = null } = {}) {
+    if (!campaignId || !char?.id) return null;
+    const id = newId("spot");
+    const payload = {
+        id,
+        characterId: char.id,
+        characterName: char.name || "Personaje",
+        bannerUrl: char.bannerUrl ?? null,
+        tokenImageUrl: char.tokenImageUrl ?? null,
+        imageUrl: char.imageUrl ?? null,
+        publishedAt: Date.now(),
+        publishedBy,
+    };
+    await setDoc(gameRef(campaignId), { characterSpotlight: payload }, { merge: true });
+    return payload;
+}
+
 export async function removeMapPing(campaignId, pingId) {
     if (!campaignId || !pingId) return;
     await updateDoc(gameRef(campaignId), {
@@ -373,4 +402,56 @@ export async function updateInitiative(campaignId, initiative) {
     const payload = normalizeInitiative(initiative);
     await setDoc(gameRef(campaignId), { initiative: payload }, { merge: true });
     return payload;
+}
+
+export function normalizeSessionClockState(raw) {
+    const src = raw && typeof raw === "object" ? raw : {};
+    return {
+        clocks: normalizeClockList(src.clocks),
+        clockHistory: normalizeClockHistory(src.clockHistory),
+        sessionClocks: { open: normalizeSessionClocksOpen(src.sessionClocks) },
+    };
+}
+
+/**
+ * Merge session clock fields onto `game/{campaignId}`.
+ * @param {string} campaignId
+ * @param {{ clocks?: unknown, clockHistory?: unknown, sessionClocks?: { open?: boolean } }} patch
+ */
+export async function updateSessionClockState(campaignId, patch) {
+    if (!campaignId || !patch || typeof patch !== "object") return null;
+    const payload = {};
+    if ("clocks" in patch) payload.clocks = normalizeClockList(patch.clocks);
+    if ("clockHistory" in patch) payload.clockHistory = normalizeClockHistory(patch.clockHistory);
+    if ("sessionClocks" in patch) {
+        payload.sessionClocks = { open: normalizeSessionClocksOpen(patch.sessionClocks) };
+    }
+    if (Object.keys(payload).length === 0) return null;
+    await setDoc(gameRef(campaignId), payload, { merge: true });
+    return payload;
+}
+
+export async function updateSessionClocksOpen(campaignId, open) {
+    return updateSessionClockState(campaignId, { sessionClocks: { open: open !== false } });
+}
+
+/** AdvanceEvent log — subcollection so the session doc stays small. */
+export async function addClockEvent(campaignId, event) {
+    if (!campaignId || !event) return null;
+    const col = collection(db, "game", campaignId, "clockEvents");
+    const payload = {
+        clockInstanceId: event.clockInstanceId ?? null,
+        method: event.method ?? "dice",
+        deltaHalfSteps: Number(event.deltaHalfSteps) || 0,
+        filledHalfStepsAfter: Number(event.filledHalfStepsAfter) || 0,
+        actorUserId: event.actorUserId ?? null,
+        actorCharacterId: event.actorCharacterId ?? null,
+        roll: event.roll && typeof event.roll === "object" ? event.roll : null,
+        rollScope: event.rollScope ?? "public",
+        visibleToUserIds: Array.isArray(event.visibleToUserIds) ? event.visibleToUserIds : null,
+        breakdown: typeof event.breakdown === "string" ? event.breakdown : "",
+        createdAt: serverTimestamp(),
+    };
+    const ref = await addDoc(col, payload);
+    return { id: ref.id, ...payload };
 }

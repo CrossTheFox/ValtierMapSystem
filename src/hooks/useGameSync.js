@@ -4,6 +4,7 @@ import {
     getOrCreateGameSession,
     subscribeToGameSession,
     normalizeInitiative,
+    normalizeSessionClockState,
 } from "../../firebase/services/gameService";
 import { setGameSession } from "../store/gameSlice";
 
@@ -26,6 +27,8 @@ export function useGameSync() {
                 pings: data.pings ?? {},
                 sessionPools: data.sessionPools ?? {},
                 initiative: normalizeInitiative(data.initiative),
+                ...normalizeSessionClockState(data),
+                characterSpotlight: data.characterSpotlight ?? null,
             }));
         });
 

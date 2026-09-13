@@ -34,6 +34,8 @@ import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
 import { VTT_GRID, VTT_HUD, vttGapCss, vttSpanWidthCss } from "../../constants/vttHudTokens";
 import { useStatSystem } from "../../hooks/useStatSystem";
 import { usePinnedCharacters } from "../../hooks/usePinnedCharacters";
+import { useHudActivatedCharacters } from "../../hooks/useHudActivatedCharacters";
+import { ShowCharacterToTableMenuItem } from "./ShowCharacterToTableAction";
 import { useAssetUrl } from "../../hooks/useAssetUrl";
 import { useResolvedCombatStats } from "../../hooks/useResolvedCombatStats";
 import { setActiveCharacterId, persistActiveCharacter } from "../../store/playerSlice";
@@ -80,6 +82,7 @@ import {
     listActiveBurdens,
     BURDEN_EFFECT_TYPES,
 } from "../../utils/characterBurdens";
+import { formatFilledLabel } from "../../utils/clockResolver";
 import { mergeMacroBarPreferFilled } from "../../constants/macroBar";
 import { HudRichTooltipTitle, hudRichTooltipSlotProps } from "./hudRichTooltip";
 
@@ -1012,6 +1015,7 @@ function CharHudContextMenu({
                     }}
                 />
             </MenuItem>
+            <ShowCharacterToTableMenuItem character={char} onDone={onClose} />
         </Menu>
     );
 }
@@ -1235,9 +1239,9 @@ function ActionTile({ statDef, value, penance = 0, busy, onRoll }) {
                     gap: 0.25,
                     minWidth: 0,
                     width: "100%",
-                    height: 62,
-                    px: 0.35,
-                    py: 0.4,
+                    height: 44,
+                    px: 0.3,
+                    py: 0.3,
                     borderRadius: "4px",
                     border: `1px solid ${UI_COLORS.border}`,
                     bgcolor: "rgba(0,0,0,0.28)",
@@ -1261,7 +1265,7 @@ function ActionTile({ statDef, value, penance = 0, busy, onRoll }) {
                     {busy ? (
                         <CircularProgress size={18} sx={{ color: UI_COLORS.anomaly }} />
                     ) : (
-                        <Icon sx={{ fontSize: "1.35rem", color: "inherit" }} />
+                        <Icon sx={{ fontSize: "1.05rem", color: "inherit" }} />
                     )}
                     <Box
                         component="span"
@@ -1815,7 +1819,7 @@ function F4BurdenRail({ burdens, character }) {
                         <HudRichTooltipTitle
                             title={(openBurden.title || "").trim() || `Burden ${(openIndex ?? 0) + 1}`}
                             body={[effectLine, note].filter(Boolean).join("\n\n") || undefined}
-                            meta={`${openBurden.clockFilled}/${openBurden.clockSize}`}
+                            meta={formatFilledLabel(openBurden.filledHalfSteps, openBurden.clockSize)}
                             metaColor={VIT_RED}
                         />
                     </Box>
@@ -1897,17 +1901,12 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
     }, [activeInitEntry, charactersById, roster, profile, isDM, selectedId]);
 
     const { pinnedIds, togglePin } = usePinnedCharacters(profile?.uid, campaignId);
-
-    /**
-     * Session-activated characters (≠ pins). Stay visible above the HUD when
-     * another character is active so switching never "eats" the rest.
-     */
-    const [activatedIds, setActivatedIds] = useState([]);
+    const { activatedIds, addActivated, removeActivated } = useHudActivatedCharacters(profile?.uid, campaignId);
 
     useEffect(() => {
         if (!selectedId) return;
-        setActivatedIds((prev) => (prev.includes(selectedId) ? prev : [...prev, selectedId]));
-    }, [selectedId]);
+        addActivated(selectedId);
+    }, [selectedId, addActivated]);
 
     const assignedIds = useMemo(() => {
         if (Array.isArray(profile?.characterIds) && profile.characterIds.length) {
@@ -1979,8 +1978,8 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         autoMigrate: false,
     });
 
-    const vitCur = selected
-        ? Math.min(Math.max(Math.floor(Number(selected.vit ?? vitMax) || 0), 0), vitMax)
+    const vitCur = selected && vitals
+        ? Math.min(Math.max(Math.floor(Number(vitals.vit ?? vitMax) || 0), 0), vitMax)
         : 0;
     const hpCur = vitals?.hpCur ?? 0;
     const vigor = vitals?.vigor ?? 0;
@@ -2013,8 +2012,8 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
     const resolvePinHp = (char) => {
         const hpMax = resolveCharacterHpMax(char);
         const normalized = normalizeCharacterVitals(char);
-        const vmax = resolveCharacterVit(char);
-        const vcur = Math.min(Math.max(Math.floor(Number(char?.vit ?? vmax) || 0), 0), vmax);
+        const vmax = normalized.vitMax ?? resolveCharacterVit(char);
+        const vcur = normalized.vit ?? vmax;
         const cur = Math.min(Math.max(normalized.hpCur, 0), hpMax || 1);
         return { cur, max: hpMax, vitCur: vcur, vitMax: vmax };
     };
@@ -2023,7 +2022,7 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
         if (!profile?.uid || !charId) return;
         dispatch(setActiveCharacterId(charId));
         dispatch(persistActiveCharacter({ uid: profile.uid, characterId: charId }));
-        setActivatedIds((prev) => (prev.includes(charId) ? prev : [...prev, charId]));
+        addActivated(charId);
     };
 
     const handleDeactivate = () => {
@@ -2040,7 +2039,7 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
             assignedIds: isDM ? roster.map((c) => c.id) : assignedIds,
             stackIds: stripChars.map((c) => c.id),
         });
-        setActivatedIds((prev) => prev.filter((id) => id !== charId));
+        removeActivated(charId);
         if (pinnedIds.includes(charId)) togglePin(charId);
         if (result.nextPrincipalId && result.nextPrincipalId !== selectedId) {
             handleSelect(result.nextPrincipalId);
@@ -2158,12 +2157,14 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                 display: "flex",
                 alignItems: "flex-end",
                 width: vttSpanWidthCss(VTT_GRID.combatSpan),
+                minWidth: vttSpanWidthCss(VTT_GRID.combatSpan),
+                maxWidth: vttSpanWidthCss(VTT_GRID.combatSpan),
                 boxSizing: "border-box",
                 pl: "34px",
                 mr: vttGapCss(),
             }}
         >
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, minWidth: 0 }}>
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, minWidth: 0, width: "100%" }}>
                 {isMyTurn && (
                     <Box
                         sx={{
@@ -2281,7 +2282,7 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                 {selected && (
                 <Box
                     className="hud-wrap"
-                    sx={{ position: "relative", width: "100%", maxWidth: "100%" }}
+                    sx={{ position: "relative", width: "100%", minWidth: 0, maxWidth: "100%", flexShrink: 0 }}
                 >
                     <F4BurdenRail burdens={selected.burdens} character={selected} />
                     <Box
@@ -2296,6 +2297,8 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                             alignItems: "center",
                             width: "100%",
                             minWidth: 0,
+                            maxWidth: "100%",
+                            boxSizing: "border-box",
                             p: "14px 14px 14px 18px",
                             minHeight: 96,
                             overflow: "visible",
@@ -2339,28 +2342,6 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                             },
                         }}
                     >
-                        {activeTurnId && activeTurnId !== selectedId && (
-                            <Box
-                                sx={{
-                                    position: "absolute",
-                                    right: 44,
-                                    top: "-11px",
-                                    zIndex: 6,
-                                    pointerEvents: "none",
-                                    fontFamily: "Orbitron, sans-serif",
-                                    fontSize: "0.36rem",
-                                    letterSpacing: "0.14em",
-                                    color: F4_AMBER,
-                                    bgcolor: "rgba(0,0,0,0.92)",
-                                    px: "7px",
-                                    py: "2px",
-                                    border: "1px solid rgba(255,176,32,0.5)",
-                                }}
-                            >
-                                ACTIVE: {(roster.find((c) => c.id === activeTurnId)?.name || "—").toUpperCase()}
-                            </Box>
-                        )}
-
                         <F4FxLayer vitCur={vitCur} />
                         {isDead && (
                             <Box

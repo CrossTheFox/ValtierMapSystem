@@ -37,7 +37,18 @@ export const VTT_HUD = {
     glassBg: "rgba(10, 10, 15, 0.88)",
     glassBorder: "rgba(255, 102, 255, 0.2)",
     borderRadius: 10,
+    /** Map selector + initiative bar + vertical zoom strip — keep in sync. */
+    topIslandHeight: 97,
+    topIslandZoomWidth: 40,
+    /**
+     * Shared width for top-center islands (initiative + session clocks).
+     * 5 / 12 — between macros (4) and the old 920px mockup; clears zoom/map HUD on 1080p.
+     */
+    topCenterIslandSpan: 5,
 };
+
+/** Shared CSS width for initiative + session clocks (top-center). */
+export const VTT_TOP_CENTER_ISLAND_WIDTH = vttSpanWidthCss(VTT_HUD.topCenterIslandSpan);
 
 /** Right-side VTT dock: fills space between profile pill and zoom controls. */
 export const VTT_RIGHT_DOCK = {
@@ -48,8 +59,8 @@ export const VTT_RIGHT_DOCK = {
     get top() {
         return VTT_HUD.inset + VTT_HUD.profilePillHeight + VTT_HUD.inset / 2;
     },
-    /** mapControls inset + control row (~40) + gap */
-    bottom: 64,
+    /** Bottom inset — zoom strip sits beside MapSelectorHUD. */
+    bottom: VTT_HUD.inset,
     tokenPanelMaxHeight: 220,
     /** DM character list — sits above tokens/chat in the dock column. */
     rosterPanelMaxHeight: 280,

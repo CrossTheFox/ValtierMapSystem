@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, memo } from "react";
 import {
-    Box, Paper, TextField, IconButton, Stack, Chip, Avatar, Autocomplete,
+    Box, Paper, TextField, IconButton, Stack, Chip, Avatar,
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import CloseIcon from "@mui/icons-material/Close";
@@ -19,10 +19,10 @@ import {
 } from "../../../firebase/services/chatService";
 import { useAssetUrl } from "../../hooks/useAssetUrl";
 import { buildCampaignCharacterMap } from "../../utils/characterCombat";
-import { setActiveCharacterId, persistActiveCharacter } from "../../store/playerSlice";
 import { INLINE_ROLL_MARKER_RE } from "../../utils/abilityRollCommands";
 import { isDmRole } from "../../utils/tokenControl";
 import { showSnackbar } from "../../store/uiSlice";
+import { canViewClockChatMessage } from "../../utils/clockAcl";
 import ClearChatDialog from "./ClearChatDialog";
 import ItemSilhouette from "../characters/inventory/itemSilhouette";
 import { itemRarityMeta, itemTypeMeta } from "../../utils/campaignItems";
@@ -977,20 +977,14 @@ export default function VttChatPanel({
 
     const visibleMessages = useMemo(() => {
         if (!open) return EMPTY_MESSAGES;
-        if (!revealedDiceIds) return messages;
-        return messages.filter((m) => {
+        const viewer = { isDM, userId: profile?.uid || null };
+        const scoped = messages.filter((m) => canViewClockChatMessage(m, viewer));
+        if (!revealedDiceIds) return scoped;
+        return scoped.filter((m) => {
             if (m?.type !== CHAT_MESSAGE_TYPES.DICE) return true;
             return revealedDiceIds.has(m.id);
         });
-    }, [open, messages, revealedDiceIds]);
-
-    const handleSelectCharacter = (char) => {
-        if (!char?.id) return;
-        dispatch(setActiveCharacterId(char.id));
-        if (profile?.uid) {
-            dispatch(persistActiveCharacter({ uid: profile.uid, characterId: char.id }));
-        }
-    };
+    }, [open, messages, revealedDiceIds, isDM, profile?.uid]);
 
     const handleSend = async () => {
         const raw = text.trim();
@@ -1109,91 +1103,18 @@ export default function VttChatPanel({
                 <Box sx={{ flex: 1, minHeight: 0 }} />
             )}
 
-            <Box
+            <Stack
+                direction="row"
+                spacing={0.5}
                 sx={{
                     px: 1,
                     py: 0.65,
+                    flexShrink: 0,
                     borderTop: `1px solid ${UI_COLORS.border}`,
                     bgcolor: "rgba(0,0,0,0.25)",
-                    flexShrink: 0,
+                    alignItems: "center",
                 }}
             >
-                <CyberText sx={{ fontSize: "0.52rem", color: UI_COLORS.textSecondary, mb: 0.4, letterSpacing: 0.6 }}>
-                    HABLANDO COMO
-                </CyberText>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 0.6 }}>
-                    <Autocomplete
-                        size="small"
-                        options={myCharacters}
-                        value={activeCharacter}
-                        onChange={(_, char) => handleSelectCharacter(char)}
-                        getOptionLabel={(c) => c?.name || c?.id || ""}
-                        isOptionEqualToValue={(a, b) => a?.id === b?.id}
-                        disableClearable
-                        noOptionsText="Sin personajes"
-                        sx={{ flex: 1, minWidth: 0 }}
-                        slotProps={{
-                            paper: {
-                                sx: {
-                                    bgcolor: UI_COLORS.backgroundSecondary,
-                                    border: `1px solid ${UI_COLORS.border}`,
-                                    "& .MuiAutocomplete-option": {
-                                        fontSize: "0.78rem",
-                                        color: UI_COLORS.textPrimary,
-                                    },
-                                },
-                            },
-                        }}
-                        renderOption={(props, option) => (
-                            <Box component="li" {...props} key={option.id} sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-                                <ChatAvatar
-                                    path={option.tokenImageUrl || option.imageUrl}
-                                    name={option.name}
-                                    accent={UI_COLORS.anomaly}
-                                    size={22}
-                                />
-                                <span>{option.name}</span>
-                            </Box>
-                        )}
-                        renderInput={(params) => (
-                            <TextField
-                                {...params}
-                                placeholder="Buscar personaje…"
-                                sx={{
-                                    ...fieldSx,
-                                    "& input": { ...fieldSx["& input"], fontSize: "0.75rem", py: 0.5 },
-                                }}
-                            />
-                        )}
-                    />
-                    {isDM && (
-                        <CyberTooltip title="Limpiar chat (DJ)" placement="top">
-                            <IconButton
-                                size="small"
-                                onClick={() => setClearOpen(true)}
-                                aria-label="Limpiar chat"
-                                sx={{
-                                    flexShrink: 0,
-                                    color: UI_COLORS.textSecondary,
-                                    p: 0.55,
-                                    borderRadius: 0.75,
-                                    border: `1px solid ${UI_COLORS.border}`,
-                                    bgcolor: "rgba(0,0,0,0.35)",
-                                    "&:hover": {
-                                        color: UI_COLORS.accentStrong,
-                                        borderColor: `${UI_COLORS.accentStrong}88`,
-                                        bgcolor: `${UI_COLORS.accentStrong}14`,
-                                    },
-                                }}
-                            >
-                                <DeleteSweepIcon sx={{ fontSize: "1.05rem" }} />
-                            </IconButton>
-                        </CyberTooltip>
-                    )}
-                </Box>
-            </Box>
-
-            <Stack direction="row" spacing={0.5} sx={{ px: 1, py: 1, flexShrink: 0 }}>
                 <TextField
                     size="small"
                     fullWidth
@@ -1206,16 +1127,46 @@ export default function VttChatPanel({
                             handleSend();
                         }
                     }}
-                    sx={fieldSx}
+                    sx={{
+                        ...fieldSx,
+                        "& .MuiOutlinedInput-root": {
+                            ...fieldSx["& .MuiOutlinedInput-root"],
+                            height: 36,
+                        },
+                    }}
                 />
                 <IconButton
                     size="small"
                     onClick={handleSend}
                     disabled={!text.trim()}
-                    sx={{ color: UI_COLORS.accent }}
+                    sx={{ color: UI_COLORS.accent, flexShrink: 0 }}
                 >
                     <SendIcon fontSize="small" />
                 </IconButton>
+                {isDM && (
+                    <CyberTooltip title="Limpiar chat (DJ)" placement="top">
+                        <IconButton
+                            size="small"
+                            onClick={() => setClearOpen(true)}
+                            aria-label="Limpiar chat"
+                            sx={{
+                                flexShrink: 0,
+                                color: UI_COLORS.textSecondary,
+                                p: 0.55,
+                                borderRadius: 0.75,
+                                border: `1px solid ${UI_COLORS.border}`,
+                                bgcolor: "rgba(0,0,0,0.35)",
+                                "&:hover": {
+                                    color: UI_COLORS.accentStrong,
+                                    borderColor: `${UI_COLORS.accentStrong}88`,
+                                    bgcolor: `${UI_COLORS.accentStrong}14`,
+                                },
+                            }}
+                        >
+                            <DeleteSweepIcon sx={{ fontSize: "1.05rem" }} />
+                        </IconButton>
+                    </CyberTooltip>
+                )}
             </Stack>
 
             {isDM && (

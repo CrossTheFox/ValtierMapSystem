@@ -163,14 +163,15 @@ export async function warmAsset(path, opts = {}) {
 }
 
 /**
- * Warm token + portrait paths for a list of characters (DOM decode).
- * @param {Array<{ tokenImageUrl?: string, imageUrl?: string, name?: string }|null|undefined>} characters
+ * Warm banner + token + portrait paths for a list of characters (DOM decode).
+ * @param {Array<{ bannerUrl?: string, tokenImageUrl?: string, imageUrl?: string, name?: string }|null|undefined>} characters
  * @param {{ pixi?: boolean }} [opts]
  */
 export async function warmCharacterAssets(characters, opts = {}) {
     const paths = new Set();
     for (const char of characters || []) {
         if (!char) continue;
+        if (char.bannerUrl) paths.add(char.bannerUrl);
         if (char.tokenImageUrl) paths.add(char.tokenImageUrl);
         if (char.imageUrl) paths.add(char.imageUrl);
     }

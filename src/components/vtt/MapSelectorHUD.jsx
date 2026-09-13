@@ -15,9 +15,10 @@ import AutoStoriesIcon from "@mui/icons-material/AutoStories";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
 import HubIcon from "@mui/icons-material/Hub";
 import SportsKabaddiIcon from "@mui/icons-material/SportsKabaddi";
+import AvTimerIcon from "@mui/icons-material/AvTimer";
 import { switchMap, setGridConfig, persistMapGridConfig } from "../../store/worldSlice";
 import { openDialog, openWikiOverlay, openNeuralLabOverlay, restoreDialog, showSnackbar } from "../../store/uiSlice";
-import { setActiveMapForPlayers, updateInitiative, normalizeInitiative } from "../../../firebase/services/gameService";
+import { setActiveMapForPlayers, updateInitiative, normalizeInitiative, updateSessionClocksOpen } from "../../../firebase/services/gameService";
 import { CyberText, CyberTitle } from "../customs/CustomTexts";
 import { UI_COLORS } from "../../constants/uiColors";
 import { VTT_HUD } from "../../constants/vttHudTokens";
@@ -26,6 +27,7 @@ import { DIALOG_IDS } from "../../constants/dialogIds";
 import { DEFAULT_GRID_COLUMNS, resolveCellSize } from "../../utils/gridMath";
 import { isDmRole } from "../../utils/tokenControl";
 import { isEmptyTableMap } from "../../constants/emptyTableMap";
+import MapZoomHud from "./MapZoomHud";
 
 const navIconSx = (active) => ({
     width: 32,
@@ -55,6 +57,7 @@ export default function MapSelectorHUD({ children = null }) {
     const gameActiveMapId = useSelector((s) => s.game.activeMapId);
     const { openDialogs, wikiOverlay, neuralLabOverlay } = useSelector((s) => s.ui);
     const initiative = useSelector((s) => s.game.initiative);
+    const sessionClocksOpen = useSelector((s) => s.game.sessionClocks?.open !== false);
 
     const [gridAnchor, setGridAnchor] = useState(null);
     const [mapMenuAnchor, setMapMenuAnchor] = useState(null);
@@ -131,6 +134,7 @@ export default function MapSelectorHUD({ children = null }) {
                 gap: 0.65,
             }}
         >
+            <Box sx={{ display: "flex", alignItems: "stretch", gap: 0.65 }}>
             <Box
                 sx={{
                     display: "flex",
@@ -139,6 +143,8 @@ export default function MapSelectorHUD({ children = null }) {
                     px: 1.25,
                     py: 1,
                     minWidth: 260,
+                    height: VTT_HUD.topIslandHeight,
+                    boxSizing: "border-box",
                     borderRadius: `${VTT_HUD.borderRadius}px`,
                     border: `1px solid ${VTT_HUD.glassBorder}`,
                     bgcolor: VTT_HUD.glassBg,
@@ -230,6 +236,28 @@ export default function MapSelectorHUD({ children = null }) {
                                 sx={navIconSx(!!initiative?.open)}
                             >
                                 <SportsKabaddiIcon sx={{ fontSize: "1.05rem" }} />
+                            </IconButton>
+                        </Tooltip>
+                    )}
+                    {isDM && (
+                        <Tooltip title={sessionClocksOpen ? "Ocultar clocks" : "Mostrar clocks"} placement="bottom">
+                            <IconButton
+                                size="small"
+                                onClick={async () => {
+                                    if (!campaignId) return;
+                                    try {
+                                        await updateSessionClocksOpen(campaignId, !sessionClocksOpen);
+                                    } catch (err) {
+                                        console.error(err);
+                                        dispatch(showSnackbar({
+                                            message: "No se pudo actualizar clocks",
+                                            severity: "error",
+                                        }));
+                                    }
+                                }}
+                                sx={navIconSx(!!sessionClocksOpen)}
+                            >
+                                <AvTimerIcon sx={{ fontSize: "1.05rem" }} />
                             </IconButton>
                         </Tooltip>
                     )}
@@ -482,6 +510,9 @@ export default function MapSelectorHUD({ children = null }) {
                     </Stack>
                 </Stack>
             </Popover>
+            </Box>
+
+            <MapZoomHud />
             </Box>
 
             {children}
