@@ -1,3 +1,6 @@
+import { halfStepsFromLegacyFilled, normalizeClockSize as normalizeSharedClockSize } from "./clockInstance.js";
+import { displayFilled } from "./clockResolver.js";
+
 /**
  * Campaign missions (generic + personal) — progress clock as segmented bar.
  * Storage: campaigns/{campaignId}/missions/{missionId}
@@ -35,9 +38,7 @@ function newId() {
  * @returns {4|6|8|12}
  */
 export function normalizeClockSize(raw) {
-    const n = Number(raw);
-    if (n === 6 || n === 8 || n === 12) return n;
-    return 4;
+    return normalizeSharedClockSize(raw);
 }
 
 /**
@@ -48,7 +49,8 @@ export function clampClockFilled(raw, clockSize) {
     const size = normalizeClockSize(clockSize);
     const n = Number(raw);
     if (!Number.isFinite(n)) return 0;
-    return Math.max(0, Math.min(size, Math.floor(n)));
+    const half = Math.round(n * 2) / 2;
+    return Math.max(0, Math.min(size, half));
 }
 
 /**
@@ -86,6 +88,15 @@ export function normalizeMission(raw) {
         ? raw.status
         : MISSION_STATUS.ACTIVE;
     const clockSize = normalizeClockSize(raw.clockSize);
+    const filledHalfSteps = halfStepsFromLegacyFilled(
+        raw.clockFilled,
+        clockSize,
+        raw.filledHalfSteps,
+    );
+    const clockFilled = displayFilled(filledHalfSteps);
+    const clockIds = Array.isArray(raw.clockIds)
+        ? raw.clockIds.filter((x) => typeof x === "string" && x)
+        : [];
     const assignees = Array.isArray(raw.assigneeCharacterIds)
         ? raw.assigneeCharacterIds.filter((x) => typeof x === "string" && x)
         : [];
@@ -100,7 +111,9 @@ export function normalizeMission(raw) {
         scope,
         assigneeCharacterIds: scope === MISSION_SCOPE.PERSONAL ? assignees : [],
         clockSize,
-        clockFilled: clampClockFilled(raw.clockFilled, clockSize),
+        clockFilled,
+        filledHalfSteps,
+        clockIds,
         objectives,
         reward: typeof raw.reward === "string" ? raw.reward : "",
         grantedBy: typeof raw.grantedBy === "string" ? raw.grantedBy : "",
@@ -124,6 +137,8 @@ export function emptyMission(partial = {}) {
         assigneeCharacterIds: [],
         clockSize,
         clockFilled: 0,
+        filledHalfSteps: 0,
+        clockIds: [],
         objectives: [{ id: newId(), text: "", weight: 1, done: false }],
         reward: "",
         grantedBy: "",
@@ -164,6 +179,7 @@ export function withObjectiveDone(mission, objectiveId, done) {
     });
 
     let clockFilled = clampClockFilled(m.clockFilled + delta, m.clockSize);
+    const filledHalfSteps = Math.round(clockFilled * 2);
     let status = m.status;
     if (clockFilled >= m.clockSize && status === MISSION_STATUS.ACTIVE) {
         status = MISSION_STATUS.COMPLETED;
@@ -174,7 +190,7 @@ export function withObjectiveDone(mission, objectiveId, done) {
         status = MISSION_STATUS.ACTIVE;
     }
 
-    return { ...m, objectives, clockFilled, status };
+    return { ...m, objectives, clockFilled, filledHalfSteps, status };
 }
 
 /**
@@ -185,13 +201,14 @@ export function withClockFilled(mission, clockFilled) {
     const m = normalizeMission(mission);
     if (!m) return mission;
     const next = clampClockFilled(clockFilled, m.clockSize);
+    const filledHalfSteps = Math.round(next * 2);
     let status = m.status;
     if (next >= m.clockSize && status === MISSION_STATUS.ACTIVE) {
         status = MISSION_STATUS.COMPLETED;
     } else if (status === MISSION_STATUS.COMPLETED && next < m.clockSize) {
         status = MISSION_STATUS.ACTIVE;
     }
-    return { ...m, clockFilled: next, status };
+    return { ...m, clockFilled: next, filledHalfSteps, status };
 }
 
 /**

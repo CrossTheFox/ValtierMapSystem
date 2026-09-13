@@ -204,9 +204,14 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
-    // Shared real-time game session
+    // Shared real-time game session (tokens, initiative, session clocks).
+    // clocks[] is client-filtered via canViewClock — dm_only is NOT hidden at rest.
     match /game/{campaignId} {
       allow read, write: if isAuthenticated();
+
+      match /clockEvents/{eventId} {
+        allow read, write: if isAuthenticated();
+      }
     }
   }
 }

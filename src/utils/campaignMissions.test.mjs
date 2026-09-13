@@ -43,6 +43,20 @@ describe("campaignMissions", () => {
         assert.equal(missionProgressPercent(m), 100);
     });
 
+    it("keeps half-steps and clockIds", () => {
+        const m = normalizeMission({
+            id: "h",
+            clockSize: 4,
+            filledHalfSteps: 5,
+            clockIds: ["c1", ""],
+        });
+        assert.equal(m.clockFilled, 2.5);
+        assert.equal(m.filledHalfSteps, 5);
+        assert.deepEqual(m.clockIds, ["c1"]);
+        const next = withClockFilled(m, 2.5);
+        assert.equal(next.filledHalfSteps, 5);
+    });
+
     it("filters personal vs generic for players", () => {
         const missions = [
             emptyMission({ id: "g1", scope: MISSION_SCOPE.GENERIC, title: "G" }),

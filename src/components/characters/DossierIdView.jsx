@@ -32,6 +32,7 @@ import { updateCharacterInState } from "../../store/worldSlice";
 import { isDmRole } from "../../utils/tokenControl";
 import { useSkillMatrixAbilities } from "../tabs/subtabs/skillMatrix/skillMatrixUtils";
 import { DebouncedBoxInput } from "../customs/DebouncedField";
+import { ShowCharacterToTableButton } from "../vtt/ShowCharacterToTableAction";
 
 /* ── colour tokens ──────────────────────────────────────────────── */
 const C = {
@@ -771,12 +772,32 @@ export default function DossierIdView({ character }) {
         if (!next[index]) next[index] = emptyBurden(index);
         next[index] = { ...next[index], ...partial };
         if (partial.clockSize != null) {
-            const size = partial.clockSize === 6 || partial.clockSize === 8 ? partial.clockSize : 4;
+            const size = partial.clockSize === 6 || partial.clockSize === 8 || partial.clockSize === 12
+                ? partial.clockSize
+                : 4;
             next[index].clockSize = size;
-            next[index].clockFilled = Math.min(next[index].clockFilled || 0, size);
+            const capHalf = size * 2;
+            const currentHalf = Number.isFinite(Number(next[index].filledHalfSteps))
+                ? Math.round(Number(next[index].filledHalfSteps))
+                : Math.round((Number(next[index].clockFilled) || 0) * 2);
+            next[index].filledHalfSteps = Math.max(0, Math.min(capHalf, currentHalf));
+            next[index].clockFilled = next[index].filledHalfSteps / 2;
         }
         patchDraft({ burdens: next });
-    }, [burdens, patchDraft]);
+        const persistClock = partial.clockSize != null
+            || partial.clockFilled != null
+            || partial.filledHalfSteps != null;
+        if (!persistClock || !character?.id) return;
+        updateCharacterFields(character.id, { burdens: next }).catch((err) => {
+            console.error("[DossierIdView] persist burden clock:", err);
+        });
+        dispatch(updateCharacterInList({ id: character.id, data: { burdens: next } }));
+        dispatch(updateCharacterInState({
+            id: character.id,
+            locationId: character.locationId,
+            data: { burdens: next },
+        }));
+    }, [burdens, patchDraft, character?.id, character?.locationId, dispatch]);
 
     const clearBurdenSlot = useCallback(async (index) => {
         const next = normalizeBurdens(burdens);
@@ -851,12 +872,13 @@ export default function DossierIdView({ character }) {
 
     const handleBurdenClockFilled = useCallback(async (index, clockFilled) => {
         const slot = normalizeBurdens(burdens)[index] || emptyBurden(index);
-        const size = slot.clockSize === 6 || slot.clockSize === 8 ? slot.clockSize : 4;
-        if (clockFilled >= size || isBurdenClockCleared({ ...slot, clockFilled })) {
+        const size = slot.clockSize || 4;
+        const filledHalfSteps = Math.round(Number(clockFilled) * 2);
+        if (clockFilled >= size || isBurdenClockCleared({ ...slot, clockFilled, filledHalfSteps })) {
             await clearBurdenSlot(index);
             return;
         }
-        patchBurden(index, { clockFilled });
+        patchBurden(index, { clockFilled, filledHalfSteps });
     }, [burdens, clearBurdenSlot, patchBurden]);
 
     const sendNarrativeToChat = useCallback(async ({ kind, title, text, id }) => {
@@ -1285,6 +1307,10 @@ export default function DossierIdView({ character }) {
                                     )}
                                 </Box>
                                 <input ref={bannerInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleBannerFile} />
+
+                                {isDM && (
+                                    <ShowCharacterToTableButton character={character} />
+                                )}
 
                                 <Box
                                     sx={{

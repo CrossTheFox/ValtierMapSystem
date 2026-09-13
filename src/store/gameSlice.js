@@ -55,6 +55,12 @@ const gameSlice = createSlice({
             activeIndex: 0,
             round: 1,
         },
+        /** Session clocks (DM writes; clients filter via canViewClock). */
+        clocks: [],
+        clockHistory: [],
+        sessionClocks: { open: true },
+        /** DM broadcast: full-screen character banner reveal. */
+        characterSpotlight: null,
     },
     reducers: {
         setPartyPositions(state, action) {
@@ -85,6 +91,26 @@ const gameSlice = createSlice({
                 };
                 if (!samePlain(state.initiative, next)) state.initiative = next;
             }
+            if ("clocks" in data) {
+                const next = Array.isArray(data.clocks) ? data.clocks : [];
+                if (!samePlain(state.clocks, next)) state.clocks = next;
+            }
+            if ("clockHistory" in data) {
+                const next = Array.isArray(data.clockHistory) ? data.clockHistory : [];
+                if (!samePlain(state.clockHistory, next)) state.clockHistory = next;
+            }
+            if ("sessionClocks" in data) {
+                const next = data.sessionClocks && typeof data.sessionClocks === "object"
+                    ? { open: data.sessionClocks.open !== false }
+                    : { open: true };
+                if (!samePlain(state.sessionClocks, next)) state.sessionClocks = next;
+            }
+            if ("characterSpotlight" in data) {
+                const next = data.characterSpotlight ?? null;
+                if (!samePlain(state.characterSpotlight, next)) {
+                    state.characterSpotlight = next;
+                }
+            }
         },
         setRulers(state, action) {
             assignMap(state, "rulers", action.payload);
@@ -108,6 +134,18 @@ const gameSlice = createSlice({
             };
             if (!samePlain(state.initiative, next)) state.initiative = next;
         },
+        setSessionClocks(state, action) {
+            const next = Array.isArray(action.payload) ? action.payload : [];
+            if (!samePlain(state.clocks, next)) state.clocks = next;
+        },
+        setClockHistory(state, action) {
+            const next = Array.isArray(action.payload) ? action.payload : [];
+            if (!samePlain(state.clockHistory, next)) state.clockHistory = next;
+        },
+        setSessionClocksOpen(state, action) {
+            const next = { open: action.payload !== false };
+            if (!samePlain(state.sessionClocks, next)) state.sessionClocks = next;
+        },
     },
 });
 
@@ -121,5 +159,8 @@ export const {
     setPings,
     setSessionPools,
     setInitiative,
+    setSessionClocks,
+    setClockHistory,
+    setSessionClocksOpen,
 } = gameSlice.actions;
 export default gameSlice.reducer;

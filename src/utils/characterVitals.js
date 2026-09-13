@@ -135,6 +135,14 @@ export function resolveCharacterVit(character, claseDoc = null) {
 export function normalizeCharacterVitals(char, options = {}) {
     const { claseDoc = null, effortMax = DEFAULT_EFFORT_MAX, sessionPoolEntry = null } = options;
     const hpMax = resolveCharacterHpMax(char, claseDoc);
+    const vitCeiling = resolveCharacterVit(char, claseDoc);
+
+    let vitCur;
+    if (Number.isFinite(Number(char?.vit))) {
+        vitCur = Math.min(Math.max(Math.floor(Number(char.vit)), 0), vitCeiling);
+    } else {
+        vitCur = vitCeiling;
+    }
 
     let hpCur;
     if (Number.isFinite(Number(char?.hpCur))) {
@@ -142,9 +150,10 @@ export function normalizeCharacterVitals(char, options = {}) {
     } else if (sessionPoolEntry?.hp && Number.isFinite(Number(sessionPoolEntry.hp.current))) {
         hpCur = Math.floor(Number(sessionPoolEntry.hp.current));
     } else {
-        hpCur = hpMax;
+        hpCur = resolveSessionHpMax(vitCur);
     }
-    hpCur = Math.min(Math.max(hpCur, 0), hpMax);
+    const sessionHpCap = resolveSessionHpMax(vitCur);
+    hpCur = Math.min(Math.max(hpCur, 0), Math.min(hpMax, sessionHpCap));
 
     let vigor;
     if (Number.isFinite(Number(char?.vigor))) {
@@ -172,7 +181,7 @@ export function normalizeCharacterVitals(char, options = {}) {
         hpBroken = Boolean(sessionPoolEntry.hp.broken);
     }
 
-    return { hpCur, vigor, effort, turn, conditions, hpBroken, hpMax };
+    return { vit: vitCur, hpCur, vigor, effort, turn, conditions, hpBroken, hpMax, vitMax: vitCeiling };
 }
 
 /**

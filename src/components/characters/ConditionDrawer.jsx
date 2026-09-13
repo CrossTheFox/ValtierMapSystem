@@ -20,8 +20,38 @@ const PANEL_SX = {
 /** Above combat HUD (1200) and initiative (1300); below wiki overlay (1500). */
 const HUD_DRAWER_Z = 1400;
 
-function DrawerPanel({ activeKeys, onToggle, onClose, sx }) {
+/** Grouped conditions list — shared by combat HUD drawer and map token context menu. */
+export function ConditionsPanel({
+    activeKeys,
+    onToggle,
+    onClose,
+    sx,
+    showHeader = true,
+    filterQuery = "",
+    embedded = false,
+}) {
     const keys = Array.isArray(activeKeys) ? activeKeys : [];
+    const q = String(filterQuery || "").trim().toLowerCase();
+    const matchesFilter = (d) => {
+        if (!q) return true;
+        return (
+            d.title.toLowerCase().includes(q)
+            || d.code.toLowerCase().includes(q)
+            || d.key.toLowerCase().includes(q)
+        );
+    };
+    const embeddedSx = embedded
+        ? {
+            width: "100%",
+            maxHeight: "none",
+            overflow: "visible",
+            overflowX: "hidden",
+            minWidth: 0,
+            border: "none",
+            boxShadow: "none",
+            bgcolor: "transparent",
+        }
+        : {};
     return (
         <Box
             data-cond-drawer
@@ -29,27 +59,38 @@ function DrawerPanel({ activeKeys, onToggle, onClose, sx }) {
             aria-label="Conditions drawer"
             onClick={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
-            sx={{ ...PANEL_SX, ...sx }}
+            sx={{
+                ...PANEL_SX,
+                ...embeddedSx,
+                overflowX: "hidden",
+                minWidth: 0,
+                ...sx,
+            }}
         >
-            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", mb: 1 }}>
-                <Box component="h4" sx={{ m: 0, fontFamily: "Orbitron, sans-serif", fontSize: "0.62rem", letterSpacing: "0.12em", color: "#c4b5fd" }}>
-                    CONDITIONS · {keys.length}
+            {showHeader && (
+                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", mb: 1 }}>
+                    <Box component="h4" sx={{ m: 0, fontFamily: "Orbitron, sans-serif", fontSize: "0.62rem", letterSpacing: "0.12em", color: "#c4b5fd" }}>
+                        CONDITIONS · {keys.length}
+                    </Box>
+                    {onClose && (
+                        <Box
+                            component="button"
+                            type="button"
+                            onClick={onClose}
+                            aria-label="Cerrar"
+                            sx={{
+                                bgcolor: "transparent", border: "1px solid rgba(255,255,255,0.2)",
+                                color: "#fff", width: 22, height: 22, cursor: "pointer", flexShrink: 0,
+                            }}
+                        >
+                            ✕
+                        </Box>
+                    )}
                 </Box>
-                <Box
-                    component="button"
-                    type="button"
-                    onClick={onClose}
-                    aria-label="Cerrar"
-                    sx={{
-                        bgcolor: "transparent", border: "1px solid rgba(255,255,255,0.2)",
-                        color: "#fff", width: 22, height: 22, cursor: "pointer", flexShrink: 0,
-                    }}
-                >
-                    ✕
-                </Box>
-            </Box>
+            )}
             {COND_GROUPS.map((g) => {
-                const rows = CHARACTER_CONDITIONS.filter((d) => d.group === g.id);
+                const rows = CHARACTER_CONDITIONS.filter((d) => d.group === g.id && matchesFilter(d));
+                if (rows.length === 0) return null;
                 const n = rows.filter((d) => keys.includes(d.key)).length;
                 return (
                     <Box key={g.id} sx={{ mb: 1.5 }}>
@@ -72,10 +113,11 @@ function DrawerPanel({ activeKeys, onToggle, onClose, sx }) {
                                     title={[d.effect, d.hook ? `hook: ${d.hook}` : ""].filter(Boolean).join(" · ")}
                                     sx={{
                                         display: "grid",
-                                        gridTemplateColumns: "10px 1fr auto",
+                                        gridTemplateColumns: "12px minmax(0, 1fr)",
                                         gap: "8px",
-                                        alignItems: "center",
+                                        alignItems: "start",
                                         width: "100%",
+                                        minWidth: 0,
                                         textAlign: "left",
                                         p: "7px 8px",
                                         mb: "4px",
@@ -85,6 +127,7 @@ function DrawerPanel({ activeKeys, onToggle, onClose, sx }) {
                                         fontFamily: "'Fira Code', monospace",
                                         fontSize: "0.68rem",
                                         cursor: "pointer",
+                                        overflow: "hidden",
                                         ...(on ? {
                                             color: "#fff",
                                             borderColor: `${g.accent}59`,
@@ -96,14 +139,39 @@ function DrawerPanel({ activeKeys, onToggle, onClose, sx }) {
                                         component="i"
                                         sx={{
                                             display: "block",
-                                            width: 8, height: 8,
+                                            width: 8,
+                                            height: 8,
+                                            mt: "2px",
+                                            flexShrink: 0,
                                             border: `1.5px solid ${on ? g.accent : "currentColor"}`,
                                             bgcolor: on ? g.accent : "transparent",
                                             boxShadow: on ? `0 0 6px ${g.accent}` : "none",
                                         }}
                                     />
-                                    <Box component="span">{d.title}</Box>
-                                    <Box component="span" sx={{ opacity: 0.5, fontSize: "0.58rem" }}>{d.code}</Box>
+                                    <Box sx={{ minWidth: 0, overflow: "hidden" }}>
+                                        <Box
+                                            component="span"
+                                            sx={{
+                                                display: "block",
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                whiteSpace: "nowrap",
+                                            }}
+                                        >
+                                            {d.title}
+                                        </Box>
+                                        <Box
+                                            component="span"
+                                            sx={{
+                                                display: "block",
+                                                opacity: 0.5,
+                                                fontSize: "0.58rem",
+                                                letterSpacing: "0.06em",
+                                            }}
+                                        >
+                                            {d.code}
+                                        </Box>
+                                    </Box>
                                 </Box>
                             );
                         })}
@@ -128,7 +196,7 @@ export function ConditionDrawer({
     open = true,
 }) {
     const panel = (
-        <DrawerPanel activeKeys={activeKeys} onToggle={onToggle} onClose={onClose} />
+        <ConditionsPanel activeKeys={activeKeys} onToggle={onToggle} onClose={onClose} />
     );
 
     if (anchorEl != null) {
@@ -157,7 +225,7 @@ export function ConditionDrawer({
     if (!open) return null;
 
     return (
-        <DrawerPanel
+        <ConditionsPanel
             activeKeys={activeKeys}
             onToggle={onToggle}
             onClose={onClose}

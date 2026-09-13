@@ -14,6 +14,7 @@ import {
     normalizeConditions,
     normalizeEffort,
     normalizeTurn,
+    resolveCharacterVit,
 } from "./characterVitals";
 
 /**
@@ -61,8 +62,11 @@ export function normalizeCharacterDoc(char) {
         activeClassId = null;
     }
 
+    const vitCeiling = resolveCharacterVit(char);
     const vitRaw = Number(char.vit);
-    const vit = Number.isFinite(vitRaw) && vitRaw > 0 ? Math.floor(vitRaw) : 4;
+    const vit = Number.isFinite(vitRaw)
+        ? Math.min(Math.max(Math.floor(vitRaw), 0), vitCeiling)
+        : vitCeiling;
     const levelRaw = Number(char.level ?? char.stats?.level);
     const level = Number.isFinite(levelRaw) ? Math.max(0, Math.min(12, Math.floor(levelRaw))) : 0;
     const apRaw = Number(char.ap ?? char.abilityPoints ?? char.stats?.ap);

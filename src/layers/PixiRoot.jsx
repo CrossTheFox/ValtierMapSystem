@@ -11,8 +11,6 @@ import TurnFocusLayer from "../pixi/TurnFocusLayer";
 import GridLayer from "../pixi/GridLayer";
 import TokenLayer from "../pixi/TokenLayer";
 import TokenSpeechLayer from "../pixi/TokenSpeechLayer";
-import MapControls from "../components/MapControls";
-
 /**
  * @param {{ onViewportReady?: (vp: import("pixi-viewport").Viewport | null) => void }} props
  */
@@ -61,7 +59,6 @@ export default function PixiRoot({ onViewportReady }) {
                     <TokenSpeechLayer />
                 </MapViewportProvider>
             </Application>
-            <MapControls />
         </>
     );
 }

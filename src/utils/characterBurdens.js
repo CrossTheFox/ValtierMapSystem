@@ -1,3 +1,6 @@
+import { halfStepsFromLegacyFilled, normalizeClockSize } from "./clockInstance.js";
+import { displayFilled } from "./clockResolver.js";
+
 /**
  * Character burdens: up to 3 significant physical/mental traumas.
  * Always returns length-3; empty slots are null.
@@ -47,8 +50,9 @@ export function normalizeBurdenEffect(raw) {
  *   id: string,
  *   title: string,
  *   text: string,
- *   clockSize: 4|6|8,
+ *   clockSize: 4|6|8|12,
  *   clockFilled: number,
+ *   filledHalfSteps: number,
  *   consequence: string,
  *   effect: null|{ type: string, targetId: string, amount?: 1|2 },
  * }>}
@@ -62,18 +66,20 @@ export function normalizeBurdens(raw) {
             out[i] = null;
             continue;
         }
-        const clockSizeRaw = Number(b.clockSize);
-        const clockSize = clockSizeRaw === 6 || clockSizeRaw === 8 ? clockSizeRaw : 4;
-        const filledRaw = Number(b.clockFilled);
-        const clockFilled = Number.isFinite(filledRaw)
-            ? Math.max(0, Math.min(clockSize, Math.floor(filledRaw)))
-            : 0;
+        const clockSize = normalizeClockSize(b.clockSize);
+        const filledHalfSteps = halfStepsFromLegacyFilled(
+            b.clockFilled,
+            clockSize,
+            b.filledHalfSteps,
+        );
+        const clockFilled = displayFilled(filledHalfSteps);
         out[i] = {
             id: typeof b.id === "string" && b.id ? b.id : `burden_${i}`,
             title: typeof b.title === "string" ? b.title : "",
             text: typeof b.text === "string" ? b.text : "",
             clockSize,
             clockFilled,
+            filledHalfSteps,
             consequence: typeof b.consequence === "string" ? b.consequence : "",
             effect: normalizeBurdenEffect(b.effect),
         };
@@ -89,6 +95,7 @@ export function emptyBurden(index = 0) {
         text: "",
         clockSize: 4,
         clockFilled: 0,
+        filledHalfSteps: 0,
         consequence: "",
         effect: null,
     };
@@ -263,7 +270,10 @@ export function formatBurdenEffectSummary(effect, opts = {}) {
 /** True when clock is full and the burden should be cleared. */
 export function isBurdenClockCleared(burden) {
     if (!burden) return false;
-    const size = Number(burden.clockSize) || 4;
+    const size = normalizeClockSize(burden.clockSize);
+    if (Number.isFinite(Number(burden.filledHalfSteps))) {
+        return Number(burden.filledHalfSteps) >= size * 2;
+    }
     const filled = Number(burden.clockFilled) || 0;
     return filled >= size;
 }

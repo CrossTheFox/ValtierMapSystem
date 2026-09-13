@@ -81,6 +81,8 @@ export const Z_INDEX = {
     wikiLabMenu: 1700,
     /** Full-screen dice Decrypt / Swarm / Multi reveal */
     diceReveal: 2050,
+    /** DM character banner spotlight (Roll20-style) */
+    characterSpotlight: 2060,
     snackbar: 2100,
 };
 

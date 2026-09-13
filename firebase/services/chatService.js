@@ -53,6 +53,10 @@ export async function sendChatMessage(campaignId, {
     diceResult,
     diceFormula,
     itemCard = null,
+    clockInstanceId = null,
+    clockLabel = null,
+    rollScope = null,
+    visibleToUserIds = null,
 }) {
     await addDoc(messagesCol(campaignId), {
         type,
@@ -78,6 +82,10 @@ export async function sendChatMessage(campaignId, {
         diceResult: diceResult ?? null,
         diceFormula: diceFormula ?? null,
         itemCard: itemCard && typeof itemCard === "object" ? itemCard : null,
+        clockInstanceId: clockInstanceId ?? null,
+        clockLabel: clockLabel ?? null,
+        rollScope: rollScope ?? null,
+        visibleToUserIds: Array.isArray(visibleToUserIds) ? visibleToUserIds : null,
         createdAt: serverTimestamp(),
     });
 }

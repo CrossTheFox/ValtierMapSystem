@@ -6,8 +6,8 @@ import {
 } from "../constants/combatStats.js";
 
 /**
- * Resolve sheet combat stats: archetype defaults ← job.combatStats ← character.combatOverrides.
- * Legacy `character.vit` is treated as a soft override when `combatOverrides.vit` is absent.
+ * Resolved plate stats: archetype defaults ← job.combatStats ← character.combatOverrides.
+ * Session current VIT lives on `character.vit` (HUD/dossier) — never use it for plate `vit` / `hpMax`.
  *
  * @param {Record<string, unknown>|null|undefined} character
  * @param {Record<string, unknown>|null|undefined} claseDoc — primary/active job doc
@@ -38,14 +38,6 @@ export function resolveCombatStats(character = null, claseDoc = null) {
 
     const overrides = sanitizeCombatPartial(character?.combatOverrides);
     Object.assign(merged, overrides);
-
-    // Legacy sheet vit (pre-combatOverrides) when no explicit override
-    if (overrides.vit == null) {
-        const legacy = Number(character?.vit);
-        if (Number.isFinite(legacy) && legacy > 0) {
-            merged.vit = Math.floor(legacy);
-        }
-    }
 
     const vit = Math.max(1, Math.floor(Number(merged.vit) || 4));
     const speed = Math.max(0, Math.floor(Number(merged.speed) || 0));

@@ -100,17 +100,26 @@ function MissionClockBar({ clockSize, clockFilled, onSegmentClick, canEdit }) {
                 }}
             >
                 {Array.from({ length: size }, (_, i) => {
-                    const on = i < filled;
+                    const full = i < Math.floor(filled);
+                    const half = !full && i === Math.floor(filled) && (filled % 1) >= 0.5;
+                    const on = full || half;
                     return (
                         <Box
                             key={i}
                             component={canEdit ? "button" : "div"}
                             type={canEdit ? "button" : undefined}
-                            onClick={canEdit ? () => onSegmentClick?.(i + 1 === filled ? i : i + 1) : undefined}
+                            onClick={canEdit ? () => onSegmentClick?.(i + 1 === Math.ceil(filled) ? i : i + 1) : undefined}
                             sx={{
                                 border: `1px solid ${on ? `${UI_COLORS.anomaly}99` : UI_COLORS.border}`,
                                 borderRadius: "2px",
-                                bgcolor: on ? `${UI_COLORS.anomaly}55` : "rgba(0,0,0,0.35)",
+                                bgcolor: full
+                                    ? `${UI_COLORS.anomaly}55`
+                                    : half
+                                        ? `${UI_COLORS.anomaly}2e`
+                                        : "rgba(0,0,0,0.35)",
+                                backgroundImage: half
+                                    ? `linear-gradient(90deg, ${UI_COLORS.anomaly}88 50%, transparent 50%)`
+                                    : "none",
                                 boxShadow: on ? `0 0 8px ${UI_COLORS.anomaly}44` : "none",
                                 cursor: canEdit ? "pointer" : "default",
                                 p: 0,

@@ -11,6 +11,7 @@ import NarrativeWikiOverlay from "../components/wiki/NarrativeWikiOverlay";
 import CampaignNeuralLabOverlay from "../components/wiki/CampaignNeuralLabOverlay";
 import CyberSnackbar from "../components/customs/CyberSnackbar";
 import MapContextMenu from "../components/MapContextMenu";
+import CharacterSpotlightOverlay from "../components/vtt/CharacterSpotlightOverlay";
 import MeasuringHUD from "../components/MeasuringHUD";
 
 import TopRightHUD from "../components/hud/TopRightHUD";
@@ -20,10 +21,12 @@ import CharacterCombatHud from "../components/vtt/CharacterCombatHud";
 import LeftToolsRail from "../components/vtt/LeftToolsRail";
 import VttDiceChatDock from "../components/vtt/VttDiceChatDock";
 import InitiativeTurnBar from "../components/vtt/InitiativeTurnBar";
+import SessionClocksIsland from "../components/vtt/SessionClocksIsland";
 import {
     CHAT_MESSAGE_TYPES,
     subscribeToChatMessages,
 } from "../../firebase/services/chatService";
+import { canViewClockChatMessage } from "../utils/clockAcl";
 
 const EMPTY_TOKEN_POSITIONS = Object.freeze({});
 const EMPTY_CHAT = Object.freeze({ campaignId: null, messages: Object.freeze([]) });
@@ -43,10 +46,12 @@ const MemoAdminSettingsDialog = memo(AdminSettingsDialog);
 const MemoMapSelectorHUD = memo(MapSelectorHUD);
 const MemoTopRightHUD = memo(TopRightHUD);
 const MemoInitiativeTurnBar = memo(InitiativeTurnBar);
+const MemoSessionClocksIsland = memo(SessionClocksIsland);
 const MemoCharacterCombatHud = memo(CharacterCombatHud);
 const MemoDialogStackBar = memo(DialogStackBar);
 const MemoMeasuringHUD = memo(MeasuringHUD);
 const MemoMapContextMenu = memo(MapContextMenu);
+const MemoCharacterSpotlightOverlay = memo(CharacterSpotlightOverlay);
 const MemoLeftToolsRail = memo(LeftToolsRail);
 
 function messageTimeMs(msg) {
@@ -125,11 +130,13 @@ export default function UIOverlay() {
     const chatUnread = useMemo(() => {
         if (chatPanelOpen) return 0;
         const uid = profile?.uid;
+        const viewer = { isDM, userId: uid || null };
         return messages.filter((m) => {
+            if (!canViewClockChatMessage(m, viewer)) return false;
             if (uid && m.senderId === uid) return false;
             return messageTimeMs(m) > lastReadMs;
         }).length;
-    }, [messages, lastReadMs, chatPanelOpen, profile?.uid]);
+    }, [messages, lastReadMs, chatPanelOpen, profile?.uid, isDM]);
 
     const closeSheet = useCallback(() => dispatch(closeDialog("sheet")), [dispatch]);
     const closeSettings = useCallback(() => dispatch(closeDialog("settings")), [dispatch]);
@@ -176,6 +183,7 @@ export default function UIOverlay() {
             )}
 
             {isAuthenticated && initiativeOpen && <MemoInitiativeTurnBar />}
+            {isAuthenticated && <MemoSessionClocksIsland />}
 
             <MemoCyberSnackbar />
 
@@ -216,6 +224,7 @@ export default function UIOverlay() {
                 <MemoDialogStackBar />
                 <MemoMeasuringHUD />
                 <MemoMapContextMenu />
+                {isAuthenticated && <MemoCharacterSpotlightOverlay />}
             </div>
         </div>
     );

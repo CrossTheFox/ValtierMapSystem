@@ -133,5 +133,16 @@ describe("format + clock clear", () => {
     it("detects cleared clock", () => {
         assert.equal(isBurdenClockCleared({ clockSize: 4, clockFilled: 4 }), true);
         assert.equal(isBurdenClockCleared({ clockSize: 4, clockFilled: 3 }), false);
+        assert.equal(isBurdenClockCleared({ clockSize: 4, filledHalfSteps: 8 }), true);
+        assert.equal(isBurdenClockCleared({ clockSize: 4, filledHalfSteps: 5 }), false);
+    });
+
+    it("migrates integer clockFilled to half-steps", () => {
+        const [b] = normalizeBurdens([{ id: "b", title: "x", clockSize: 4, clockFilled: 2 }]);
+        assert.equal(b.filledHalfSteps, 4);
+        assert.equal(b.clockFilled, 2);
+        const [half] = normalizeBurdens([{ id: "b", title: "x", clockSize: 4, filledHalfSteps: 5 }]);
+        assert.equal(half.clockFilled, 2.5);
+        assert.equal(half.clockSize, 4);
     });
 });

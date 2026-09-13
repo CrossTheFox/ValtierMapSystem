@@ -18,7 +18,7 @@ import CenterFocusStrongIcon from "@mui/icons-material/CenterFocusStrong";
 import { CyberText, CyberTitle } from "../customs/CustomTexts";
 import CyberTooltip from "../customs/CyberTooltip";
 import { UI_COLORS } from "../../constants/uiColors";
-import { VTT_HUD } from "../../constants/vttHudTokens";
+import { VTT_HUD, VTT_TOP_CENTER_ISLAND_WIDTH } from "../../constants/vttHudTokens";
 import { cyberMenuItemSx, cyberMenuPaperSx } from "../../constants/designSystem";
 import { listCampaignCharacters } from "../../utils/characterCombat";
 import { useAssetUrl } from "../../hooks/useAssetUrl";
@@ -32,8 +32,8 @@ import {
 import { showSnackbar, setTurnFocus } from "../../store/uiSlice";
 
 const MAX_VISIBLE = 8;
-const ACTIVE_SIZE = 72;
-const QUEUE_SIZE = 48;
+const ACTIVE_SIZE = 52;
+const QUEUE_SIZE = 38;
 const AUTO_PAN_KEY = "piximap.initiative.autoPan";
 
 function readAutoPanPref() {
@@ -505,16 +505,19 @@ export default function InitiativeTurnBar() {
                 transform: "translateX(-50%)",
                 zIndex: 1300,
                 pointerEvents: "auto",
-                maxWidth: "min(920px, calc(100vw - 320px))",
+                width: VTT_TOP_CENTER_ISLAND_WIDTH,
             }}
         >
             <Box
                 sx={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 1,
-                    px: 1.25,
-                    py: 0.85,
+                    gap: 0.75,
+                    px: 1,
+                    py: 1,
+                    width: "100%",
+                    height: VTT_HUD.topIslandHeight,
+                    boxSizing: "border-box",
                     borderRadius: `${VTT_HUD.borderRadius}px`,
                     border: `1px solid ${started ? `${UI_COLORS.anomaly}55` : `${UI_COLORS.accent}44`}`,
                     bgcolor: "rgba(8, 6, 16, 0.9)",
@@ -547,7 +550,7 @@ export default function InitiativeTurnBar() {
                     </CyberTitle>
                     <CyberTitle
                         sx={{
-                            fontSize: started ? "1.15rem" : "0.7rem",
+                            fontSize: started ? "0.95rem" : "0.65rem",
                             letterSpacing: "0.06em",
                             color: started ? UI_COLORS.anomaly : UI_COLORS.accent,
                             lineHeight: 1.1,
@@ -564,12 +567,12 @@ export default function InitiativeTurnBar() {
                 <Box
                     sx={{
                         display: "flex",
-                        alignItems: "flex-end",
+                        alignItems: "center",
                         gap: 0.65,
                         flex: 1,
                         minWidth: 0,
                         overflow: "hidden",
-                        py: 0.25,
+                        height: "100%",
                     }}
                 >
                     {entries.length === 0 ? (
@@ -587,7 +590,7 @@ export default function InitiativeTurnBar() {
                             return (
                                 <Box
                                     key={slot.entry.uid || `${slot.entry.id}-${slot.absoluteIndex}`}
-                                    sx={{ display: "flex", alignItems: "flex-end", gap: 0.65 }}
+                                    sx={{ display: "flex", alignItems: "center", gap: 0.65 }}
                                 >
                                     {started && slot.roundBoundaryBefore && (
                                         <>
@@ -600,8 +603,8 @@ export default function InitiativeTurnBar() {
                                         {slot.isActive && started && (
                                             <CyberTitle
                                                 sx={{
-                                                    fontSize: "0.48rem",
-                                                    letterSpacing: "0.16em",
+                                                    fontSize: "0.42rem",
+                                                    letterSpacing: "0.14em",
                                                     color: UI_COLORS.anomaly,
                                                     lineHeight: 1,
                                                 }}
@@ -621,7 +624,7 @@ export default function InitiativeTurnBar() {
                                         <CyberText
                                             sx={{
                                                 maxWidth: slot.isActive ? ACTIVE_SIZE + 8 : QUEUE_SIZE,
-                                                fontSize: slot.isActive ? "0.62rem" : "0.52rem",
+                                                fontSize: slot.isActive ? "0.55rem" : "0.48rem",
                                                 color: slot.isActive && started
                                                     ? UI_COLORS.textPrimary
                                                     : UI_COLORS.textSecondary,
