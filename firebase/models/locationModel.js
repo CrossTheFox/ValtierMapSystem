@@ -7,15 +7,18 @@ export function createLocation({
     history,
     x,
     y,
-    imageUrl
+    imageUrl,
+    wikiEntityId = null,
 }) {
     return {
         mapId,
         name,
-        description,
-        history,
+        description: description || "",
+        history: history || "",
         position: { x, y },
         imageUrl,
+        /** Instance → wiki LOCACION (1 wiki : N pins). Canonical FK. */
+        wikiEntityId: wikiEntityId || null,
         createdAt: serverTimestamp()
     };
 }

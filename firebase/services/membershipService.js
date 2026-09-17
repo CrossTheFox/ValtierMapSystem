@@ -1,14 +1,13 @@
 /**
  * Bidirectional organization-membership sync.
  *
- * Membership is stored on BOTH sides (source-of-truth arrays):
- *   - organization wikiEntity: customFields.organizacion.members[]  = { kind, id, status, role }
- *   - VTT character doc:        organizationMemberships[]            = { organizationEntityId, status, role }
- *   - wiki personaje:           customFields.personaje.organizations[] = { organizationEntityId, status, role }
+ * Canonical member on an organization is customFields.organizacion.members[].
+ * Linked PERSONAJE (has linkedVttCharacterId) is stored as kind=vtt + characterId
+ * — never a second wiki-kind row for the same person.
+ * Lore-only NPCs stay kind=wiki + entityId.
  *
- * The side being saved pushes its truth to the counterpart docs (diff-based).
- * This avoids a server function but can drift if both sides are edited
- * concurrently — documented as a known limitation in funcionalidades-futuras.md.
+ * VTT chrome may still mirror organizationMemberships[] on the character doc
+ * so the table sheet can list orgs without scanning every wiki org.
  */
 
 import { db } from "../firebaseConfig";
@@ -82,44 +81,95 @@ async function setOrgMember(campaignId, orgEntityId, member, remove) {
 /* Public reconcilers                                                  */
 /* ------------------------------------------------------------------ */
 
+async function resolveOrgMember(campaignId, member) {
+    if (!member?.id) return member;
+    if (member.kind === MEMBER_KIND.VTT) return member;
+    const snap = await getDoc(wikiDocRef(campaignId, member.id));
+    const linked = snap.exists() ? snap.data()?.linkedVttCharacterId : null;
+    if (typeof linked === "string" && linked) {
+        return { ...member, kind: MEMBER_KIND.VTT, id: linked, _wikiPersonajeId: member.id };
+    }
+    return { ...member, kind: MEMBER_KIND.WIKI };
+}
+
 /**
  * After an organization is saved, push its members[] to each counterpart and
  * remove the org from members that were dropped.
+ * Linked PERSONAJE rows are coerced to kind=vtt + characterId.
  */
 export async function reconcileOrgMembers(campaignId, orgEntityId, prevMembers = [], nextMembers = []) {
     if (!campaignId || !orgEntityId) return;
-    const nextKeys = new Set(nextMembers.map(memberKey));
-    const removed = prevMembers.filter((m) => !nextKeys.has(memberKey(m)));
+    const prevResolved = await Promise.all(prevMembers.map((m) => resolveOrgMember(campaignId, m)));
+    const nextResolved = await Promise.all(nextMembers.map((m) => resolveOrgMember(campaignId, m)));
+    const nextKeys = new Set(nextResolved.map(memberKey));
+    const removed = prevResolved.filter((m) => !nextKeys.has(memberKey(m)));
 
     const tasks = [];
     for (const m of removed) {
         if (m.kind === MEMBER_KIND.VTT) tasks.push(setCharacterMembership(m.id, orgEntityId, m, true));
         else tasks.push(setPersonajeMembership(campaignId, m.id, orgEntityId, m, true));
     }
-    for (const m of nextMembers) {
+    for (const m of nextResolved) {
         if (!m.id) continue;
-        if (m.kind === MEMBER_KIND.VTT) tasks.push(setCharacterMembership(m.id, orgEntityId, m, false));
-        else tasks.push(setPersonajeMembership(campaignId, m.id, orgEntityId, m, false));
+        if (m.kind === MEMBER_KIND.VTT) {
+            tasks.push(setCharacterMembership(m.id, orgEntityId, m, false));
+            if (m._wikiPersonajeId) {
+                tasks.push(setPersonajeMembership(campaignId, m._wikiPersonajeId, orgEntityId, m, true));
+                tasks.push(setOrgMember(campaignId, orgEntityId, { kind: MEMBER_KIND.WIKI, id: m._wikiPersonajeId }, true));
+                tasks.push(setOrgMember(campaignId, orgEntityId, m, false));
+            }
+        } else {
+            tasks.push(setPersonajeMembership(campaignId, m.id, orgEntityId, m, false));
+        }
     }
     await Promise.allSettled(tasks);
 }
 
 /**
- * After a wiki personaje is saved, push its organizations[] into each org's
- * members[] (kind = wiki) and remove from dropped orgs.
+ * After a wiki personaje is saved, push its organizations[] into each org.
+ * If the PERSONAJE is linked to a VTT token, org.members uses kind=vtt.
  */
-export async function reconcilePersonajeMemberships(campaignId, personajeId, prevMemberships = [], nextMemberships = []) {
+export async function reconcilePersonajeMemberships(
+    campaignId,
+    personajeId,
+    prevMemberships = [],
+    nextMemberships = [],
+    opts = {},
+) {
     if (!campaignId || !personajeId) return;
+    let linkedVtt = typeof opts.linkedVttCharacterId === "string" ? opts.linkedVttCharacterId : null;
+    if (!linkedVtt) {
+        const snap = await getDoc(wikiDocRef(campaignId, personajeId));
+        const fromDoc = snap.exists() ? snap.data()?.linkedVttCharacterId : null;
+        linkedVtt = typeof fromDoc === "string" && fromDoc ? fromDoc : null;
+    }
+    const member = linkedVtt
+        ? { kind: MEMBER_KIND.VTT, id: linkedVtt }
+        : { kind: MEMBER_KIND.WIKI, id: personajeId };
+
     const nextKeys = new Set(nextMemberships.map(membershipKey));
     const removed = prevMemberships.filter((m) => !nextKeys.has(membershipKey(m)));
 
     const tasks = [];
     for (const m of removed) {
+        tasks.push(setOrgMember(campaignId, m.organizationEntityId, { ...member, status: m.status, role: m.role }, true));
         tasks.push(setOrgMember(campaignId, m.organizationEntityId, { kind: MEMBER_KIND.WIKI, id: personajeId, status: m.status, role: m.role }, true));
+        if (linkedVtt) {
+            tasks.push(setCharacterMembership(linkedVtt, m.organizationEntityId, m, true));
+        }
     }
     for (const m of nextMemberships) {
         if (!m.organizationEntityId) continue;
-        tasks.push(setOrgMember(campaignId, m.organizationEntityId, { kind: MEMBER_KIND.WIKI, id: personajeId, status: m.status, role: m.role }, false));
+        if (linkedVtt) {
+            tasks.push(setOrgMember(campaignId, m.organizationEntityId, { kind: MEMBER_KIND.WIKI, id: personajeId }, true));
+            tasks.push(setCharacterMembership(linkedVtt, m.organizationEntityId, m, false));
+        }
+        tasks.push(setOrgMember(campaignId, m.organizationEntityId, {
+            kind: member.kind,
+            id: member.id,
+            status: m.status,
+            role: m.role,
+        }, false));
     }
     await Promise.allSettled(tasks);
 }

@@ -3,7 +3,6 @@ import { useSelector } from "react-redux";
 import { Box, Divider, Chip, IconButton, Tooltip, Collapse } from "@mui/material";
 import LockIcon from "@mui/icons-material/Lock";
 import PeopleIcon from "@mui/icons-material/People";
-import MapIcon from "@mui/icons-material/Map";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import HubIcon from "@mui/icons-material/Hub";
@@ -15,7 +14,7 @@ import { CyberTitle, CyberText } from "../customs/CustomTexts";
 import { UI_COLORS } from "../../constants/uiColors";
 import { WIKI_ENTITY_TYPE_LABELS, WIKI_ENTITY_TYPES } from "../../constants/wikiEntityTypes";
 import { getEntityMeta } from "../../utils/wikiCustomFields";
-import { ANY_MENTION_REGEX } from "../../utils/wikiSlug";
+import { ANY_MENTION_REGEX, getBacklinkIds } from "../../utils/wikiSlug";
 import {
     resolveWikiEntityImageCandidates,
     resolveWikiEntityImageSource,
@@ -33,6 +32,9 @@ import WikiMentionRenderer from "./WikiMentionRenderer";
 import WikiCustomFieldsView from "./WikiCustomFieldsView";
 import WikiFieldInfoTip from "./WikiFieldInfoTip";
 import WikiAiImpactBlocks from "./WikiAiImpactBlocks";
+import ArchiveVttStrip from "./ArchiveVttStrip";
+import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
+import { linkedLocationIdsOf } from "../../constants/wiki/archiveIdentity.js";
 
 /**
  * Read-only detail view for a wiki entity.
@@ -105,14 +107,17 @@ export default function WikiEntityDetail({
     const isDmOnly = entity.visibility === "dm_only";
     const typeLabel = WIKI_ENTITY_TYPE_LABELS[entity.entityType] || entity.entityType;
 
-    const isVttLinkedType =
-        entity.entityType === WIKI_ENTITY_TYPES.PERSONAJE ||
-        entity.entityType === WIKI_ENTITY_TYPES.LOCACION;
+    const hasVttAnnex = Boolean(
+        entity.linkedVttCharacterId || linkedLocationIdsOf(entity).length
+    );
+    const backlinkEntities = getBacklinkIds(entity.id, entities)
+        .map((id) => entities.find((e) => e.id === id))
+        .filter(Boolean);
 
     const portraitW = compact ? 96 : 140;
 
     return (
-        <Box sx={{ height: "100%", minHeight: 0, overflowY: "auto", boxSizing: "border-box", ...scrollbarSx }}>
+        <Box sx={{ height: "100%", minHeight: 0, overflowY: "auto", boxSizing: "border-box", ...CYBER_SCROLL_STYLE }}>
             {/* ── Hero: identity + portrait ── */}
             <Box
                 sx={{
@@ -243,29 +248,13 @@ export default function WikiEntityDetail({
                     </Box>
                 )}
 
-                {/* VTT quick link */}
-                {(entity.linkedVttLocationId || entity.linkedVttCharacterId) && (
-                    <Box sx={{ display: "flex", gap: 0.75, mt: compact ? 0.85 : 1, flexWrap: "wrap" }}>
-                        {entity.linkedVttLocationId && (
-                            <Chip
-                                icon={<MapIcon sx={{ fontSize: "0.75rem !important", color: `${UI_COLORS.anomaly} !important` }} />}
-                                label={<CyberText sx={{ fontSize: "0.62rem" }}>Mapa VTT</CyberText>}
-                                size="small"
-                                onClick={() => onOpenVttLocation?.(entity.linkedVttLocationId)}
-                                sx={vttChipSx}
-                            />
-                        )}
-                        {entity.linkedVttCharacterId && (
-                            <Chip
-                                icon={<PeopleIcon sx={{ fontSize: "0.75rem !important", color: `${UI_COLORS.anomaly} !important` }} />}
-                                label={<CyberText sx={{ fontSize: "0.62rem" }}>Token VTT</CyberText>}
-                                size="small"
-                                onClick={() => onOpenVttCharacter?.(entity.linkedVttCharacterId)}
-                                sx={vttChipSx}
-                            />
-                        )}
-                    </Box>
-                )}
+                <ArchiveVttStrip
+                    entity={entity}
+                    locations={locations}
+                    compact={compact}
+                    onOpenVttLocation={onOpenVttLocation}
+                    onOpenVttCharacter={onOpenVttCharacter}
+                />
             </Box>
 
             {/* Narrative memory — visible for personajes with IA personality data */}
@@ -370,21 +359,36 @@ export default function WikiEntityDetail({
                     compact={compact}
                 />
 
-                {isVttLinkedType && !entity.linkedVttLocationId && !entity.linkedVttCharacterId && (
-                    <Box sx={{ mt: 2, p: 1, border: `1px dashed ${UI_COLORS.border}`, borderRadius: 1 }}>
-                        <CyberText sx={{ fontSize: "0.72rem", color: UI_COLORS.textSecondary, lineHeight: 1.45 }}>
-                            {entity.entityType === WIKI_ENTITY_TYPES.LOCACION
-                                ? "Sin pin en el mapa VTT. Edita la ficha para enlazar un pin cuando exista."
-                                : "Sin vínculo al token del mapa. Edita la ficha para enlazar el personaje jugable."}
+                {backlinkEntities.length > 0 && (
+                    <Box sx={{ mt: 2 }}>
+                        <CyberText sx={{ fontSize: "0.55rem", color: UI_COLORS.textSecondary, letterSpacing: "0.12em", display: "block", mb: 0.6 }}>
+                            MENCIONADO EN
                         </CyberText>
+                        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                            {backlinkEntities.map((e) => (
+                                <Chip
+                                    key={e.id}
+                                    size="small"
+                                    onClick={() => onEntityClick?.(e.id)}
+                                    label={<CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.textPrimary }}>{e.title}</CyberText>}
+                                    sx={{
+                                        height: 22,
+                                        bgcolor: `${UI_COLORS.accent}12`,
+                                        border: `1px solid ${UI_COLORS.accent}40`,
+                                        cursor: onEntityClick ? "pointer" : "default",
+                                        "& .MuiChip-label": { px: 0.75 },
+                                    }}
+                                />
+                            ))}
+                        </Box>
                     </Box>
                 )}
 
-                {(entity.linkedVttLocationId || entity.linkedVttCharacterId) && (
+                {hasVttAnnex && (
                     <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mt: 1.5 }}>
                         <MenuBookIcon sx={{ fontSize: "0.72rem", color: UI_COLORS.textSecondary }} />
                         <CyberText sx={{ fontSize: "0.65rem", color: UI_COLORS.textSecondary, lineHeight: 1.4 }}>
-                            Las menciones @ en el texto también abren fichas y tokens del mapa.
+                            Las menciones @ abren otras fichas del Archive. Ir al mapa está en la tira VTT.
                         </CyberText>
                     </Box>
                 )}
@@ -798,21 +802,6 @@ function NarrativeMemoryStrip({ highlights, compact }) {
         </Box>
     );
 }
-
-const vttChipSx = {
-    bgcolor: `${UI_COLORS.anomaly}11`,
-    border: `1px solid ${UI_COLORS.anomaly}44`,
-    color: UI_COLORS.anomaly,
-    height: 22,
-    cursor: "pointer",
-    "&:hover": { bgcolor: `${UI_COLORS.anomaly}22` },
-    "& .MuiChip-label": { px: 0.65 },
-};
-
-const scrollbarSx = {
-    "&::-webkit-scrollbar": { width: "5px" },
-    "&::-webkit-scrollbar-thumb": { backgroundColor: `${UI_COLORS.accent}66`, borderRadius: "3px" },
-};
 
 function entityActionBtnSx(color) {
     return {

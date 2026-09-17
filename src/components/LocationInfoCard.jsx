@@ -17,7 +17,7 @@ import usePopout                       from "../hooks/usePopout";
 import { ROLES }                       from "../constants/roles";
 import { UI_COLORS }                   from "../constants/uiColors";
 import { useCampaignWikiEntities } from "../hooks/useCampaignWikiEntities";
-import { WIKI_ENTITY_TYPES } from "../constants/wikiEntityTypes";
+import { findWikiLocacionForPin } from "../constants/wiki/archiveIdentity.js";
 
 export default function LocationInfoCard({ popupMode = false }) {
     const location   = useSelector((s) => s.ui.selectedLocation);
@@ -36,11 +36,9 @@ export default function LocationInfoCard({ popupMode = false }) {
     const wikiEntities = useCampaignWikiEntities(open || popupMode ? campaignId : null);
 
     const locationWikiEntity = useMemo(() => {
-        if (!location?.id) return null;
-        return wikiEntities.find(
-            (e) => e.entityType === WIKI_ENTITY_TYPES.LOCACION && e.linkedVttLocationId === location.id
-        ) || null;
-    }, [wikiEntities, location?.id]);
+        if (!location) return null;
+        return findWikiLocacionForPin(location, wikiEntities);
+    }, [wikiEntities, location]);
 
     useEffect(() => {
         if (!popupMode && locationDialogOpen) setOpen(true);

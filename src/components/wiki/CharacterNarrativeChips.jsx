@@ -2,24 +2,38 @@ import { Box, Chip } from "@mui/material";
 import { CyberText } from "../customs/CustomTexts";
 import { UI_COLORS } from "../../constants/uiColors";
 import { MEMBERSHIP_STATUS } from "../../constants/wiki/entityFieldSchemas";
+import { findWikiPersonajeForCharacter } from "../../constants/wiki/archiveIdentity.js";
+import { getCharacterMemberships, getPersonajeMemberships } from "../../utils/wikiCustomFields";
 
 /**
- * Read-only narrative chips for a VTT playable character: species, species
- * narrative traits, and organization memberships (suspected ones styled
- * differently). Resolves names from the provided wikiEntities list.
+ * Read-only narrative chips for a VTT playable character.
+ * Species and orgs prefer the wiki PERSONAJE ficha; VTT arrays are fallback.
  *
  * @param {{ character: object, wikiEntities?: object[], onOpenEntity?: (id:string)=>void }} props
  */
+export function characterNarrativeChipModel(character, wikiEntities = []) {
+    if (!character) {
+        return { species: null, traitTags: [], memberships: [] };
+    }
+    const wikiPersonaje = findWikiPersonajeForCharacter(character, character.id, wikiEntities);
+    const speciesId =
+        wikiPersonaje?.customFields?.personaje?.speciesEntityId ||
+        character.speciesEntityId ||
+        null;
+    const species = speciesId
+        ? wikiEntities.find((e) => e.id === speciesId)
+        : null;
+    const traitTags = species?.customFields?.especie?.traitTags || [];
+    const vttMemberships = getCharacterMemberships(character);
+    const wikiMemberships = getPersonajeMemberships(wikiPersonaje);
+    const memberships = vttMemberships.length ? vttMemberships : wikiMemberships;
+    return { species, traitTags, memberships, wikiPersonaje };
+}
+
 export default function CharacterNarrativeChips({ character, wikiEntities = [], onOpenEntity }) {
     if (!character) return null;
 
-    const species = character.speciesEntityId
-        ? wikiEntities.find((e) => e.id === character.speciesEntityId)
-        : null;
-    const traitTags = species?.customFields?.especie?.traitTags || [];
-    const memberships = Array.isArray(character.organizationMemberships)
-        ? character.organizationMemberships
-        : [];
+    const { species, traitTags, memberships } = characterNarrativeChipModel(character, wikiEntities);
 
     if (!species && traitTags.length === 0 && memberships.length === 0) return null;
 

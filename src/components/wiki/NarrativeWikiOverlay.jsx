@@ -50,6 +50,10 @@ import { filterEntitiesByLegend } from "./WikiGraphHud";
 import { useWikiSearch } from "../../hooks/useWikiSearch";
 import { WIKI_ENTITY_TYPES, compareEntitiesByArchiveOrder } from "../../constants/wikiEntityTypes";
 import {
+    findWikiLocacionForPin,
+    wikiEntityLinksLocation,
+} from "../../constants/wiki/archiveIdentity.js";
+import {
     filterEntitiesByWikiArea,
     getWikiArea,
     getWikiAreaForEntityType,
@@ -220,20 +224,20 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
         }
     }, [isActive, campaignId, entityId, dispatch]);
 
-    // Handle VTT context: try to find existing linked entity
+    // Handle VTT context: resolve existing linked entity without cloning a ficha.
     useEffect(() => {
         if (!isActive || !vttContext || entities.length === 0) return;
         const { linkedVttLocationId, linkedVttCharacterId } = vttContext;
+        const pin = linkedVttLocationId ? locations[linkedVttLocationId] : null;
 
         const linked = entities.find(
             (e) =>
-                (linkedVttLocationId && e.linkedVttLocationId === linkedVttLocationId) ||
+                (linkedVttLocationId && wikiEntityLinksLocation(e, linkedVttLocationId)) ||
                 (linkedVttCharacterId && e.linkedVttCharacterId === linkedVttCharacterId)
-        );
+        ) || (pin ? findWikiLocacionForPin(pin, entities) : null);
+
         if (linked) {
             dispatch(setWikiOverlayEntity(linked.id));
-        } else if (!readOnly && mode !== "create") {
-            dispatch(setWikiOverlayMode("create"));
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [entities.length]);
@@ -501,22 +505,6 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
 
             if (resolved.type === "wiki") {
                 const ent = resolved.entity;
-
-                if (ent.entityType === WIKI_ENTITY_TYPES.LOCACION && ent.linkedVttLocationId && locations[ent.linkedVttLocationId]) {
-                    openVttLocation(ent.linkedVttLocationId, 0);
-                    return;
-                }
-
-                if (ent.entityType === WIKI_ENTITY_TYPES.PERSONAJE && ent.linkedVttCharacterId) {
-                    const locId = Object.values(locations).find((loc) =>
-                        loc.characters?.some((c) => c.id === ent.linkedVttCharacterId)
-                    )?.id;
-                    if (locId) {
-                        openVttLocation(locId, 1);
-                        return;
-                    }
-                }
-
                 const targetArea = getWikiAreaForEntityType(ent.entityType);
                 const areaChanging = targetArea !== effectiveAreaFilter;
                 const entityChanging = ent.id !== entityId;
@@ -525,6 +513,7 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
                 }
                 dispatch(setWikiOverlayAreaFilter(targetArea));
                 dispatch(setWikiOverlayEntity(ent.id));
+                dispatch(setWikiOverlayMode("detail"));
             }
         },
         [dispatch, entities, locations, openVttLocation, effectiveAreaFilter, entityId, captureNavReturn]
@@ -654,6 +643,7 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
     const prefillData = {};
     if (vttContext?.linkedVttLocationId) {
         prefillData.linkedVttLocationId = vttContext.linkedVttLocationId;
+        prefillData.linkedVttLocationIds = [vttContext.linkedVttLocationId];
         const vttLoc = locations[vttContext.linkedVttLocationId];
         if (vttLoc?.name && !prefillData.title) prefillData.title = vttLoc.name;
     }

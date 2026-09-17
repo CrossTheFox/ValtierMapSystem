@@ -16,7 +16,7 @@ import { updateCampaignElement, createCampaignElement } from '../../../../fireba
 import { deleteStorageFile, uploadCharacterImage } from '../../../../firebase/services/assetLoader';
 import { listClasesForCampaign, getClaseDoc } from '../../../../firebase/services/classService';
 import { createWikiEntity } from '../../../../firebase/services/wikiEntityService';
-import { ensureNarrativeEntityForCharacter, linkWikiPersonajeToVtt } from '../../../../firebase/services/wikiVttLinkService';
+import { linkWikiPersonajeToVtt } from '../../../../firebase/services/wikiVttLinkService';
 
 import { useDispatch, useSelector } from 'react-redux';
 import { showSnackbar } from '../../../store/uiSlice';
@@ -88,7 +88,7 @@ export default function CharactersSubTab({
     const [newOrgId, setNewOrgId] = useState("");
     const [newOrgStatus, setNewOrgStatus] = useState(MEMBERSHIP_STATUS.CONFIRMADO);
     const [bootstrapped, setBootstrapped] = useState(false);
-    const [archiveMode, setArchiveMode] = useState("create"); // create | link | skip
+    const [archiveMode, setArchiveMode] = useState("skip"); // skip | create | link
     const [archiveTitle, setArchiveTitle] = useState("");
     const [archiveSummary, setArchiveSummary] = useState("");
     const [archiveLinkId, setArchiveLinkId] = useState("");
@@ -131,7 +131,7 @@ export default function CharactersSubTab({
                 combatOverrides: {},
                 vit: 4,
             });
-            setArchiveMode("create");
+            setArchiveMode("skip");
             return undefined;
         }
         if (!initialCharacterId || !characters.length) return undefined;
@@ -215,7 +215,7 @@ export default function CharactersSubTab({
             combatOverrides: {},
             vit: 4,
         });
-        setArchiveMode("create");
+        setArchiveMode("skip");
         setArchiveTitle("");
         setArchiveSummary("");
         setArchiveLinkId("");
@@ -302,13 +302,6 @@ export default function CharactersSubTab({
                 );
 
                 await applyArchiveForCharacter(docRef.id, newData.name);
-
-                // Always ensure a narrative PERSONAJE exists (even if archiveMode === "skip")
-                await ensureNarrativeEntityForCharacter(
-                    currentCampaignId,
-                    { id: docRef.id, name: newData.name, imageUrl: newData.imageUrl, narrativeEntityId: null },
-                    uid
-                );
 
                 dispatch(showSnackbar({
                     message: "PROTOCOL_EXECUTED: NEW_ENTRY_SECURED",
@@ -877,13 +870,13 @@ export default function CharactersSubTab({
                                 NARRATIVE_ARCHIVE
                             </CyberText>
                             <CyberText sx={{ fontSize: "0.65rem", color: UI_COLORS.textSecondary, mb: 1.5, display: "block", lineHeight: 1.4 }}>
-                                Al guardar: crear ficha personaje en Archive, vincular una existente, u omitir.
+                                Al guardar: omitir ficha de Archive (default), vincular una existente, o crear una sola vez. No se clona al token.
                             </CyberText>
                             <Stack direction="row" spacing={1} sx={{ mb: 1.5, flexWrap: "wrap" }}>
                                 {[
-                                    { id: "create", label: "Crear ficha" },
-                                    { id: "link", label: "Link existente" },
                                     { id: "skip", label: "Omitir" },
+                                    { id: "link", label: "Link existente" },
+                                    { id: "create", label: "Crear ficha" },
                                 ].map((opt) => (
                                     <Box
                                         key={opt.id}

@@ -39,7 +39,7 @@ export const WIKI_AREAS = [
         label: "CODEX",
         hint: "Fichas, conceptos y entidades del mundo",
         description:
-            "Códice unificado: personajes, locaciones, organizaciones, especies, reliquias, idiomas e ideologías. Fichas con texto libre, etiquetas, relaciones y vínculos al mapa.",
+            "Archivo de mesa: personas (ficha VTT + nodo wiki) y lugares (artículo + pines en mapa), más orgs, especies, reliquias, idiomas e ideologías.",
         phase: "live",
     },
     {
@@ -75,7 +75,7 @@ export const WIKI_ARCHIVE_AREAS = WIKI_AREAS.filter(
 
 /** Intro shown when browsing the codex surface. */
 export const WIKI_ARCHIVE_INTRO =
-    "Archivo narrativo de la campaña. Busca por nombre o etiqueta y haz clic en una ficha para leerla. En el texto puedes enlazar otras fichas con @menciones.";
+    "Archivo de la campaña. Una persona, una ficha; un lugar, un artículo y cero o más pines en el mapa. Busca y lee; @menciones enlazan otras fichas.";
 
 /** @type {WikiAreaId} */
 export const DEFAULT_WIKI_AREA = WIKI_AREA_IDS.LORE;
@@ -155,3 +155,13 @@ export function getWikiAreaForEntityType(entityType) {
     }
     return WIKI_AREA_IDS.LORE;
 }
+
+export {
+    ARCHIVE_CASCADE_WRITES,
+    linkedLocationIdsOf,
+    locationLinkPatch,
+    wikiEntityIdOfLocation,
+    findWikiLocacionForPin,
+    collectPinsForWikiLocation,
+    findWikiPersonajeForCharacter,
+} from "./archiveIdentity.js";

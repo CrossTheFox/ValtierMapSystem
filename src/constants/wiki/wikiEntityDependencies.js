@@ -88,7 +88,7 @@ export const WIKI_ENTITY_FIELD_DEPENDENCIES = {
             { field: "dominantLanguageEntityId", target: WIKI_ENTITY_TYPES.IDIOMA, optional: true },
             { field: "dominantIdeologyEntityId", target: WIKI_ENTITY_TYPES.IDEOLOGIA, optional: true },
             { field: "dominantSpeciesEntityId", target: WIKI_ENTITY_TYPES.ESPECIE, optional: true },
-            { field: "linkedVttLocationId", target: "vtt:locations", optional: true },
+            { field: "linkedVttLocationIds", target: "vtt:locations", optional: true },
         ],
         referencedBy: ["locacion", "especie", "organizacion", "personaje", "reliquia", "evento_historico"],
     },

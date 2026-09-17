@@ -7,37 +7,69 @@ import {
     updateWikiEntity,
 } from "./wikiEntityService";
 import { updateCharacterFields } from "./characterService";
+import { getLocation, updateLocationFields } from "./locationService";
 import { WIKI_ENTITY_TYPES } from "../../src/constants/wikiEntityTypes";
+import { linkedLocationIdsOf, locationLinkPatch } from "../../src/constants/wiki/archiveIdentity.js";
 
 /**
- * Enlaza una ficha wiki `locacion` con un pin del mapa VTT (1:1 por pin).
- * El vínculo vive en la wiki (`linkedVttLocationId`), no en el doc `locations`.
+ * Attach or detach one VTT pin to a wiki LOCACION (1 wiki : N pins).
+ * Canonical FK is `locations/{id}.wikiEntityId`. Inverse list: linkedVttLocationIds.
  *
  * @param {string} campaignId
- * @param {string|null} wikiEntityId — ficha narrativa; null = quitar vínculo del pin
- * @param {string} vttLocationId — id del doc `locations`
+ * @param {string|null} wikiEntityId — place ficha; null = detach this pin only
+ * @param {string} vttLocationId — id of `locations` pin
  * @param {string} uid
  */
 export async function linkWikiLocacionToVtt(campaignId, wikiEntityId, vttLocationId, uid) {
     if (!campaignId || !vttLocationId) return;
 
+    const pin = await getLocation(vttLocationId);
+    const pinWikiId = typeof pin?.wikiEntityId === "string" && pin.wikiEntityId
+        ? pin.wikiEntityId
+        : null;
+
     const alreadyLinked = await findWikiEntitiesByVttLink(campaignId, { locationId: vttLocationId });
-    for (const ent of alreadyLinked) {
-        if (ent.id !== wikiEntityId) {
-            await updateWikiEntity(campaignId, ent.id, { linkedVttLocationId: null }, uid);
+    const holdingIds = new Set(alreadyLinked.map((e) => e.id));
+    if (pinWikiId) holdingIds.add(pinWikiId);
+
+    for (const otherId of holdingIds) {
+        if (otherId === wikiEntityId) continue;
+        const other = alreadyLinked.find((e) => e.id === otherId)
+            || await getWikiEntity(campaignId, otherId);
+        if (!other) continue;
+        const remaining = linkedLocationIdsOf(other).filter((id) => id !== vttLocationId);
+        await updateWikiEntity(campaignId, other.id, locationLinkPatch(remaining), uid);
+    }
+
+    if (!wikiEntityId) {
+        await updateLocationFields(vttLocationId, { wikiEntityId: null });
+        return;
+    }
+
+    const entity = await getWikiEntity(campaignId, wikiEntityId);
+    if (!entity) return;
+
+    const ids = linkedLocationIdsOf(entity);
+    if (!ids.includes(vttLocationId)) ids.push(vttLocationId);
+    const updates = { ...locationLinkPatch(ids) };
+
+    if (!entity.imageUrl && pin?.imageUrl) {
+        updates.imageUrl = pin.imageUrl;
+    }
+
+    const wikiEmpty = !String(entity.summary || "").trim() && !String(entity.body || "").trim();
+    if (wikiEmpty && pin) {
+        const desc = String(pin.description || "").trim();
+        const hist = typeof pin.history === "string" ? String(pin.history).trim() : "";
+        const prose = desc || hist;
+        if (prose) {
+            updates.summary = prose.length > 280 ? `${prose.slice(0, 279).trimEnd()}…` : prose;
+            updates.body = hist || desc;
         }
     }
 
-    if (wikiEntityId) {
-        const updates = { linkedVttLocationId: vttLocationId };
-        const entity = await getWikiEntity(campaignId, wikiEntityId);
-        if (entity && !entity.imageUrl) {
-            const locSnap = await getDoc(doc(db, "locations", vttLocationId));
-            const vttImage = locSnap.exists() ? locSnap.data()?.imageUrl : null;
-            if (vttImage) updates.imageUrl = vttImage;
-        }
-        await updateWikiEntity(campaignId, wikiEntityId, updates, uid);
-    }
+    await updateWikiEntity(campaignId, wikiEntityId, updates, uid);
+    await updateLocationFields(vttLocationId, { wikiEntityId });
 }
 
 /**
@@ -59,7 +91,6 @@ export async function linkWikiPersonajeToVtt(campaignId, wikiEntityId, vttCharac
         }
     }
 
-    // Clear previous FK on character if unlinking
     if (!wikiEntityId) {
         await updateCharacterFields(vttCharacterId, { narrativeEntityId: null });
         return;
@@ -77,15 +108,6 @@ export async function linkWikiPersonajeToVtt(campaignId, wikiEntityId, vttCharac
 }
 
 /**
- * Resolve or create the 1:1 wiki PERSONAJE for a VTT character.
- * Prefers character.narrativeEntityId, then linkedVttCharacterId lookup, else creates.
- *
- * @param {string} campaignId
- * @param {{ id: string, name?: string, imageUrl?: string, narrativeEntityId?: string|null }} character
- * @param {string} uid
- * @returns {Promise<object>} wiki entity (serialized)
- */
-/**
  * One-shot: seed wiki summary/body from legacy VTT `character.bio` when the
  * narrative ficha is empty. Wiki remains the canonical source afterward.
  */
@@ -101,6 +123,10 @@ async function migrateVttBioIfNeeded(campaignId, character, entity, uid) {
     return { ...entity, summary, body };
 }
 
+/**
+ * Resolve or create the 1:1 wiki PERSONAJE for a VTT character.
+ * Used when opening NAR on a table PC — not when minting tokens.
+ */
 export async function ensureNarrativeEntityForCharacter(campaignId, character, uid) {
     if (!campaignId || !character?.id) {
         throw new Error("ensureNarrativeEntityForCharacter: missing campaignId or character.id");

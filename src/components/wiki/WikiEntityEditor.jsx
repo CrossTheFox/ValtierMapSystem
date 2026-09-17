@@ -58,6 +58,8 @@ import {
     reconcilePersonajeMemberships,
 } from "../../../firebase/services/membershipService";
 import { linkWikiLocacionToVtt, linkWikiPersonajeToVtt } from "../../../firebase/services/wikiVttLinkService";
+import { linkedLocationIdsOf } from "../../constants/wiki/archiveIdentity.js";
+import { updateLocationInState } from "../../store/worldSlice";
 import {
     uploadWikiEntityImage,
     uploadWikiInlineImage,
@@ -170,6 +172,9 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
         slug: entity?.slug || prefillData.slug || "",
         imageUrl: entity?.imageUrl || prefillData.imageUrl || "",
         linkedVttLocationId: entity?.linkedVttLocationId || prefillData.linkedVttLocationId || null,
+        linkedVttLocationIds: linkedLocationIdsOf(entity).length
+            ? linkedLocationIdsOf(entity)
+            : linkedLocationIdsOf(prefillData),
         linkedVttCharacterId: entity?.linkedVttCharacterId || prefillData.linkedVttCharacterId || null,
         customFields: entity?.customFields || prefillData.customFields || {},
     });
@@ -281,8 +286,13 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
 
     const handleTagDelete = (tag) => setForm((prev) => ({ ...prev, tags: prev.tags.filter((t) => t !== tag) }));
 
-    const handleVttLink = ({ linkedVttLocationId, linkedVttCharacterId }) => {
-        setForm((prev) => ({ ...prev, linkedVttLocationId, linkedVttCharacterId }));
+    const handleVttLink = ({ linkedVttLocationId, linkedVttLocationIds, linkedVttCharacterId }) => {
+        setForm((prev) => ({
+            ...prev,
+            linkedVttLocationId: linkedVttLocationId !== undefined ? linkedVttLocationId : prev.linkedVttLocationId,
+            linkedVttLocationIds: linkedVttLocationIds !== undefined ? linkedVttLocationIds : prev.linkedVttLocationIds,
+            linkedVttCharacterId: linkedVttCharacterId !== undefined ? linkedVttCharacterId : prev.linkedVttCharacterId,
+        }));
     };
 
     const isTimelineEvent = form.entityType === WIKI_ENTITY_TYPES.EVENTO_HISTORICO;
@@ -393,7 +403,8 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
                         campaignId,
                         savedId,
                         getPersonajeMemberships(entity),
-                        getPersonajeMemberships({ customFields: form.customFields })
+                        getPersonajeMemberships({ customFields: form.customFields }),
+                        { linkedVttCharacterId: form.linkedVttCharacterId || null }
                     );
                 }
             }
@@ -403,12 +414,17 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
                 campaignId &&
                 form.entityType === WIKI_ENTITY_TYPES.LOCACION
             ) {
-                await linkWikiLocacionToVtt(
-                    campaignId,
-                    savedId,
-                    form.linkedVttLocationId || null,
-                    uid
-                );
+                const prevIds = linkedLocationIdsOf(entity);
+                const nextIds = linkedLocationIdsOf(form);
+                const toRemove = prevIds.filter((id) => !nextIds.includes(id));
+                for (const pinId of toRemove) {
+                    await linkWikiLocacionToVtt(campaignId, null, pinId, uid);
+                    dispatch(updateLocationInState({ id: pinId, data: { wikiEntityId: null } }));
+                }
+                for (const pinId of nextIds) {
+                    await linkWikiLocacionToVtt(campaignId, savedId, pinId, uid);
+                    dispatch(updateLocationInState({ id: pinId, data: { wikiEntityId: savedId } }));
+                }
                 dispatch(fetchWikiEntities({ campaignId }));
             }
 
@@ -576,6 +592,7 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
                     <WikiVttLinkPicker
                         entityType={form.entityType}
                         linkedVttLocationId={form.linkedVttLocationId}
+                        linkedVttLocationIds={form.linkedVttLocationIds}
                         linkedVttCharacterId={form.linkedVttCharacterId}
                         onChange={handleVttLink}
                     />

@@ -43,9 +43,6 @@ import WikiAiImpactBlocks from "../wiki/WikiAiImpactBlocks";
 import WikiDateInput from "../wiki/WikiDateInput";
 import WikiSearchableSelect, { entitiesToSearchOptions } from "../wiki/WikiSearchableSelect";
 import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
-import { updateCharacterFields } from "../../../firebase/services/characterService";
-import { updateCharacterInList } from "../../store/characterSlice";
-import { updateCharacterInState } from "../../store/worldSlice";
 
 /** True until wiki entities + relations snapshots are in for this campaign. */
 function isWikiGraphLoading(wiki, campaignId) {
@@ -283,22 +280,6 @@ export default function DossierNarrativeView({ character }) {
             fichaDirtyRef.current = false;
             setEntity((prev) => ({ ...(prev || {}), ...updated, id: entityId, customFields }));
 
-            // Keep VTT species mirror in sync when present.
-            const nextSpecies = d.speciesEntityId || null;
-            if (character?.id && (character.speciesEntityId || null) !== nextSpecies) {
-                try {
-                    await updateCharacterFields(character.id, { speciesEntityId: nextSpecies });
-                    patchDraft?.({ speciesEntityId: nextSpecies });
-                    dispatch(updateCharacterInList({ id: character.id, data: { speciesEntityId: nextSpecies } }));
-                    dispatch(updateCharacterInState({
-                        id: character.id,
-                        data: { speciesEntityId: nextSpecies },
-                    }));
-                } catch (syncErr) {
-                    console.warn("[DossierNarrativeView] species VTT sync", syncErr);
-                }
-            }
-
             setSaveStatus("saved");
             if (savedClearRef.current) clearTimeout(savedClearRef.current);
             savedClearRef.current = setTimeout(() => setSaveStatus("idle"), 1600);
@@ -312,7 +293,7 @@ export default function DossierNarrativeView({ character }) {
             }));
             return false;
         }
-    }, [campaignId, uid, entity?.customFields, character?.id, character?.speciesEntityId, patchDraft, dispatch]);
+    }, [campaignId, uid, entity?.customFields, dispatch]);
 
     const persistDmNotes = useCallback(async () => {
         const entityId = entityIdRef.current;
