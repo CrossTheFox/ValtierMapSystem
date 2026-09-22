@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, memo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback, memo } from "react";
 import {
     Box, Paper, TextField, IconButton, Stack, Chip, Avatar,
 } from "@mui/material";
@@ -6,6 +6,7 @@ import SendIcon from "@mui/icons-material/Send";
 import CloseIcon from "@mui/icons-material/Close";
 import ChatIcon from "@mui/icons-material/Chat";
 import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { useDispatch, useSelector } from "react-redux";
 import { CyberTitle, CyberText } from "../customs/CustomTexts";
 import CyberTooltip from "../customs/CyberTooltip";
@@ -15,6 +16,7 @@ import GlossaryTextRenderer from "../shared/GlossaryTextRenderer";
 import {
     sendChatMessage,
     clearCampaignChat,
+    deleteChatMessages,
     CHAT_MESSAGE_TYPES,
 } from "../../../firebase/services/chatService";
 import { useAssetUrl } from "../../hooks/useAssetUrl";
@@ -827,7 +829,58 @@ function ChatMessage({ msg, glossaryEntities, avatarByCharacterId }) {
  * Rows are pure: message objects keep identity across snapshots
  * (see `subscribeToChatMessages`), so a new message renders one row.
  */
-const ChatRow = memo(ChatMessage);
+const ROW_DEL_SX = {
+    position: "relative",
+    "&:hover .vtt-chat-del": { opacity: 1 },
+};
+
+const ChatRow = memo(function ChatRow({
+    msg,
+    glossaryEntities,
+    avatarByCharacterId,
+    canDelete,
+    onDelete,
+}) {
+    return (
+        <Box sx={canDelete ? ROW_DEL_SX : undefined}>
+            <ChatMessage
+                msg={msg}
+                glossaryEntities={glossaryEntities}
+                avatarByCharacterId={avatarByCharacterId}
+            />
+            {canDelete ? (
+                <CyberTooltip title="Borrar mensaje (DJ)" placement="left">
+                    <IconButton
+                        className="vtt-chat-del"
+                        size="small"
+                        aria-label="Borrar mensaje"
+                        onClick={() => onDelete?.(msg.id)}
+                        sx={{
+                            position: "absolute",
+                            top: 4,
+                            left: 4,
+                            zIndex: 2,
+                            opacity: 0,
+                            width: 22,
+                            height: 22,
+                            p: 0,
+                            color: UI_COLORS.textPrimary,
+                            bgcolor: "rgba(0,0,0,0.72)",
+                            border: `1px solid ${UI_COLORS.border}`,
+                            "&:hover": {
+                                color: UI_COLORS.danger,
+                                borderColor: `${UI_COLORS.danger}88`,
+                                bgcolor: `${UI_COLORS.danger}22`,
+                            },
+                        }}
+                    >
+                        <DeleteOutlineIcon sx={{ fontSize: "0.85rem" }} />
+                    </IconButton>
+                </CyberTooltip>
+            ) : null}
+        </Box>
+    );
+});
 
 const LIST_SX = {
     flex: 1,
@@ -863,6 +916,8 @@ const MessageList = memo(function MessageList({
     visibleMessages,
     glossaryEntities,
     avatarByCharacterId,
+    canDelete = false,
+    onDelete,
 }) {
     const [limit, setLimit] = useState(RENDER_WINDOW);
     const lastIdRef = useRef(null);
@@ -904,6 +959,8 @@ const MessageList = memo(function MessageList({
                     msg={m}
                     glossaryEntities={glossaryEntities}
                     avatarByCharacterId={avatarByCharacterId}
+                    canDelete={canDelete}
+                    onDelete={onDelete}
                 />
             ))}
         </Box>
@@ -1017,6 +1074,20 @@ export default function VttChatPanel({
         setText("");
     };
 
+    const handleDeleteMessage = useCallback(async (messageId) => {
+        if (!campaignId || !isDM || !messageId) return;
+        try {
+            await deleteChatMessages(campaignId, [messageId]);
+            dispatch(showSnackbar({ message: "Mensaje borrado", severity: "success" }));
+        } catch (err) {
+            console.error("[VttChatPanel] delete message:", err);
+            dispatch(showSnackbar({
+                message: "No se pudo borrar el mensaje",
+                severity: "error",
+            }));
+        }
+    }, [campaignId, isDM, dispatch]);
+
     const handleClearChat = async ({ withBackup }) => {
         if (!campaignId || !isDM || clearing) return;
         setClearing(true);
@@ -1098,6 +1169,8 @@ export default function VttChatPanel({
                     visibleMessages={visibleMessages}
                     glossaryEntities={glossaryEntities}
                     avatarByCharacterId={avatarByCharacterId}
+                    canDelete={isDM}
+                    onDelete={handleDeleteMessage}
                 />
             ) : (
                 <Box sx={{ flex: 1, minHeight: 0 }} />

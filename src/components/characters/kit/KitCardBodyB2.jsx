@@ -404,14 +404,22 @@ function EffectRowEdit({ fx, onChange, onDelete }) {
     );
 }
 
+function effectProse(text) {
+    return String(text || "")
+        .replace(MACRO_RE, "")
+        .replace(/[^\S\n]+/g, " ")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+}
+
 function EffectRowView({ fx, provenance, formulaCtx }) {
     const macros = extractMacroTokens(fx.text);
-    const prose = String(fx.text || "").replace(MACRO_RE, "").replace(/\s+/g, " ").trim();
+    const prose = effectProse(fx.text);
     const lane = fx.lane || "plain";
     return (
         <Box sx={{
             display: "flex",
-            alignItems: "center",
+            alignItems: "flex-start",
             gap: "8px",
             border: `1px solid ${lane === "hit" ? "rgba(255,138,61,0.35)" : lane === "mech" ? "rgba(167,139,250,0.4)" : "rgba(255,255,255,0.1)"}`,
             borderRadius: "3px",
@@ -432,8 +440,22 @@ function EffectRowView({ fx, provenance, formulaCtx }) {
             }}>
                 {fx.label || LANE_LABEL[lane] || "NONE"}
             </Box>
-            <Box sx={{ fontFamily: "'Fira Sans', sans-serif", fontSize: "0.74rem", color: "rgba(255,255,255,0.85)", lineHeight: 1.35, minWidth: 0 }}>
-                {prose || <Box component="span" sx={{ opacity: 0.4 }}>—</Box>}
+            <Box sx={{ fontFamily: "'Fira Sans', sans-serif", fontSize: "0.74rem", color: "rgba(255,255,255,0.85)", lineHeight: 1.35, minWidth: 0, flex: 1 }}>
+                {prose ? (
+                    <KitMarkdown
+                        compact
+                        content={prose}
+                        emptyLabel=""
+                        sx={{
+                            fontSize: "0.74rem",
+                            fontStyle: "normal",
+                            color: "rgba(255,255,255,0.88)",
+                            "& p": { fontStyle: "normal", color: "rgba(255,255,255,0.88)" },
+                        }}
+                    />
+                ) : (
+                    <Box component="span" sx={{ opacity: 0.4 }}>—</Box>
+                )}
                 {macros.map((m, i) => (
                     <Box key={`${m}-${i}`} component="span" sx={{
                         ml: "5px",
@@ -547,9 +569,18 @@ function UpgradeSlot({ badge, upgrade, character, ctx, disabled, onUnlockNode })
                         {open ? "▲ ocultar" : "▼ detalle"}
                     </Box>
                     {open && (
-                        <Box sx={{ mt: "4px", fontSize: "0.76rem", color: "rgba(255,255,255,0.85)", lineHeight: 1.4 }}>
-                            {upgrade.blurb || upgrade.description || "Sin descripción."}
-                        </Box>
+                        <KitMarkdown
+                            compact
+                            content={upgrade.blurb || upgrade.description || ""}
+                            emptyLabel="Sin descripción."
+                            sx={{
+                                mt: "4px",
+                                fontSize: "0.76rem",
+                                fontStyle: "normal",
+                                color: "rgba(255,255,255,0.88)",
+                                "& p": { fontStyle: "normal", color: "rgba(255,255,255,0.88)", mb: 0.25 },
+                            }}
+                        />
                     )}
                 </>
             )}

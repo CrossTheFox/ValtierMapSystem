@@ -75,7 +75,7 @@ const CyberTooltipContent = ({ ability, accentColor }) => (
                 <CyberTitle sx={{ color: accentColor, fontSize: "0.85rem" }}>{ability.label}</CyberTitle>
                 {ability.cost ? <CyberText sx={{ fontSize: "0.65rem", color: accentColor }}>[{ability.cost.toUpperCase()}]</CyberText> : null}
             </Box>
-            <CyberText sx={{ fontSize: "0.75rem", opacity: 0.9 }}>{ability.content}</CyberText>
+            <CyberText sx={{ fontSize: "0.75rem", opacity: 0.9, whiteSpace: "pre-wrap" }}>{ability.content}</CyberText>
         </Stack>
     </Paper>
 );

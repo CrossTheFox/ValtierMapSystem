@@ -7,6 +7,7 @@ import { FxRail } from "../characters/kit/FxRail";
 import { ChatTime, RawAvatar, faceMode } from "./chatCardShared";
 import { useFitChips } from "../../hooks/useFitChips";
 import { looksLikeStructuredKitBody } from "../../utils/abilityContentParser";
+import KitMarkdown from "../characters/KitMarkdown";
 
 /**
  * C2 chat card — Slice 6 (`PHASE-03-GUIDE.md` §6.4). Ports `cardC2()` from the
@@ -38,7 +39,7 @@ const TONE_PALETTE = {
         accent: "#00f2ea",
         badge: "ABILITY",
         border: "rgba(0,242,234,0.4)",
-        background: "linear-gradient(135deg, rgba(255,138,61,0.08) 0%, rgba(7,7,14,0.94) 42%, rgba(0,0,0,0.6) 100%)",
+        background: "linear-gradient(135deg, rgba(0,242,234,0.10) 0%, rgba(7,7,14,0.94) 42%, rgba(0,0,0,0.6) 100%)",
         boxShadow: "0 0 18px rgba(0,242,234,0.1), inset 0 0 0 1px rgba(255,255,255,0.04)",
         headBorder: "rgba(0,242,234,0.22)",
         avatarBg: "rgba(0,242,234,0.18)",
@@ -445,7 +446,7 @@ function C2Strip({ atk }) {
 function C2FxLine({ fx }) {
     const rolls = Array.isArray(fx.rolls) ? fx.rolls : [];
     return (
-        <Box sx={{ display: "flex", alignItems: "stretch", gap: "6px", py: "4px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+        <Box sx={{ display: "flex", alignItems: "flex-start", gap: "6px", py: "4px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
             {fx.from ? (
                 <FxRail badge={fx.from} dense />
             ) : (
@@ -458,8 +459,20 @@ function C2FxLine({ fx }) {
                 }}>
                     {fx.label || CC_LANE_LABEL[fx.lane] || "EFFECT"}
                 </Box>
-                <Box sx={{ fontSize: "0.82rem", color: "rgba(255,255,255,0.85)", lineHeight: 1.4 }}>
-                    {fx.resolvedText}
+                <Box sx={{ fontSize: "0.82rem", color: "rgba(255,255,255,0.85)", lineHeight: 1.4, minWidth: 0, flex: 1 }}>
+                    {fx.resolvedText ? (
+                        <KitMarkdown
+                            compact
+                            content={fx.resolvedText}
+                            emptyLabel=""
+                            sx={{
+                                fontSize: "0.82rem",
+                                fontStyle: "normal",
+                                color: "rgba(255,255,255,0.88)",
+                                "& p": { fontStyle: "normal", color: "rgba(255,255,255,0.88)", mb: 0.25 },
+                            }}
+                        />
+                    ) : null}
                     {rolls.map((r, i) => (
                         <Box
                             key={i}
@@ -503,9 +516,12 @@ export default function AbilityC2Card({ msg, avatarByCharacterId }) {
             <C2Head msg={msg} avatarByCharacterId={avatarByCharacterId} palette={palette} tone={tone} hasAttack={hasAttack} />
             <C2Chips msg={msg} />
             {shouldShowFlavor(msg) ? (
-                <Box component="p" sx={{ m: 0, px: "10px", pt: "2px", pb: 1, fontSize: "0.82rem", lineHeight: 1.4, color: "rgba(255,255,255,0.78)", fontStyle: "italic" }}>
-                    {msg.text}
-                </Box>
+                <KitMarkdown
+                    compact
+                    content={msg.text}
+                    emptyLabel=""
+                    sx={{ px: "10px", pt: "2px", pb: 1, fontSize: "0.82rem" }}
+                />
             ) : null}
             {hasAttack && <C2RollBand atk={msg.abilityAttack} />}
             {hasAttack && <C2Strip atk={msg.abilityAttack} />}

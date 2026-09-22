@@ -1119,7 +1119,8 @@ function ActionModsToolbar({ delta, onDelta, poolPreview }) {
                 alignItems: "center",
                 gap: 0.65,
                 minWidth: 0,
-                flexWrap: "wrap",
+                flexWrap: "nowrap",
+                flexShrink: 0,
                 justifyContent: "flex-end",
             }}
         >
@@ -2292,14 +2293,14 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                         sx={{
                             position: "relative",
                             display: "grid",
-                            gridTemplateColumns: "auto minmax(0, 1fr) 26px 28px 32px",
+                            gridTemplateColumns: "auto minmax(0, 1fr) 22px 14px 30px",
                             columnGap: 0,
                             alignItems: "center",
                             width: "100%",
                             minWidth: 0,
                             maxWidth: "100%",
                             boxSizing: "border-box",
-                            p: "14px 14px 14px 18px",
+                            p: "14px 10px 14px 16px",
                             minHeight: 96,
                             overflow: "visible",
                             zIndex: 2,
@@ -2433,7 +2434,7 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                                 flexDirection: "column",
                                 gap: "5px",
                                 zIndex: 2,
-                                pr: "10px",
+                                pr: "6px",
                             }}
                         >
                             <Box sx={{ minWidth: 0 }}>
@@ -2740,7 +2741,7 @@ export default function CharacterCombatHud({ abilityBarOpen = false, onToggleAbi
                                 justifyContent: "flex-end",
                                 gap: "3px",
                                 height: 54,
-                                width: 24,
+                                width: 20,
                                 zIndex: 2,
                                 justifySelf: "center",
                             }}

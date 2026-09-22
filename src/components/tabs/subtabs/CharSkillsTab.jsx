@@ -84,7 +84,7 @@ const SkillCard = ({ ability, upgrades = [], accentColor = UI_COLORS.accent, lis
                 <GlossaryTextRenderer
                     text={ability.content}
                     entities={glossaryEntities}
-                    sx={{ fontSize: listMode ? "0.78rem" : "0.85rem", lineHeight: 1.5, color: "#fff", opacity: 0.9 }}
+                    sx={{ fontSize: listMode ? "0.78rem" : "0.85rem", lineHeight: 1.5, color: "#fff", opacity: 0.9, whiteSpace: "pre-wrap" }}
                 />
             )}
             {upgrades.length > 0 && (
@@ -95,7 +95,7 @@ const SkillCard = ({ ability, upgrades = [], accentColor = UI_COLORS.accent, lis
                                 MOD: {upg.label?.toUpperCase()}
                             </CyberText>
                             {upg.content && (
-                                <GlossaryTextRenderer text={upg.content} entities={glossaryEntities} sx={{ fontSize: "0.76rem", opacity: 0.8, color: "#fff" }} />
+                                <GlossaryTextRenderer text={upg.content} entities={glossaryEntities} sx={{ fontSize: "0.76rem", opacity: 0.8, color: "#fff", whiteSpace: "pre-wrap" }} />
                             )}
                         </Box>
                     ))}

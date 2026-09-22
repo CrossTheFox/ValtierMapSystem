@@ -151,12 +151,88 @@ const MD_COMPONENTS = {
     ),
 };
 
+/** Chat / HUD / effect rows — tighter, font-size inherited from the wrapper. */
+const MD_COMPONENTS_COMPACT = {
+    ...MD_COMPONENTS,
+    p: ({ children }) => (
+        <Box
+            component="p"
+            sx={{
+                m: 0,
+                mb: 0.35,
+                fontFamily: "'Fira Sans', sans-serif",
+                fontSize: "inherit",
+                lineHeight: 1.4,
+                fontStyle: "italic",
+                color: "rgba(255,255,255,0.78)",
+                "&:last-child": { mb: 0 },
+            }}
+        >
+            {children}
+        </Box>
+    ),
+    strong: ({ children }) => (
+        <Box
+            component="strong"
+            sx={{
+                color: UI_COLORS.accent,
+                fontWeight: 700,
+                fontStyle: "normal",
+                letterSpacing: "0.01em",
+            }}
+        >
+            {children}
+        </Box>
+    ),
+    em: ({ children }) => (
+        <Box component="em" sx={{ color: UI_COLORS.anomaly, fontStyle: "italic" }}>
+            {children}
+        </Box>
+    ),
+    li: ({ children }) => (
+        <Box
+            component="li"
+            sx={{
+                mb: 0.2,
+                fontFamily: "'Fira Sans', sans-serif",
+                fontSize: "inherit",
+                lineHeight: 1.4,
+                color: "rgba(255,255,255,0.78)",
+            }}
+        >
+            {children}
+        </Box>
+    ),
+    ul: ({ children }) => (
+        <Box component="ul" sx={{ m: 0, mb: 0.35, pl: 2, "&:last-child": { mb: 0 } }}>
+            {children}
+        </Box>
+    ),
+    ol: ({ children }) => (
+        <Box component="ol" sx={{ m: 0, mb: 0.35, pl: 2, "&:last-child": { mb: 0 } }}>
+            {children}
+        </Box>
+    ),
+};
+
+/** Keep authored single newlines as hard breaks; blank lines still make paragraphs. */
+function withHardBreaks(src) {
+    return String(src).replace(/([^\n])\n(?!\n)/g, "$1  \n");
+}
+
 /**
  * Cyber-styled Markdown for Kit dossier read view (Job, Special Mechanic, traits, LB).
+ * `compact` = chat / HUD flavor (italic, inherited size, tight gaps).
  */
-export default function KitMarkdown({ content, emptyLabel = "Sin descripción.", sx = {} }) {
-    const raw = String(content || "").trim();
+export default function KitMarkdown({
+    content,
+    emptyLabel = "Sin descripción.",
+    sx = {},
+    compact = false,
+}) {
+    const raw = withHardBreaks(String(content || "").trim());
     if (!raw) {
+        if (!emptyLabel) return null;
         return (
             <Box
                 sx={{
@@ -181,7 +257,9 @@ export default function KitMarkdown({ content, emptyLabel = "Sin descripción.",
                 ...sx,
             }}
         >
-            <ReactMarkdown components={MD_COMPONENTS}>{raw}</ReactMarkdown>
+            <ReactMarkdown components={compact ? MD_COMPONENTS_COMPACT : MD_COMPONENTS}>
+                {raw}
+            </ReactMarkdown>
         </Box>
     );
 }

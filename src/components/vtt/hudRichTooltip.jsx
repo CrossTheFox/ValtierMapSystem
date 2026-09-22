@@ -1,5 +1,6 @@
 import { Box } from "@mui/material";
 import { UI_COLORS } from "../../constants/uiColors";
+import KitMarkdown from "../characters/KitMarkdown";
 
 /** Shared paper overrides for Action / Macro rich tooltips (overrides CyberTooltip mono uppercase). */
 export const hudRichTooltipSlotProps = {
@@ -21,12 +22,12 @@ export const hudRichTooltipSlotProps = {
  * Rich HUD tip body — title (Orbitron) + optional body (Fira Sans) + optional meta line.
  * Used by Action tiles and Macro slots so both share one look.
  */
-export function HudRichTooltipTitle({ title, body, meta, metaColor }) {
+export function HudRichTooltipTitle({ title, body, meta, metaColor, maxWidth = 240 }) {
     const hasBody = Boolean(body);
     const hasMeta = Boolean(meta);
 
     return (
-        <Box sx={{ textAlign: "left", maxWidth: 240 }}>
+        <Box sx={{ textAlign: "left", maxWidth }}>
             {title ? (
                 <Box
                     sx={{
@@ -42,19 +43,16 @@ export function HudRichTooltipTitle({ title, body, meta, metaColor }) {
                 </Box>
             ) : null}
             {hasBody ? (
-                <Box
+                <KitMarkdown
+                    compact
+                    content={body}
+                    emptyLabel=""
                     sx={{
-                        fontFamily: "'Fira Sans', sans-serif",
                         fontSize: "0.72rem",
                         letterSpacing: 0,
                         textTransform: "none",
-                        color: "rgba(255,255,255,0.85)",
-                        lineHeight: 1.35,
-                        whiteSpace: "pre-wrap",
                     }}
-                >
-                    {body}
-                </Box>
+                />
             ) : null}
             {hasMeta ? (
                 <Box

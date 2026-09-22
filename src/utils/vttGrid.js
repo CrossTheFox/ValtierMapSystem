@@ -8,7 +8,7 @@ export const VTT_GRID_INSET = 16;
 export const VTT_GRID = {
     cols: 12,
     gapVw: 0.5,
-    combatSpan: 3,
+    combatSpan: 3.5,
     macrosSpan: 4,
     /** Half-column allowed — chat is permanently 2.5 / 12 on every viewport. */
     chatSpan: 2.5,
@@ -41,7 +41,7 @@ export function vttGapCss() {
 
 /**
  * Axis-aligned HUD islands used to assert they do not overlap.
- * Combat = 3 cols (left). Macros = 4 cols centered. Chat = 2.5 cols (right).
+ * Combat = 3.5 cols (left). Macros = 4 cols centered. Chat = 2.5 cols (right).
  */
 export function vttHudRects(viewportWidth, inset = VTT_GRID_INSET) {
     const vw = Number(viewportWidth);
