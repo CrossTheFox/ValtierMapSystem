@@ -23,6 +23,7 @@ import {
     combatDefaultsForArchetype,
     sanitizeClassResource,
     sanitizeCombatPartial,
+    sanitizeSpecialMechanic,
 } from "../../constants/combatStats";
 import {
     ABILITY_KINDS,
@@ -893,6 +894,9 @@ export default function DossierKitView({ character, initialMaletinOpen = false }
                     resource={jobResourceDef}
                     resourceValue={jobResourceValue}
                     onChangeResourceValue={setJobResourceValue}
+                    jobDescription={claseDoc?.description || ""}
+                    specialMechanic={sanitizeSpecialMechanic(claseDoc?.specialMechanic)}
+                    jobArchetype={claseDoc?.classArchetype || ""}
                     maletinOpen={maletinOpen}
                     maletinCount={maletinCount}
                     onToggleMaletin={() => setMaletinOpen((v) => !v)}

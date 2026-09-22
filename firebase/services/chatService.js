@@ -189,6 +189,33 @@ export async function clearAllChatMessages(campaignId) {
 }
 
 /**
+ * Delete specific chat messages (DM-only via rules). Used to wipe QA/test posts
+ * without clearing the whole campaign log.
+ * @returns {Promise<number>} deleted count
+ */
+export async function deleteChatMessages(campaignId, messageIds) {
+    const ids = [...new Set((Array.isArray(messageIds) ? messageIds : []).filter(Boolean).map(String))];
+    if (!campaignId || ids.length === 0) return 0;
+
+    let deleted = 0;
+    let batch = writeBatch(db);
+    let ops = 0;
+
+    for (const id of ids) {
+        batch.delete(doc(db, "campaigns", campaignId, "messages", id));
+        ops += 1;
+        deleted += 1;
+        if (ops >= BATCH_LIMIT) {
+            await batch.commit();
+            batch = writeBatch(db);
+            ops = 0;
+        }
+    }
+    if (ops > 0) await batch.commit();
+    return deleted;
+}
+
+/**
  * Download a JSON backup of chat messages, then wipe the collection.
  * @param {string} campaignId
  * @param {{ withBackup?: boolean, campaignName?: string }} [opts]

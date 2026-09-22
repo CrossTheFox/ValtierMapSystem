@@ -3,6 +3,8 @@ import { Box } from "@mui/material";
 import {
     TRAIT_MODES,
     TRAIT_MODE_COLORS,
+    TRAIT_MODE_HELP,
+    TRAIT_MODE_LABELS,
     normalizeTraitMode,
 } from "../../../constants/abilityKinds";
 import { MACRO_SLOT_TYPES } from "../../../constants/macroBar";
@@ -21,6 +23,8 @@ import KitCardBodyB2 from "./KitCardBodyB2";
 import { CostChip, RangeChip, AoeChip, TraitModeChip } from "./KitHeaderChips";
 import KitTagBtn from "./KitTagBtn";
 import { CARD_BASE_SX, CHEVRON_SX, HD_DIV_SX } from "./kitCardChrome";
+import CyberTooltip from "../../customs/CyberTooltip";
+import { HudRichTooltipTitle, hudRichTooltipSlotProps } from "../../vtt/hudRichTooltip";
 
 const MODE_ICON = {
     [TRAIT_MODES.PASSIVE]: KitSvgModePassive,
@@ -121,21 +125,56 @@ export default function TraitCategoryRail({
                     boxShadow: `inset 4px 0 0 ${accent}`,
                 }}
             >
-                <Box
-                    onClick={onRailClick}
-                    title={kitEdit ? "Click para elegir traitMode" : mode}
-                    sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        borderRight: "1px solid rgba(255,255,255,0.1)",
-                        background: `${accent}1f`,
-                        color: accent,
-                        cursor: kitEdit ? "pointer" : "default",
-                        "&:hover": kitEdit ? { filter: "brightness(1.25)" } : undefined,
-                    }}
-                >
-                    <Icon size={22} />
+                <Box sx={{ position: "relative", minHeight: 48 }}>
+                    <CyberTooltip
+                        title={(
+                            <HudRichTooltipTitle
+                                title={TRAIT_MODE_LABELS[mode]}
+                                body={TRAIT_MODE_HELP[mode]}
+                                meta={kitEdit ? "Click para cambiar modo" : "TRAIT MODE"}
+                                metaColor={accent}
+                            />
+                        )}
+                        placement="right"
+                        slotProps={hudRichTooltipSlotProps}
+                    >
+                        <Box
+                            onClick={onRailClick}
+                            aria-label={TRAIT_MODE_LABELS[mode]}
+                            sx={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                height: "100%",
+                                minHeight: 48,
+                                borderRight: "1px solid rgba(255,255,255,0.1)",
+                                background: `${accent}1f`,
+                                color: accent,
+                                cursor: kitEdit ? "pointer" : "help",
+                                "&:hover": { filter: "brightness(1.25)" },
+                            }}
+                        >
+                            <Icon size={22} />
+                        </Box>
+                    </CyberTooltip>
+                    {kitEdit ? (
+                        <Box
+                            sx={{
+                                position: "absolute",
+                                inset: 0,
+                                opacity: 0,
+                                overflow: "hidden",
+                                pointerEvents: "none",
+                            }}
+                        >
+                            <TraitModeChip
+                                value={trait.traitMode}
+                                kitEdit={kitEdit}
+                                openRef={modeOpenRef}
+                                onChange={(next) => onPatch?.({ traitMode: next })}
+                            />
+                        </Box>
+                    ) : null}
                 </Box>
                 <Box
                     sx={{
@@ -151,8 +190,8 @@ export default function TraitCategoryRail({
                     <Box
                         sx={{
                             fontFamily: "Orbitron, sans-serif",
-                            fontSize: "0.72rem",
-                            letterSpacing: "0.06em",
+                            fontSize: "0.78rem",
+                            letterSpacing: "0.04em",
                             color: "#ffffff",
                             whiteSpace: "nowrap",
                             overflow: "hidden",
@@ -163,14 +202,6 @@ export default function TraitCategoryRail({
                         }}
                     >
                         {trait.label}
-                    </Box>
-                    <Box onClick={kitEdit ? (e) => e.stopPropagation() : undefined}>
-                        <TraitModeChip
-                            value={trait.traitMode}
-                            kitEdit={kitEdit}
-                            openRef={modeOpenRef}
-                            onChange={(next) => onPatch?.({ traitMode: next })}
-                        />
                     </Box>
                     <Box onClick={kitEdit ? (e) => e.stopPropagation() : undefined}>
                         <TraitVpack trait={trait} kitEdit={kitEdit} onPatch={onPatch} />

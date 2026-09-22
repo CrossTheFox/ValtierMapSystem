@@ -179,9 +179,9 @@ export const ENTITIES = [
         entityType: "ideologia",
         title: "Pecado de la Totalidad (Acedia)",
         summary: "Ideología mirageana: el individuo debe fundirse en la masa para corregir los errores de los dioses.",
-        body: `Doctrina espiritual y política dominante en @[mirage], articulada en torno a **@[zero]** y las maldiciones de @[zerynhya].
+        body: `Doctrina espiritual y política dominante en @[mirage], articulada en torno a **@[zero]** y las maldiciones de @[juuhndy].
 
-Sostiene que la **Acedia** — el «pecado de la totalidad» — no es pereza sino **renuncia voluntaria al yo** en favor de la conciencia colectiva. El individuo que resiste la fusión «repite el error de los antiguos dioses»: orgullo, separación, traición a la herencia Zarken.
+Sostiene que la **Acedia** — el «pecado de la totalidad» — no es pereza sino **renuncia voluntaria al yo** en favor de la conciencia colectiva. El individuo que resiste la fusión «repite el error de los antiguos dioses»: orgullo, separación, traición a la herencia Zarken. Doctrina alineada con los Tomos de la Perdición de @[juuhndy].
 
 Manifestaciones cotidianas:
 
@@ -356,7 +356,7 @@ Otros bloques (comercio, transporte, magia civil) rotan con más frecuencia.
         entityType: "locacion",
         title: "Mirage",
         summary: "Fortaleza de la Conciencia Colectiva: metrópoli gótica dictatorial donde Zero gobierna a través de un contrato pactado con todos los habitantes.",
-        body: `**Mirage: la fortaleza de la conciencia colectiva.** Fundada por @[zerynhya], hija de @[zaakhiel], quien abandonó el proyecto galathiano al considerar la unión de su padre con la mortalidad (**@[juuhndy]**) una traición a la herencia divina Zarken. Prefirió fundar una ciudad donde los dioses no se rebajaran mezclándose con mortales — aunque luego aceptó a @[elekhias] como regente enviado por su madre.
+        body: `**Mirage: la fortaleza de la conciencia colectiva.** Fundada por @[juuhndy], hija de @[zaakhiel] y @[zerynhya], quien abandonó el proyecto galathiano al considerar que sus padres cedían ante la «miseria mortal» — una traición a la herencia Zarken. Prefirió fundar una ciudad donde el linaje no se rebajara mezclándose con mortales — aunque luego aceptó a @[elekhias] como regente enviado por su madre @[zerynhya].
 
 ## Cultura y orden social
 
@@ -368,7 +368,7 @@ La estética urbana es **gótica-industrial**: torres negras, estandartes, proce
 
 Mirage **no está gobernada por un individuo físico visible**, sino por **@[zero]** — una **conciencia colectiva** que habita dentro de todos los habitantes mediante un **contrato pactado** (término legal y espiritual a la vez). Zero puede tomar control total de cualquier ciudadano en cualquier momento; cuando lo hace, sus ojos brillan con un **fucsia intenso** reconocible al instante.
 
-En público, la ciudad obedece a @[los-pecados] — los siete cargos malditos creados por Zerynhya. Zero opera **detrás** de ese telón.
+En público, la ciudad obedece a @[los-pecados] — los siete cargos malditos creados por Juuhndy. Zero opera **detrás** de ese telón.
 
 ## Poder militar: los Siete Pecados Capitales
 
@@ -650,7 +650,7 @@ Epicentro de la resistencia cultural contra el legado Zarken imperial:
         entityType: "organizacion",
         title: "Los Pecados",
         summary: "Siete cargos malditos gobernantes de Mirage (+ Zero oculto); incluyen las unidades Siete Pecados Capitales.",
-        body: `Maldiciones transferibles creadas por @[zerynhya]. Los cargos se disputan en pruebas dolorosas y **no son heredables**. Gobernan @[mirage] **en público** mientras **@[zero]** opera como conciencia suprema.
+        body: `Maldiciones transferibles creadas por @[juuhndy]. Los cargos se disputan en pruebas dolorosas y **no son heredables**. Gobernan @[mirage] **en público** mientras **@[zero]** opera como conciencia suprema.
 
 Las **Siete Pecados Capitales** son unidades de combate de élite (estética *Kamen Rider*) — «máquinas de combate Zarken» al servicio del régimen. Los titulares de cargo (@[eins], @[zwei], etc.) no siempre son los mismos operadores de las unidades Capitales, pero el mito los fusiona en la propaganda.`,
         tags: ["mirage", "pecados", "zero"],
@@ -858,8 +858,8 @@ No es un partido ni un ejército, pero sus conciertos congregan a miles y sus s�
         slug: "zaakhiel",
         entityType: "personaje",
         title: "Zaakhiel",
-        summary: "Fundador Zarken de Galathia; padre de Zerynhya y Elekhias.",
-        body: "Fundó @[galathia]. Esposo de @[juuhndy] y padre de @[zerynhya] y @[elekhias]. Su caída se conmemora como el **Día de la Caída** en Galathia y Mirage.",
+        summary: "Fundador Zarken de Galathia; esposo de Zerynhya; padre de Juuhndy y Elekhias.",
+        body: "Fundó @[galathia]. Esposo de @[zerynhya] y padre de @[juuhndy] y @[elekhias]. Su caída se conmemora como el **Día de la Caída** en Galathia y Mirage.",
         tags: ["fundador", "zarken", "historia", "familia"],
         refs: { speciesEntityId: "zarken", birthPlaceEntityId: "wernegar" },
         meta: { characterKind: "historico" },
@@ -868,8 +868,8 @@ No es un partido ni un ejército, pero sus conciertos congregan a miles y sus s�
         slug: "elekhias",
         entityType: "personaje",
         title: "Elekhias",
-        summary: "Hijo de Zaakhiel y Juuhndy; regente de Mirage junto a Zerynhya.",
-        body: "Hijo de @[zaakhiel] y @[juuhndy], hermano de @[zerynhya]. Tras la fundación de @[mirage] por su hermana, fue enviado a gobernarla junto a ella a petición de @[juuhndy], para cuidarla: Zerynhya no quería mezclarse con los mortales. Su muerte también se conmemora en Mirage.",
+        summary: "Hijo de Zaakhiel y Zerynhya; regente de Mirage junto a Juuhndy.",
+        body: "Hijo de @[zaakhiel] y @[zerynhya], hermano de @[juuhndy]. Tras la fundación de @[mirage] por su hermana, fue enviado a gobernarla junto a ella a petición de @[zerynhya], para cuidarla: Juuhndy rechazaba mezclarse con los mortales. Su muerte también se conmemora en Mirage.",
         tags: ["fundador", "zarken", "mirage", "familia"],
         refs: { speciesEntityId: "zarken", birthPlaceEntityId: "galathia" },
         meta: { characterKind: "historico" },
@@ -878,20 +878,20 @@ No es un partido ni un ejército, pero sus conciertos congregan a miles y sus s�
         slug: "zerynhya",
         entityType: "personaje",
         title: "Zerynhya",
-        summary: "Fundadora de Mirage y creadora de los Pecados.",
-        body: "Hija de @[zaakhiel] y @[juuhndy], hermana de @[elekhias]. Fundó @[mirage] rechazando explotar a los mortales como otros fundadores Zarken. No quería mezclarse con ellos; su madre envió a Elekhias para gobernar junto a ella y cuidarla. Creó las maldiciones transferibles — los Pecados — que aún gobiernan la ciudad. Su muerte se conmemora en Mirage.",
-        tags: ["fundador", "zarken", "pecados", "mirage", "familia"],
-        refs: { speciesEntityId: "zarken", birthPlaceEntityId: "galathia" },
+        summary: "Esposa de Zaakhiel; Madre de Todos; autora de los Ocho Libros de la Comunión.",
+        body: "Esposa de @[zaakhiel] y matriarca del linaje fundador. Madre de @[juuhndy] y @[elekhias]. Autora de los **Ocho Libros de la Comunión**: visión maternal del reino, del rey como escudo vivo y del resguardo de los frágiles. Fue quien pidió que Elekhias gobernara Mirage junto a Juuhndy para protegerla.",
+        tags: ["fundador", "zarken", "familia", "religion", "comunion"],
+        refs: { speciesEntityId: "zarken", birthPlaceEntityId: "wernegar" },
         meta: { characterKind: "historico" },
     },
     {
         slug: "juuhndy",
         entityType: "personaje",
         title: "Juuhndy",
-        summary: "Esposa de Zaakhiel; madre de Zerynhya y Elekhias.",
-        body: "Esposa de @[zaakhiel] y matriarca del linaje fundador. Madre de @[zerynhya] y @[elekhias]. Fue quien pidió que Elekhias gobernara Mirage junto a su hija para protegerla.",
-        tags: ["fundador", "zarken", "familia"],
-        refs: { speciesEntityId: "zarken", birthPlaceEntityId: "wernegar" },
+        summary: "Hija Purista de Zaakhiel y Zerynhya; fundadora de Mirage; autora de la Perdición; creadora de los Pecados.",
+        body: "Hija de @[zaakhiel] y @[zerynhya], hermana de @[elekhias]. Fundó @[mirage] desde la decepción al ver a sus padres ceder ante la «miseria mortal». Autora de los **Cuatro Tomos de la Perdición de la Carne**. Creó las maldiciones transferibles — los Pecados — que aún gobiernan la ciudad. Su madre envió a Elekhias para gobernar junto a ella y cuidarla. Su muerte se conmemora en Mirage.",
+        tags: ["fundador", "zarken", "pecados", "mirage", "familia", "religion"],
+        refs: { speciesEntityId: "zarken", birthPlaceEntityId: "galathia" },
         meta: { characterKind: "historico" },
     },
     {
@@ -945,7 +945,7 @@ No es un partido ni un ejército, pero sus conciertos congregan a miles y sus s�
         summary: "Conciencia colectiva que gobierna Mirage; Pecado original; se manifiesta con brillo fucsia en los ojos.",
         body: `**Zero** no es un gobernante físico único, sino una **conciencia colectiva** que habita en todos los habitantes de @[mirage] mediante un **contrato pactado**. Puede tomar control total de cualquier ciudadano en cualquier momento; cuando lo hace, sus ojos brillan con un **fucsia intenso**.
 
-En público, @[mirage] obedece a @[los-pecados]; Zero opera detrás de ese telón como **Pecado original** y núcleo del @[pecado-totalidad]. Detalles de su origen exacto son clasificados — se rumorea vínculo directo con @[zerynhya] y las maldiciones fundacionales.
+En público, @[mirage] obedece a @[los-pecados]; Zero opera detrás de ese telón como **Pecado original** y núcleo del @[pecado-totalidad]. Detalles de su origen exacto son clasificados — se rumorea vínculo directo con @[juuhndy] y las maldiciones fundacionales.
 
 **Información restringida (DM):** Zero puede hablar con muchas bocas a la vez. Anular un huésped no mata a Zero; solo lo expulsa temporalmente de ese cuerpo.`,
         visibility: "dm_only",
@@ -1040,9 +1040,9 @@ En público, @[mirage] obedece a @[los-pecados]; Zero opera detrás de ese teló
         entityType: "reliquia",
         title: "Los Pecados (maldición)",
         summary: "Siete cargos malditos transferibles.",
-        body: "Creados por @[zerynhya]. No heredables; se transfieren por pruebas dolorosas en Mirage.",
+        body: "Creados por @[juuhndy]. No heredables; se transfieren por pruebas dolorosas en Mirage.",
         tags: ["pecados", "maldicion"],
-        refs: { creatorEntityId: "zerynhya", originLocationEntityId: "mirage" },
+        refs: { creatorEntityId: "juuhndy", originLocationEntityId: "mirage" },
         meta: { relicKind: "maldicion", powerTier: "legendaria" },
     },
     {
@@ -1171,8 +1171,8 @@ En público, @[mirage] obedece a @[los-pecados]; Zero opera detrás de ese teló
         slug: "fundacion-mirage",
         entityType: "evento_historico",
         title: "Fundación de Mirage",
-        summary: "Tercera ciudad; fundada por Zerynhya con Elekhias como regente.",
-        body: "@[zerynhya] fundó Mirage rechazando mezclarse con mortales. @[juuhndy] envió a @[elekhias] a gobernar junto a su hija para cuidarla.",
+        summary: "Tercera ciudad; fundada por Juuhndy con Elekhias como regente.",
+        body: "@[juuhndy] fundó Mirage rechazando mezclarse con mortales. @[zerynhya] envió a @[elekhias] a gobernar junto a su hija para cuidarla.",
         tags: ["mirage", "fundacion"],
         refs: { ocurrioEn: "mirage" },
         meta: { eventKind: "politico", certainty: "canon", date: "6750", isCore: true, narrativeArc: "Las Seis Metrópolis" },
@@ -1284,8 +1284,8 @@ En público, @[mirage] obedece a @[los-pecados]; Zero opera detrás de ese teló
         slug: "cronica-fundacion-mirage",
         entityType: "cronica",
         title: "Crónica de la Fundación de Mirage",
-        summary: "Zerynhya, Elekhias y la petición de Juuhndy.",
-        body: "@[zerynhya] fundó Mirage rechazando explotar a los mortales. @[juuhndy] envió a @[elekhias] a gobernar junto a su hija para cuidarla, pues no quería mezclarse con ellos.",
+        summary: "Juuhndy, Elekhias y la petición de Zerynhya.",
+        body: "@[juuhndy] fundó Mirage rechazando mezclarse con mortales. @[zerynhya] envió a @[elekhias] a gobernar junto a su hija para cuidarla, pues Juuhndy no quería ceder ante la «miseria mortal».",
         tags: ["mirage"],
         meta: { category: "historia", isLocked: false },
     },
@@ -1373,19 +1373,19 @@ export const RELATIONS = [
     { from: "felicia", to: "zorgun", relationType: "relacionado_con", strength: 9, label: "esposa de" },
 
     // ── Familia Zaakhiel ──────────────────────────────────────────────────────
-    { from: "juuhndy", to: "zaakhiel", relationType: "relacionado_con", strength: 9, label: "esposa de" },
-    { from: "zaakhiel", to: "juuhndy", relationType: "relacionado_con", strength: 9, label: "esposo de" },
-    { from: "zerynhya", to: "zaakhiel", relationType: "descendiente_de", strength: 8 },
-    { from: "zerynhya", to: "juuhndy", relationType: "descendiente_de", strength: 8 },
+    { from: "zerynhya", to: "zaakhiel", relationType: "relacionado_con", strength: 9, label: "esposa de" },
+    { from: "zaakhiel", to: "zerynhya", relationType: "relacionado_con", strength: 9, label: "esposo de" },
+    { from: "juuhndy", to: "zaakhiel", relationType: "descendiente_de", strength: 8 },
+    { from: "juuhndy", to: "zerynhya", relationType: "descendiente_de", strength: 8 },
     { from: "elekhias", to: "zaakhiel", relationType: "descendiente_de", strength: 8 },
-    { from: "elekhias", to: "juuhndy", relationType: "descendiente_de", strength: 8 },
-    { from: "zaakhiel", to: "zerynhya", relationType: "relacionado_con", strength: 8, label: "padre de" },
+    { from: "elekhias", to: "zerynhya", relationType: "descendiente_de", strength: 8 },
+    { from: "zaakhiel", to: "juuhndy", relationType: "relacionado_con", strength: 8, label: "padre de" },
     { from: "zaakhiel", to: "elekhias", relationType: "relacionado_con", strength: 8, label: "padre de" },
-    { from: "juuhndy", to: "zerynhya", relationType: "relacionado_con", strength: 8, label: "madre de" },
-    { from: "juuhndy", to: "elekhias", relationType: "relacionado_con", strength: 8, label: "madre de" },
-    { from: "zerynhya", to: "elekhias", relationType: "relacionado_con", strength: 7, label: "hermana de" },
-    { from: "elekhias", to: "zerynhya", relationType: "relacionado_con", strength: 7, label: "hermano de" },
-    { from: "juuhndy", to: "elekhias", relationType: "relacionado_con", strength: 6, label: "envió a gobernar Mirage" },
+    { from: "zerynhya", to: "juuhndy", relationType: "relacionado_con", strength: 8, label: "madre de" },
+    { from: "zerynhya", to: "elekhias", relationType: "relacionado_con", strength: 8, label: "madre de" },
+    { from: "juuhndy", to: "elekhias", relationType: "relacionado_con", strength: 7, label: "hermana de" },
+    { from: "elekhias", to: "juuhndy", relationType: "relacionado_con", strength: 7, label: "hermano de" },
+    { from: "zerynhya", to: "elekhias", relationType: "relacionado_con", strength: 6, label: "envió a gobernar Mirage" },
 
     // ── Membresía y linaje (resto) ────────────────────────────────────────────
     { from: "engel", to: "los-martires", relationType: "miembro_confirmado_de", strength: 7 },
@@ -1394,12 +1394,12 @@ export const RELATIONS = [
     { from: "zwei", to: "los-pecados", relationType: "miembro_confirmado_de", strength: 8 },
     { from: "zero", to: "los-pecados", relationType: "miembro_confirmado_de", strength: 9 },
     { from: "zartiel-wernegar", to: "dinastia-wernegar", relationType: "miembro_confirmado_de", strength: 5 },
-    { from: "zerynhya", to: "los-pecados", relationType: "miembro_confirmado_de", strength: 6 },
+    { from: "juuhndy", to: "los-pecados", relationType: "miembro_confirmado_de", strength: 6 },
 
     // ── Fundación y sedes ───────────────────────────────────────────────────
     { from: "zaakhiel", to: "galathia", relationType: "fundo", strength: 0 },
-    { from: "zerynhya", to: "mirage", relationType: "fundo", strength: 0 },
-    { from: "zerynhya", to: "los-pecados", relationType: "relacionado_con", strength: 8, label: "creó las maldiciones de" },
+    { from: "juuhndy", to: "mirage", relationType: "fundo", strength: 0 },
+    { from: "juuhndy", to: "los-pecados", relationType: "relacionado_con", strength: 8, label: "creó las maldiciones de" },
     { from: "gabinete-techia", to: "gabinete-central", relationType: "sede_en", strength: 0 },
     { from: "reino-galathia", to: "galathia", relationType: "sede_en", strength: 0 },
     { from: "los-pecados", to: "mirage", relationType: "sede_en", strength: 0 },
@@ -1505,9 +1505,9 @@ export const RELATIONS = [
     { from: "zorgun", to: "muerte-felicia", relationType: "participo_en", strength: 0 },
     { from: "zaakhiel", to: "muerte-zaakhiel", relationType: "participo_en", strength: 0 },
     { from: "zaakhiel", to: "fundacion-galathia", relationType: "participo_en", strength: 5 },
-    { from: "zerynhya", to: "fundacion-mirage", relationType: "participo_en", strength: 8 },
+    { from: "juuhndy", to: "fundacion-mirage", relationType: "participo_en", strength: 8 },
     { from: "elekhias", to: "fundacion-mirage", relationType: "participo_en", strength: 6 },
-    { from: "juuhndy", to: "fundacion-mirage", relationType: "participo_en", strength: 4 },
+    { from: "zerynhya", to: "fundacion-mirage", relationType: "participo_en", strength: 4 },
     { from: "engel", to: "guerras-galathia-mirage", relationType: "participo_en", strength: 7 },
     { from: "reino-galathia", to: "guerras-galathia-mirage", relationType: "participo_en", strength: 8 },
     { from: "los-pecados", to: "guerras-galathia-mirage", relationType: "participo_en", strength: 8 },
@@ -1523,7 +1523,7 @@ export const RELATIONS = [
     { from: "zorgun", to: "motor-zarken", relationType: "relacionado_con", strength: 8, label: "portador" },
     { from: "motor-zarken", to: "torreon-mirage", relationType: "relacionado_con", strength: 8, label: "apunta a" },
     { from: "oni", to: "espadon-oni", relationType: "relacionado_con", strength: 7 },
-    { from: "maldicion-pecados", to: "zerynhya", relationType: "relacionado_con", strength: 0, label: "creada por" },
+    { from: "maldicion-pecados", to: "juuhndy", relationType: "relacionado_con", strength: 0, label: "creada por" },
     { from: "sistema-flotante-galathia", to: "galathia", relationType: "origen_de", strength: 0 },
     { from: "tech-magia-eterea", to: "techia", relationType: "origen_de", strength: 5 },
     { from: "dispositivos-lectura-impacto", to: "techia", relationType: "origen_de", strength: 5 },
@@ -1579,7 +1579,7 @@ export const RELATIONS = [
     { from: "eins", to: "mirage", relationType: "vive_en", strength: 0 },
     { from: "zwei", to: "mirage", relationType: "vive_en", strength: 0 },
     { from: "zero", to: "mirage", relationType: "vive_en", strength: 0 },
-    { from: "zerynhya", to: "mirage", relationType: "vive_en", strength: 0 },
+    { from: "juuhndy", to: "mirage", relationType: "vive_en", strength: 0 },
     { from: "elekhias", to: "mirage", relationType: "vive_en", strength: 0 },
 
     // ── Jerarquía territorial ─────────────────────────────────────────────────

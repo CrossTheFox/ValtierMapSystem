@@ -37,7 +37,7 @@ import { resolveAbilityForPlay } from "../../utils/abilityResolve";
 
 /** Actions/Macros dock — exactly 4 / 12 columns, centered. */
 export const COMBAT_DOCK_WIDTH = vttSpanWidthCss(VTT_GRID.macrosSpan);
-/** Match character life-sheet height only when Actions + Macros are both open. */
+/** Visual floor when Actions + Macros are both open — do not max-clamp (clips Boon/Curse). */
 export const COMBAT_DOCK_MIN_HEIGHT = 100;
 
 function MacroHoverTitle({ slot }) {
@@ -294,7 +294,7 @@ export default function AbilityHotbar({
                 gap: 0.4,
                 width: COMBAT_DOCK_WIDTH,
                 maxWidth: COMBAT_DOCK_WIDTH,
-                ...(matchCharacterHudHeight ? { maxHeight: COMBAT_DOCK_MIN_HEIGHT, overflow: "hidden" } : {}),
+                ...(matchCharacterHudHeight ? { minHeight: COMBAT_DOCK_MIN_HEIGHT } : {}),
                 boxSizing: "border-box",
                 px: 0.85,
                 py: 0.45,
@@ -325,6 +325,7 @@ export default function AbilityHotbar({
                             justifyContent: "space-between",
                             gap: 1,
                             minHeight: 18,
+                            flexShrink: 0,
                         }}
                     >
                         <CyberText
@@ -523,40 +524,53 @@ export default function AbilityHotbar({
                                 onContextMenu={(e) => slot && handleClearSlot(i, e)}
                                 sx={{
                                     width: "100%",
-                                    height: 32,
+                                    height: 34,
+                                    minWidth: 0,
+                                    p: "3px 2px",
+                                    overflow: "hidden",
                                     borderRadius: "3px",
-                                    border: `1px solid ${slot
-                                        ? (burdenBlocked ? UI_COLORS.danger : (isStubType ? "rgba(255,255,255,0.15)" : accent))
-                                        : "rgba(255,255,255,0.22)"}`,
+                                    border: slot
+                                        ? `1px solid ${burdenBlocked ? UI_COLORS.danger : (isStubType ? "rgba(255,255,255,0.22)" : accent)}`
+                                        : "1px dashed rgba(255,255,255,0.22)",
                                     color: burdenBlocked
                                         ? UI_COLORS.danger
-                                        : (slot ? accent : UI_COLORS.textSecondary),
+                                        : (slot ? "#ffffff" : UI_COLORS.textSecondary),
                                     fontFamily: "'Orbitron', sans-serif",
                                     fontSize: slot?.type === MACRO_SLOT_TYPES.ULTIMATE
                                         ? "0.55rem"
-                                        : "0.42rem",
-                                    letterSpacing: "0.02em",
+                                        : "0.5rem",
+                                    fontWeight: 700,
+                                    letterSpacing: "0.04em",
+                                    lineHeight: 1.1,
                                     bgcolor: slot
                                         ? (burdenBlocked
                                             ? `${UI_COLORS.danger}14`
-                                            : withHexAlpha(accent, "18"))
+                                            : withHexAlpha(accent, "2e"))
                                         : "rgba(0,0,0,0.35)",
+                                    boxShadow: slot && !burdenBlocked && !isStubType
+                                        ? `inset 0 2px 0 ${accent}`
+                                        : "none",
                                     gap: 0.25,
                                     opacity: burdenBlocked ? 0.55 : 1,
                                     textDecoration: burdenBlocked ? "line-through" : "none",
                                     "&:hover": slot && !burdenBlocked ? {
-                                        bgcolor: withHexAlpha(accent, "28"),
+                                        bgcolor: withHexAlpha(accent, "42"),
                                         borderColor: accent,
-                                        boxShadow: `0 0 10px ${withHexAlpha(accent, "55")}`,
+                                        boxShadow: `inset 0 2px 0 ${accent}, 0 0 10px ${withHexAlpha(accent, "55")}`,
                                     } : {},
                                     "&.Mui-disabled": {
                                         border: burdenBlocked
                                             ? `1px solid ${UI_COLORS.danger}66`
-                                            : "1px dashed rgba(255,255,255,0.18)",
+                                            : (slot
+                                                ? "1px solid rgba(255,255,255,0.22)"
+                                                : "1px dashed rgba(255,255,255,0.22)"),
                                         color: burdenBlocked
                                             ? UI_COLORS.danger
-                                            : UI_COLORS.textSecondary,
-                                        opacity: burdenBlocked ? 0.55 : undefined,
+                                            : (slot ? "rgba(255,255,255,0.72)" : UI_COLORS.textSecondary),
+                                        opacity: burdenBlocked ? 0.55 : 1,
+                                        bgcolor: slot
+                                            ? (burdenBlocked ? `${UI_COLORS.danger}14` : "rgba(255,255,255,0.04)")
+                                            : "rgba(0,0,0,0.35)",
                                     },
                                 }}
                             >

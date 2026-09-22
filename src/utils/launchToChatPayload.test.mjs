@@ -47,6 +47,20 @@ describe("buildLiteChatPayload — trait/mech lite path", () => {
         assert.equal(payload.text, "Recover some HP.");
         assert.equal(payload.abilityAttack, undefined);
     });
+
+    it("lifts Range / tags from trait prose (SUCCOR)", () => {
+        const node = {
+            id: "caelum-trait-succor",
+            label: "SUCCOR",
+            blurb: "Puedes hacer **Rescue** en **Range 6**.",
+            tagKeys: ["rescue"],
+        };
+        const payload = buildLiteChatPayload(node, formulaCtx);
+        assert.equal(payload.abilityRange, "6");
+        assert.deepEqual(payload.abilityTags, ["rescue"]);
+        assert.equal(payload.abilityTone, "std");
+        assert.match(payload.text, /\*\*Rescue\*\*/);
+    });
 });
 
 describe("buildAbilityChatPayload — autohit ability", () => {
