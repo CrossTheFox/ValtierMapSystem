@@ -80,7 +80,7 @@
             {
                 "date": "120 D.Z.",
                 "event": "Fundación de Mirage",
-                "description": "Zerynhya y Elekhias establecen una sociedad basada en la pureza de la sangre Zarken y el dominio absoluto del poder."
+                "description": "Juuhndy y Elekhias establecen una sociedad basada en la pureza de la sangre Zarken y el dominio absoluto del poder."
             },
             {
                 "date": "250 D.Z.",
