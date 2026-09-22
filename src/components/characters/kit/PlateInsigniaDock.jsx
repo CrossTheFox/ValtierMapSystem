@@ -6,7 +6,10 @@ import { resolveCharacterAp, resolveCharacterLevel } from "../../../constants/sk
 import { CYBER_SCROLL_STYLE } from "../../../constants/cyberScrollStyle";
 import { cyberMenuItemSx, cyberMenuPaperSx } from "../../../constants/designSystem";
 import CyberSelect from "../../customs/CyberSelect";
+import CyberTooltip from "../../customs/CyberTooltip";
 import { DebouncedBoxInput } from "../../customs/DebouncedField";
+import { HudRichTooltipTitle, hudRichTooltipSlotProps } from "../../vtt/hudRichTooltip";
+import KitLorePopover from "./KitLorePopover";
 import {
     KitSvgApStar,
     KitSvgArm,
@@ -167,7 +170,16 @@ function PlateStatCell({ statKey, value, display, editMode, isOverride, onChange
     );
 }
 
-function ResourceChip({ name, value, max, onChangeValue }) {
+const LORE_TIP_SLOTS = {
+    tooltip: {
+        sx: {
+            ...hudRichTooltipSlotProps.tooltip.sx,
+            maxWidth: 320,
+        },
+    },
+};
+
+function ResourceChip({ name, value, max, onChangeValue, loreText, onInspectName, tipLocked = false }) {
     const [editing, setEditing] = useState(false);
     const title = (name || "RESOURCE").toUpperCase();
     const hasMax = max != null;
@@ -191,20 +203,52 @@ function ResourceChip({ name, value, max, onChangeValue }) {
                 overflow: "hidden",
             }}
         >
-            <Box sx={{
-                flex: 1,
-                minWidth: 0,
-                fontFamily: "Orbitron, sans-serif",
-                fontSize: "0.62rem",
-                letterSpacing: "0.12em",
-                color: CYAN,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                lineHeight: 1.15,
-            }}>
-                {title}
-            </Box>
+            <CyberTooltip
+                title={(
+                    <HudRichTooltipTitle
+                        title={title}
+                        body={loreText || "Recurso de clase de este job. Click para leer las reglas."}
+                        meta={hasMax ? `CLASS RESOURCE · MAX ${max}` : "CLASS RESOURCE"}
+                        maxWidth={300}
+                    />
+                )}
+                placement="bottom"
+                slotProps={LORE_TIP_SLOTS}
+                disableHoverListener={tipLocked}
+                {...(tipLocked ? { open: false } : {})}
+            >
+                <Box
+                    component="button"
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onInspectName?.(e.currentTarget);
+                    }}
+                    sx={{
+                        flex: 1,
+                        minWidth: 0,
+                        fontFamily: "Orbitron, sans-serif",
+                        fontSize: "0.62rem",
+                        letterSpacing: "0.12em",
+                        color: CYAN,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        lineHeight: 1.15,
+                        textAlign: "left",
+                        border: "none",
+                        bgcolor: "transparent",
+                        p: 0,
+                        cursor: "help",
+                        "&:hover": {
+                            color: "#ffffff",
+                            textShadow: "0 0 10px rgba(0,242,234,0.45)",
+                        },
+                    }}
+                >
+                    {title}
+                </Box>
+            </CyberTooltip>
             <Box
                 onClick={() => { if (onChangeValue) setEditing(true); }}
                 sx={{
@@ -341,6 +385,9 @@ export default function PlateInsigniaDock({
     resource,
     resourceValue,
     onChangeResourceValue,
+    jobDescription = "",
+    specialMechanic = null,
+    jobArchetype = "",
     maletinOpen,
     maletinCount = 0,
     onToggleMaletin,
@@ -348,6 +395,18 @@ export default function PlateInsigniaDock({
     const level = resolveCharacterLevel(character);
     const ap = resolveCharacterAp(character);
     const [jobAnchor, setJobAnchor] = useState(null);
+    const [loreAnchor, setLoreAnchor] = useState(null);
+    const [loreKind, setLoreKind] = useState(null);
+    const mech = specialMechanic && typeof specialMechanic === "object" ? specialMechanic : null;
+    const mechText = String(mech?.text || "").trim();
+    const mechName = String(mech?.name || "").trim();
+    const jobFlavor = String(jobDescription || "").trim();
+    const archLabel = String(jobArchetype || "").trim().toUpperCase();
+
+    const openLore = (el, kind) => {
+        setLoreKind(kind);
+        setLoreAnchor(el);
+    };
 
     return (
         <Box
@@ -444,43 +503,63 @@ export default function PlateInsigniaDock({
                             "&::placeholder": { color: "rgba(255,255,255,0.35)" },
                         }}
                     />                    <Box sx={{ display: "flex", alignItems: "center", gap: "4px", minWidth: 0 }}>
-                        <Box
-                            component="button"
-                            type="button"
-                            title="Cambiar job"
-                            onClick={(e) => setJobAnchor(e.currentTarget)}
-                            sx={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: "6px",
-                                px: "8px",
-                                py: "4px",
-                                borderRadius: "4px",
-                                border: "1px solid rgba(255,102,255,0.45)",
-                                bgcolor: "rgba(255,102,255,0.1)",
-                                color: PINK,
-                                cursor: "pointer",
-                                minWidth: 0,
-                                maxWidth: "100%",
-                            }}
+                        <CyberTooltip
+                            title={(
+                                <HudRichTooltipTitle
+                                    title={jobDisplayName || "SIN JOB"}
+                                    body={jobFlavor || "Click para leer la descripción del job."}
+                                    meta={archLabel ? `${archLabel} · JOB` : "JOB"}
+                                    maxWidth={300}
+                                />
+                            )}
+                            placement="bottom"
+                            slotProps={LORE_TIP_SLOTS}
+                            disableHoverListener={loreKind === "job"}
+                            {...(loreKind === "job" ? { open: false } : {})}
                         >
-                            <Box sx={{ width: 5, height: 5, borderRadius: "50%", bgcolor: PINK, flexShrink: 0 }} />
-                            <Box sx={{
-                                fontFamily: "Orbitron, sans-serif",
-                                fontSize: "0.48rem",
-                                letterSpacing: "0.1em",
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                            }}>
-                                {(jobDisplayName || "SIN JOB").toUpperCase()}
+                            <Box
+                                component="button"
+                                type="button"
+                                onClick={(e) => openLore(e.currentTarget, "job")}
+                                aria-label={(jobDisplayName || "SIN JOB").toUpperCase()}
+                                sx={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "6px",
+                                    px: "8px",
+                                    py: "4px",
+                                    borderRadius: "4px",
+                                    border: "1px solid rgba(255,102,255,0.45)",
+                                    bgcolor: "rgba(255,102,255,0.1)",
+                                    color: PINK,
+                                    cursor: "help",
+                                    minWidth: 0,
+                                    maxWidth: "100%",
+                                    "&:hover": {
+                                        bgcolor: "rgba(255,102,255,0.2)",
+                                        boxShadow: "0 0 12px rgba(255,102,255,0.28)",
+                                    },
+                                }}
+                            >
+                                <Box sx={{ width: 5, height: 5, borderRadius: "50%", bgcolor: PINK, flexShrink: 0 }} />
+                                <Box sx={{
+                                    fontFamily: "Orbitron, sans-serif",
+                                    fontSize: "0.48rem",
+                                    letterSpacing: "0.1em",
+                                    whiteSpace: "nowrap",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                }}>
+                                    {(jobDisplayName || "SIN JOB").toUpperCase()}
+                                </Box>
                             </Box>
-                        </Box>
-                        <Box
-                            component="button"
-                            type="button"
-                            title="Cambiar job"
-                            onClick={(e) => setJobAnchor(e.currentTarget)}
+                        </CyberTooltip>
+                        <CyberTooltip title="Cambiar job" placement="top">
+                            <Box
+                                component="button"
+                                type="button"
+                                aria-label="Cambiar job"
+                                onClick={(e) => setJobAnchor(e.currentTarget)}
                             sx={{
                                 width: 26,
                                 height: 26,
@@ -497,7 +576,8 @@ export default function PlateInsigniaDock({
                             }}
                         >
                             <KitSvgSwap size={13} />
-                        </Box>
+                            </Box>
+                        </CyberTooltip>
                     </Box>
                 </Box>
                 <Box
@@ -591,6 +671,9 @@ export default function PlateInsigniaDock({
                     value={resourceValue ?? resource?.min ?? 0}
                     max={resource?.max}
                     onChangeValue={onChangeResourceValue}
+                    loreText={mechText}
+                    tipLocked={loreKind === "resource"}
+                    onInspectName={(el) => openLore(el, "resource")}
                 />
                 <MaletinBtn open={maletinOpen} count={maletinCount} onClick={onToggleMaletin} />
             </Box>
@@ -662,6 +745,29 @@ export default function PlateInsigniaDock({
                     </>
                 )}
             </Popover>
+            <KitLorePopover
+                open={Boolean(loreAnchor)}
+                anchorEl={loreAnchor}
+                onClose={() => { setLoreAnchor(null); setLoreKind(null); }}
+                title={loreKind === "resource"
+                    ? (resource?.name || mechName || "RESOURCE")
+                    : (jobDisplayName || "JOB")}
+                meta={loreKind === "resource"
+                    ? (resource?.max != null
+                        ? `CLASS RESOURCE · MAX ${resource.max}`
+                        : "CLASS RESOURCE")
+                    : (archLabel ? `${archLabel} · JOB` : "JOB")}
+                accent={loreKind === "resource" ? CYAN : PINK}
+                anchorOrigin={loreKind === "resource"
+                    ? { vertical: "bottom", horizontal: "right" }
+                    : { vertical: "bottom", horizontal: "left" }}
+                transformOrigin={loreKind === "resource"
+                    ? { vertical: "top", horizontal: "right" }
+                    : { vertical: "top", horizontal: "left" }}
+                body={loreKind === "resource" ? (mechText || jobFlavor) : jobFlavor}
+                asideTitle={loreKind === "job" && mechText ? (mechName || "SPECIAL") : undefined}
+                asideBody={loreKind === "job" && mechText ? mechText : undefined}
+            />
         </Box>
     );
 }

@@ -1,6 +1,7 @@
 import { CHAT_MESSAGE_TYPES } from "../constants/chatMessageTypes.js";
 import { resolveAbilityContentInline } from "./abilityRollCommands.js";
 import { resolveAbilityForPlay } from "./abilityResolve.js";
+import { parseHeaderMeta } from "./abilityContentParser.js";
 
 /**
  * Pure payload builders for `firebase/services/launchToChat.js` (Slice 6).
@@ -18,17 +19,25 @@ export function buildLiteChatPayload(node, formulaCtx = {}) {
     const { displayText, inlineRolls } = hasInlineCue
         ? resolveAbilityContentInline(content, formulaCtx, { skipD20: true })
         : { displayText: content, inlineRolls: [] };
+    const header = parseHeaderMeta(content);
+    const range = node?.range || header.range || null;
+    const aoe = node?.aoe || header.aoe || null;
+    const tags = Array.isArray(node?.tagKeys) && node.tagKeys.length
+        ? node.tagKeys
+        : (Array.isArray(node?.tags) && node.tags.length ? node.tags : null);
 
     return {
         type: CHAT_MESSAGE_TYPES.ABILITY,
         text: displayText || content || label,
         abilityId: node?.id ?? node?.key ?? null,
         abilityLabel: label,
-        abilityTags: Array.isArray(node?.tagKeys) && node.tagKeys.length ? node.tagKeys : null,
+        abilityTags: tags,
         abilityKind: "standard",
         abilityCost: null,
         abilityInlineRolls: inlineRolls.length ? inlineRolls : null,
         abilityTone: "std",
+        abilityRange: range,
+        abilityAoe: aoe,
     };
 }
 

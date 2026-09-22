@@ -12,18 +12,18 @@ import {
 const INSET = 16;
 
 describe("VTT 12-col grid", () => {
-    it("combat / macros / chat are exact 3 / 4 / 2.5 columns at 1920", () => {
+    it("combat / macros / chat are exact 3.5 / 4 / 2.5 columns at 1920", () => {
         const col = vttColPx(1920, INSET);
-        assert.equal(VTT_GRID.combatSpan, 3);
+        assert.equal(VTT_GRID.combatSpan, 3.5);
         assert.equal(VTT_GRID.macrosSpan, 4);
         assert.equal(VTT_GRID.chatSpan, 2.5);
-        assert.equal(vttSpanPx(3, 1920, INSET), col * 3);
+        assert.equal(vttSpanPx(3.5, 1920, INSET), col * 3.5);
         assert.equal(vttSpanPx(4, 1920, INSET), col * 4);
         assert.equal(vttSpanPx(2.5, 1920, INSET), col * 2.5);
-        assert.equal((1920 - INSET * 2) * 3 / 12, 472);
+        assert.equal((1920 - INSET * 2) * 3.5 / 12, 550.6666666666666);
         assert.equal((1920 - INSET * 2) * 2.5 / 12, 393.3333333333333);
         const rects = vttHudRects(1920, INSET);
-        assert.equal(rects.combat.width, 472);
+        assert.equal(rects.combat.width, col * 3.5);
         assert.equal(rects.chat.width, col * 2.5);
         assert.equal(rects.macros.width, (1920 - 32) * 4 / 12);
     });
@@ -35,7 +35,7 @@ describe("VTT 12-col grid", () => {
     });
 
     it("scales spans the same on a non-1920 viewport", () => {
-        assert.equal(vttSpanPx(3, 1280, INSET), (1280 - 32) / 12 * 3);
+        assert.equal(vttSpanPx(3.5, 1280, INSET), (1280 - 32) / 12 * 3.5);
         assert.equal(vttSpanPx(4, 1536, INSET), (1536 - 32) / 12 * 4);
         assert.equal(vttSpanPx(2.5, 2560, INSET), (2560 - 32) / 12 * 2.5);
     });

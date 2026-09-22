@@ -54,6 +54,14 @@ export const TRAIT_MODE_LABELS = Object.freeze({
     [TRAIT_MODES.INTERRUPT]: "Interrupt",
 });
 
+/** Short player-facing help for the trait-mode glyph (hover). */
+export const TRAIT_MODE_HELP = Object.freeze({
+    [TRAIT_MODES.PASSIVE]: "Siempre activo. No se lanza: aplica mientras lo tengas.",
+    [TRAIT_MODES.ACTIVE]: "Lo activas en tu turno. Suele gastar acciones.",
+    [TRAIT_MODES.TRIGGER]: "Se dispara cuando ocurre su condición. No es un Interrupt.",
+    [TRAIT_MODES.INTERRUPT]: "Lo puedes usar cuando quieras, dentro o fuera de tu turno.",
+});
+
 /** Kit chrome accents for Category Rail (mockup + future dossier). */
 export const TRAIT_MODE_COLORS = Object.freeze({
     [TRAIT_MODES.PASSIVE]: "#7dd3fc",
