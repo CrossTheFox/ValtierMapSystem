@@ -71,6 +71,8 @@ function kindClass(node) {
  *   relationMode?: 'affinity'|'structural',
  *   onFocusEntity?: (entityId: string) => void,
  *   onToggleStruct?: () => void,
+ *   onNodeContextMenu?: (node: object, e: import('react').MouseEvent) => void,
+ *   marked?: boolean,
  * }} props
  */
 function CircuitNode({
@@ -87,6 +89,8 @@ function CircuitNode({
     relationMode = "affinity",
     onFocusEntity,
     onToggleStruct,
+    onNodeContextMenu,
+    marked = false,
 }) {
     const cls = kindClass(node);
     const isHub = node.kind === "hub";
@@ -97,11 +101,14 @@ function CircuitNode({
     const entityId = node.entityId || node.id;
     const isPersonaje = node.entityType === WIKI_ENTITY_TYPES.PERSONAJE
         || (!node.entityType && node.kind === "affinity");
+    const isLabCard = isPersonaje
+        || node.entityType === WIKI_ENTITY_TYPES.LOCACION
+        || node.entityType === WIKI_ENTITY_TYPES.ORGANIZACION;
     const showFocusBtn = Boolean(
         canFocusTravel
         && !isHub
         && !isCluster
-        && isPersonaje
+        && isLabCard
         && entityId
         && onFocusEntity,
     );
@@ -159,11 +166,14 @@ function CircuitNode({
             onContextMenu={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                onNodeContextMenu?.(node, e);
             }}
             sx={{
                 left: node.x,
                 top: node.y,
                 width: node.w || 138,
+                outline: marked ? `2px solid ${UI_COLORS.anomaly}` : "none",
+                outlineOffset: marked ? 4 : 0,
             }}
             data-id={node.id}
             data-ckt-nid={node.id}
@@ -213,11 +223,11 @@ function CircuitNode({
             )}
 
             {showFocusBtn && (
-                <CyberTooltip title="Viajar foco a este personaje">
+                <CyberTooltip title="Viajar foco a esta ficha">
                     <IconButton
                         size="small"
                         className="ckt-node-action"
-                        aria-label="Viajar foco a este personaje"
+                        aria-label="Viajar foco a esta ficha"
                         onClick={(e) => {
                             e.stopPropagation();
                             onFocusEntity?.(entityId);

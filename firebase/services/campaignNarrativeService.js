@@ -1,5 +1,5 @@
 import { db } from "../firebaseConfig";
-import { doc, getDoc, updateDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, updateDoc, setDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
 
 const campaignRef = (campaignId) => doc(db, "campaigns", campaignId);
 
@@ -73,4 +73,22 @@ export async function updateCampaignNarrativeSettings(campaignId, patch, uid) {
         await setDoc(ref, { ...payload, createdAt: serverTimestamp() }, { merge: true });
     }
     return patch;
+}
+
+/** Solar overlay on the campaign doc: `mesa_enlaces` and the sun's place. Not cloned with a Lore. */
+export function subscribeCampaignSolar(campaignId, onData, onError) {
+    return onSnapshot(
+        campaignRef(campaignId),
+        (snap) => {
+            const data = snap.exists() ? snap.data() : {};
+            onData({
+                links: Array.isArray(data.mesa_enlaces) ? data.mesa_enlaces : [],
+                layoutX: data.layout_x ?? null,
+                layoutY: data.layout_y ?? null,
+                neutros: Array.isArray(data.neutros) ? data.neutros : [],
+                paints: data.pinturas && typeof data.pinturas === "object" ? data.pinturas : {},
+            });
+        },
+        (err) => onError?.(err),
+    );
 }

@@ -1,193 +1,97 @@
 import { Box, IconButton } from "@mui/material";
-import MenuBookIcon from "@mui/icons-material/MenuBook";
-import TimelineIcon from "@mui/icons-material/Timeline";
 import SettingsIcon from "@mui/icons-material/Settings";
 import LibraryBooksIcon from "@mui/icons-material/LibraryBooks";
-import { CyberText } from "../customs/CustomTexts";
 import CyberTooltip from "../customs/CyberTooltip";
 import { UI_COLORS } from "../../constants/uiColors";
+import { TYPO } from "../../constants/designSystem";
+import { ARCHIVE_BORDER, ARCHIVE_BORDER_2 } from "../../constants/archiveChrome";
 import {
     WIKI_ARCHIVE_AREAS,
     WIKI_AREA_IDS,
-    getWikiArea,
     normalizeWikiAreaFilter,
 } from "../../constants/wiki";
 
-const AREA_VISUALS = {
-    [WIKI_AREA_IDS.CODEX]: {
-        Icon: MenuBookIcon,
-        color: UI_COLORS.accent,
-    },
-    [WIKI_AREA_IDS.TIMELINE]: {
-        Icon: TimelineIcon,
-        color: "#00e5ff",
-    },
-    [WIKI_AREA_IDS.SESSIONS]: {
-        Icon: LibraryBooksIcon,
-        color: UI_COLORS.textSecondary,
-    },
+const tabSx = (active) => ({
+    height: "100%",
+    display: "inline-flex",
+    alignItems: "center",
+    px: "14px",
+    border: "none",
+    borderBottom: `2px solid ${active ? UI_COLORS.accentStrong : "transparent"}`,
+    background: "transparent",
+    color: active ? UI_COLORS.textPrimary : UI_COLORS.textSecondary,
+    fontFamily: TYPO.title,
+    fontSize: "9.5px",
+    letterSpacing: ".16em",
+    whiteSpace: "nowrap",
+    cursor: "pointer",
+    "&:hover": { color: UI_COLORS.textPrimary },
+    "&:focus-visible": { outline: `2px solid ${UI_COLORS.anomaly}`, outlineOffset: "1px" },
+});
+
+const toolBtnSx = {
+    width: 24,
+    height: 24,
+    ml: "4px",
+    borderRadius: "4px",
+    color: UI_COLORS.textSecondary,
+    border: `1px solid ${ARCHIVE_BORDER}`,
+    "&:hover": { color: UI_COLORS.textPrimary, borderColor: ARCHIVE_BORDER_2, bgcolor: "rgba(255, 255, 255, .04)" },
+    "&:focus-visible": { outline: `2px solid ${UI_COLORS.anomaly}`, outlineOffset: "1px" },
 };
 
-function tooltipTitle(label, hint) {
-    return (
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25, textAlign: "left" }}>
-            <Box component="span">{label}</Box>
-            {hint && (
-                <Box
-                    component="span"
-                    sx={{
-                        fontSize: "0.55rem",
-                        letterSpacing: "0.04em",
-                        textTransform: "none",
-                        color: UI_COLORS.textSecondary,
-                        fontFamily: "'Fira Sans', sans-serif",
-                        lineHeight: 1.3,
-                    }}
-                >
-                    {hint}
-                </Box>
-            )}
-        </Box>
-    );
-}
-
 /**
- * Icon-only segmented navigation for archive surfaces (CODEX / TIMELINE / SESSIONS).
+ * Archive tabs (mock `.tabs`): CODEX / TIMELINE / DIARIO / NEURAL LAB.
+ * With `onOpenNeuralLab`, the NEURAL LAB tab opens the Lab surface instead of switching area.
  */
 export default function WikiAreaNav({
     areaFilter,
     onAreaFilterChange,
+    onOpenNeuralLab,
+    hiddenAreaIds = [],
     showGlossaryButton = true,
     onOpenGlossary,
     showConfigButton = false,
     onOpenConfig,
-    compact = false,
 }) {
     const activeId = normalizeWikiAreaFilter(areaFilter);
-    const activeArea = getWikiArea(activeId);
-    const btnSize = compact ? 28 : 32;
+    const labIsArea = !onOpenNeuralLab;
+    const currentId = areaFilter === WIKI_AREA_IDS.NEURAL_LAB && labIsArea ? WIKI_AREA_IDS.NEURAL_LAB : activeId;
+    const areas = WIKI_ARCHIVE_AREAS.filter((a) => !hiddenAreaIds.includes(a.id));
 
     return (
-        <Box sx={{ display: "flex", flexDirection: "column", gap: compact ? 0 : 0.75, minWidth: 0 }}>
-            <Box
-                sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    borderBottom: compact ? "none" : `1px solid ${UI_COLORS.border}`,
-                    gap: compact ? 0.35 : 0,
-                    flexShrink: 0,
-                }}
-            >
-                {WIKI_ARCHIVE_AREAS.map(({ id, label }) => {
-                    const area = getWikiArea(id);
-                    const { Icon, color } = AREA_VISUALS[id] ?? AREA_VISUALS[WIKI_AREA_IDS.CODEX];
-                    const active = activeId === id;
-
+        <Box sx={{ display: "flex", alignItems: "center", height: "100%", minWidth: 0 }}>
+            <Box component="nav" aria-label="Áreas del archivo" sx={{ display: "flex", gap: "2px", height: "100%" }}>
+                {areas.map(({ id, label }) => {
+                    const isLabDoor = id === WIKI_AREA_IDS.NEURAL_LAB && !labIsArea;
+                    const active = !isLabDoor && currentId === id;
                     return (
-                        <CyberTooltip key={id} title={tooltipTitle(label, area?.hint)} placement="bottom">
-                            <Box
-                                component="button"
-                                type="button"
-                                onClick={() => onAreaFilterChange(id)}
-                                aria-label={label}
-                                aria-current={active ? "page" : undefined}
-                                sx={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    width: btnSize,
-                                    height: btnSize,
-                                    p: 0,
-                                    border: `1px solid ${active ? color : UI_COLORS.border}`,
-                                    borderRadius: compact ? 0.75 : 0,
-                                    borderBottom: compact
-                                        ? undefined
-                                        : active
-                                            ? `2px solid ${color}`
-                                            : "2px solid transparent",
-                                    bgcolor: active ? `${color}18` : "transparent",
-                                    boxShadow: active ? `0 0 10px ${color}22` : "none",
-                                    cursor: "pointer",
-                                    transition: "background-color 0.15s, border-color 0.15s, box-shadow 0.15s",
-                                    "&:hover": {
-                                        bgcolor: `${color}14`,
-                                        borderColor: color,
-                                    },
-                                }}
-                            >
-                                <Icon
-                                    sx={{
-                                        fontSize: compact ? "0.9rem" : "1rem",
-                                        color: active ? color : UI_COLORS.textSecondary,
-                                    }}
-                                />
-                            </Box>
-                        </CyberTooltip>
+                        <Box
+                            key={id}
+                            component="button"
+                            type="button"
+                            onClick={() => (isLabDoor ? onOpenNeuralLab() : onAreaFilterChange(id))}
+                            aria-current={active ? "page" : undefined}
+                            sx={tabSx(active)}
+                        >
+                            {label}
+                        </Box>
                     );
                 })}
-                {showGlossaryButton && onOpenGlossary && (
-                    <CyberTooltip title="Glosario del sistema — conceptos, campos e IA" placement="bottom">
-                        <IconButton
-                            size="small"
-                            onClick={onOpenGlossary}
-                            aria-label="Glosario del sistema"
-                            sx={{
-                                width: btnSize,
-                                height: btnSize,
-                                ml: compact ? 0.35 : undefined,
-                                borderRadius: compact ? 0.75 : 0,
-                                color: UI_COLORS.textSecondary,
-                                border: `1px solid ${UI_COLORS.border}`,
-                                transition: "color 0.15s, background-color 0.15s, border-color 0.15s",
-                                "&:hover": {
-                                    color: UI_COLORS.accent,
-                                    bgcolor: `${UI_COLORS.accent}10`,
-                                    borderColor: `${UI_COLORS.accent}66`,
-                                },
-                            }}
-                        >
-                            <LibraryBooksIcon sx={{ fontSize: compact ? "0.9rem" : "1.05rem" }} />
-                        </IconButton>
-                    </CyberTooltip>
-                )}
-                {showConfigButton && (
-                    <CyberTooltip title="Configuración de IA narrativa" placement="bottom">
-                        <IconButton
-                            size="small"
-                            onClick={onOpenConfig}
-                            aria-label="Configuración de IA"
-                            sx={{
-                                width: btnSize,
-                                height: btnSize,
-                                ml: compact ? 0.35 : undefined,
-                                borderRadius: compact ? 0.75 : 0,
-                                color: UI_COLORS.textSecondary,
-                                border: `1px solid ${UI_COLORS.border}`,
-                                borderLeft: compact ? undefined : `1px solid ${UI_COLORS.border}`,
-                                transition: "color 0.15s, background-color 0.15s, border-color 0.15s",
-                                "&:hover": {
-                                    color: UI_COLORS.anomaly,
-                                    bgcolor: `${UI_COLORS.anomaly}10`,
-                                    borderColor: `${UI_COLORS.anomaly}66`,
-                                },
-                            }}
-                        >
-                            <SettingsIcon sx={{ fontSize: compact ? "0.9rem" : "1.05rem" }} />
-                        </IconButton>
-                    </CyberTooltip>
-                )}
             </Box>
-            {!compact && (
-                <CyberText
-                    sx={{
-                        fontSize: "0.68rem",
-                        color: UI_COLORS.textSecondary,
-                        lineHeight: 1.4,
-                        px: 0.5,
-                    }}
-                >
-                    {activeArea.hint}
-                </CyberText>
+            {showGlossaryButton && onOpenGlossary && (
+                <CyberTooltip title="Glosario del sistema — conceptos, campos e IA" placement="bottom">
+                    <IconButton size="small" onClick={onOpenGlossary} aria-label="Glosario del sistema" sx={{ ...toolBtnSx, ml: "8px" }}>
+                        <LibraryBooksIcon sx={{ fontSize: "0.85rem" }} />
+                    </IconButton>
+                </CyberTooltip>
+            )}
+            {showConfigButton && onOpenConfig && (
+                <CyberTooltip title="Configuración de IA narrativa" placement="bottom">
+                    <IconButton size="small" onClick={onOpenConfig} aria-label="Configuración de IA" sx={toolBtnSx}>
+                        <SettingsIcon sx={{ fontSize: "0.85rem" }} />
+                    </IconButton>
+                </CyberTooltip>
             )}
         </Box>
     );

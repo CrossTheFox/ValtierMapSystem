@@ -13,7 +13,7 @@ import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
 import { WIKI_ENTITY_TYPES } from "../../constants/wikiEntityTypes";
 import { WIKI_AREA_IDS } from "../../constants/wiki";
 import { useCampaignWikiEntities } from "../../hooks/useCampaignWikiEntities";
-import { openWikiOverlay, openNeuralLabOverlay, restoreDialog } from "../../store/uiSlice";
+import { openWikiOverlay, restoreDialog } from "../../store/uiSlice";
 import { DIALOG_IDS } from "../../constants/dialogIds";
 import AdminSectionShell from "./AdminSectionShell";
 
@@ -105,7 +105,7 @@ export default function WikiAdminTab({ campaignId, onOpenAiConfig }) {
     };
 
     const openNeuralLab = () => {
-        dispatch(openNeuralLabOverlay());
+        openArchive(WIKI_AREA_IDS.NEURAL_LAB);
     };
 
     return (

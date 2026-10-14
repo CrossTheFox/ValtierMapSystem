@@ -25,6 +25,7 @@ import {
     resolveWikiEntityImagePath,
     resolveWikiEntityImageSource,
 } from "../../utils/resolveWikiEntityImage";
+import { setEditorDraftDirty } from "../../utils/editorDraftGuard";
 import { WIKI_ENTITY_TYPES, WIKI_ENTITY_TYPE_OPTIONS, WIKI_ENTITY_TYPE_LABELS } from "../../constants/wikiEntityTypes";
 import {
     TIMELINE_BRANCH,
@@ -253,8 +254,11 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
 
     const handleCancel = useCallback(async () => {
         await releasePendingUploads();
+        setEditorDraftDirty(false);
         onCancel?.();
     }, [releasePendingUploads, onCancel]);
+
+    useEffect(() => () => setEditorDraftDirty(false), []);
 
     // Auto-generate slug from title when creating
     useEffect(() => {
@@ -263,8 +267,14 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
         }
     }, [form.title, isNew]);
 
-    const set = useCallback((field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value })), []);
-    const setDirect = useCallback((field, value) => setForm((prev) => ({ ...prev, [field]: value })), []);
+    const set = useCallback((field) => (e) => {
+        setEditorDraftDirty(true);
+        setForm((prev) => ({ ...prev, [field]: e.target.value }));
+    }, []);
+    const setDirect = useCallback((field, value) => {
+        setEditorDraftDirty(true);
+        setForm((prev) => ({ ...prev, [field]: value }));
+    }, []);
 
     const handleCoverImageChange = useCallback(
         async (url) => {
@@ -364,6 +374,7 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
             : "banner";
 
     const setMetaField = useCallback((field, value) => {
+        setEditorDraftDirty(true);
         setForm((prev) => ({
             ...prev,
             customFields: mergeCustomFields(prev.customFields, prev.entityType, { [field]: value }),
@@ -444,6 +455,7 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
 
             committedRef.current = true;
             await commitPendingUploads(form);
+            setEditorDraftDirty(false);
 
             onSaved && onSaved(result.payload);
         } catch (e) {

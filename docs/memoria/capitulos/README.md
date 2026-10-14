@@ -1,5 +1,7 @@
 # Paquetes de redacción — memoria UTFSM
 
+Repo de la memoria: este, `pixi-map` / ValtierMapSystem, rama `phase-03/next`. Los capítulos se redactan desde estos paquetes. No buscar otro repositorio.
+
 Estos archivos no son el capítulo. Guardan decisiones, citas, argumentos y límites para que otro agente redacte después. No inventar features, métricas ni resultados que aquí figuren como pendientes.
 
 Decisiones cerradas el 2026-10-13:
@@ -16,4 +18,4 @@ Decisiones cerradas el 2026-10-13:
 | Orden de trabajo | Evidencia primero. Luego capítulo 3, 4, 2, 5. Introducción al final. |
 | Borrador | Estos paquetes. La prosa de la memoria la escribe otro agente. |
 
-Objetivos 1.5–1.7 y la definición de alucinación están copiados en `05-conclusiones/paquete.md`, desde el PDF del capítulo 1. Las veinte generaciones están en `04-validacion/corridas/`. La compuerta y la re-corrida de octubre están en `capa1-compuerta.md` y `capa2-recorrida.md`. La inspección Nielsen queda propuesta en `capa4-inspeccion-propuesta.md`: el autor tiene que ratificarla antes de citar severidades. El correferente sigue como marcador de posición en la portada. La prosa de los capítulos no está escrita.
+Objetivos 1.5–1.7 y la definición de alucinación están copiados en `05-conclusiones/paquete.md`, desde el PDF del capítulo 1. Las cuatro capas de evidencia están cerradas: generaciones en `04-validacion/corridas/`, compuerta en `capa1-compuerta.md`, octubre en `capa2-recorrida.md`, inspección ratificada en `capa4-inspeccion-propuesta.md`. El correferente sigue como marcador de posición en la portada. La prosa de los capítulos no está escrita. El orden es capítulo 3, 4, 2, 5, introducción al final.

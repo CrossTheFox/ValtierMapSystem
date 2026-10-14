@@ -143,3 +143,29 @@ export function getBacklinkIds(entityId, allEntities = []) {
         .filter((e) => e.id !== entityId && e.body && parseMentions(e.body).some((m) => m.entityId === entityId))
         .map((e) => e.id);
 }
+
+/**
+ * Plain-text window around the first @[Title](targetEntityId) in a body.
+ * @param {string} body
+ * @param {string} targetEntityId
+ * @param {number} [radius]
+ * @returns {string}
+ */
+export function mentionExcerpt(body = "", targetEntityId, radius = 72) {
+    if (!body || !targetEntityId) return "";
+    const regex = new RegExp(ANY_MENTION_REGEX.source, "g");
+    let match;
+    while ((match = regex.exec(body)) !== null) {
+        const explicitId = match[2];
+        if (explicitId !== targetEntityId) continue;
+        const start = Math.max(0, match.index - radius);
+        const end = Math.min(body.length, match.index + match[0].length + radius);
+        let slice = body.slice(start, end);
+        slice = slice.replace(new RegExp(ANY_MENTION_REGEX.source, "g"), (_, title) => `@${title}`);
+        slice = slice.replace(/[#*_`>]/g, "").replace(/\s+/g, " ").trim();
+        const prefix = start > 0 ? "…" : "";
+        const suffix = end < body.length ? "…" : "";
+        return `${prefix}${slice}${suffix}`;
+    }
+    return "";
+}

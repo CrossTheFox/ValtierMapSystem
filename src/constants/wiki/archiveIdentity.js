@@ -117,6 +117,38 @@ export function wikiEntityLinksLocation(entity, locationId) {
  * @param {string} characterId
  * @param {object[]} wikiEntities
  */
+function createdAtMs(entity) {
+    const t = Date.parse(entity?.createdAt ?? "");
+    return Number.isNaN(t) ? Number.POSITIVE_INFINITY : t;
+}
+
+/**
+ * Keep one PERSONAJE per linked VTT character: the one the token points at,
+ * else the oldest. Other entity types pass through untouched.
+ * @param {object[]} wikiEntities
+ * @param {Record<string, { narrativeEntityId?: string|null }>} charactersById
+ */
+export function dedupePersonajesByVttLink(wikiEntities = [], charactersById = {}) {
+    const list = Array.isArray(wikiEntities) ? wikiEntities : [];
+    const keepByCharacter = new Map();
+    for (const e of list) {
+        const charId = e.entityType === WIKI_ENTITY_TYPES.PERSONAJE ? e.linkedVttCharacterId : null;
+        if (!charId) continue;
+        const current = keepByCharacter.get(charId);
+        const canonicalId = charactersById?.[charId]?.narrativeEntityId;
+        if (!current || e.id === canonicalId) {
+            keepByCharacter.set(charId, e);
+        } else if (current.id !== canonicalId && createdAtMs(e) < createdAtMs(current)) {
+            keepByCharacter.set(charId, e);
+        }
+    }
+    if (!keepByCharacter.size) return list;
+    return list.filter((e) => {
+        const charId = e.entityType === WIKI_ENTITY_TYPES.PERSONAJE ? e.linkedVttCharacterId : null;
+        return !charId || keepByCharacter.get(charId)?.id === e.id;
+    });
+}
+
 export function findWikiPersonajeForCharacter(character, characterId, wikiEntities = []) {
     const list = Array.isArray(wikiEntities) ? wikiEntities : [];
     const narId = character?.narrativeEntityId;

@@ -3,19 +3,26 @@ import { useDispatch, useSelector } from "react-redux";
 import { useSearchParams } from "react-router-dom";
 import { Box } from "@mui/material";
 import { setSelectedCampaign, loadWorld } from "../store/worldSlice";
-import { openWikiOverlay, openNeuralLabOverlay } from "../store/uiSlice";
+import { openWikiOverlay } from "../store/uiSlice";
 import NarrativeWikiOverlay from "../components/wiki/NarrativeWikiOverlay";
-import CampaignNeuralLabOverlay from "../components/wiki/CampaignNeuralLabOverlay";
+import LibraryArchiveShell from "../components/wiki/LibraryArchiveShell";
 import CyberLoader from "../components/animations/CyberLoader";
 import { UI_COLORS } from "../constants/uiColors";
-import { WIKI_AREA_IDS, DEFAULT_ARCHIVE_AREA, normalizeWikiAreaFilter } from "../constants/wiki";
+import { DEFAULT_ARCHIVE_AREA, normalizeWikiAreaFilter } from "../constants/wiki";
 import { CyberText } from "../components/customs/CustomTexts";
 
 /**
- * Dedicated browser-tab page for the NARRATIVE_ARCHIVE workspace.
- * Reads campaign + optional overlay state from URL search params.
+ * Dedicated browser-tab page for the Archive.
+ * `?loreId=` opens a principal Lore in library seat; otherwise the table archive of `?campaignId=`.
  */
 export default function NarrativeArchivePage() {
+    const [searchParams] = useSearchParams();
+    const loreId = searchParams.get("loreId");
+    if (loreId) return <LibraryArchiveShell key={loreId} loreId={loreId} />;
+    return <CampaignArchivePage />;
+}
+
+function CampaignArchivePage() {
     const dispatch = useDispatch();
     const [searchParams] = useSearchParams();
     const [bootstrapped, setBootstrapped] = useState(false);
@@ -37,19 +44,14 @@ export default function NarrativeArchivePage() {
             dispatch(loadWorld(paramCampaignId));
         }
 
-        const wantsNeuralLab = rawArea === "network" || rawArea === WIKI_AREA_IDS.NEURAL_LAB;
         const areaFilter = rawArea
             ? normalizeWikiAreaFilter(rawArea)
             : DEFAULT_ARCHIVE_AREA;
 
-        if (wantsNeuralLab) {
-            dispatch(openNeuralLabOverlay({ focusEntityId: entityId || null }));
-        }
-
         dispatch(
             openWikiOverlay({
-                mode: wantsNeuralLab ? "list" : mode,
-                entityId: wantsNeuralLab ? null : (entityId ?? null),
+                mode,
+                entityId: entityId ?? null,
                 areaFilter,
                 vttContext: null,
             })
@@ -107,7 +109,6 @@ export default function NarrativeArchivePage() {
     return (
         <>
             <NarrativeWikiOverlay popupMode />
-            <CampaignNeuralLabOverlay />
         </>
     );
 }

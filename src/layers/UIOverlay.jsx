@@ -8,7 +8,6 @@ import LoreDialog from "../components/LoreDialog";
 import CharactersSettingsDialog from "../components/CharactersSettingsDialog";
 import AdminSettingsDialog from "../components/AdminSettingsDialog";
 import NarrativeWikiOverlay from "../components/wiki/NarrativeWikiOverlay";
-import CampaignNeuralLabOverlay from "../components/wiki/CampaignNeuralLabOverlay";
 import CyberSnackbar from "../components/customs/CyberSnackbar";
 import MapContextMenu from "../components/MapContextMenu";
 import CharacterSpotlightOverlay from "../components/vtt/CharacterSpotlightOverlay";
@@ -39,7 +38,6 @@ const EMPTY_CHAT = Object.freeze({ campaignId: null, messages: Object.freeze([])
 const MemoLocationInfoCard = memo(LocationInfoCard);
 const MemoLoreDialog = memo(LoreDialog);
 const MemoNarrativeWikiOverlay = memo(NarrativeWikiOverlay);
-const MemoCampaignNeuralLabOverlay = memo(CampaignNeuralLabOverlay);
 const MemoCyberSnackbar = memo(CyberSnackbar);
 const MemoCharactersSettingsDialog = memo(CharactersSettingsDialog);
 const MemoAdminSettingsDialog = memo(AdminSettingsDialog);
@@ -167,8 +165,7 @@ export default function UIOverlay() {
         >
             <MemoLocationInfoCard />
             <MemoLoreDialog />
-            {isAuthenticated && isDM && <MemoNarrativeWikiOverlay />}
-            {isAuthenticated && isDM && <MemoCampaignNeuralLabOverlay />}
+            {isAuthenticated && <MemoNarrativeWikiOverlay />}
 
             <MemoCharactersSettingsDialog
                 open={!!openDialogs.sheet}

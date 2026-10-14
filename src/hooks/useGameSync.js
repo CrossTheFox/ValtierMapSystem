@@ -19,7 +19,6 @@ export function useGameSync() {
 
         const unsub = subscribeToGameSession(campaignId, (data) => {
             dispatch(setGameSession({
-                partyPositions: data.partyPositions ?? {},
                 tokenPositions: data.tokenPositions ?? {},
                 activeMapId: data.activeMapId ?? null,
                 rulers: data.rulers ?? {},

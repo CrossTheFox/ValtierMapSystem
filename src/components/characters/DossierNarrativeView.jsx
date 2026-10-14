@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, CircularProgress, TextField } from "@mui/material";
+import { Box, Button, CircularProgress, TextField } from "@mui/material";
 import { useDispatch, useSelector } from "react-redux";
 
 import { CyberText, CyberTitle } from "../customs/CustomTexts";
@@ -27,7 +27,7 @@ import {
     getEntityDmNotes,
     setEntityDmNotes,
 } from "../../../firebase/services/entityDmNotesService";
-import { showSnackbar } from "../../store/uiSlice";
+import { openWikiOverlay, showSnackbar } from "../../store/uiSlice";
 import {
     fetchWikiEntities,
     fetchWikiRelations,
@@ -509,16 +509,39 @@ export default function DossierNarrativeView({ character }) {
                             }}
                         >
                             <Box sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 260 }}>
-                                <CyberTitle
-                                    sx={{
-                                        fontSize: "0.7rem",
-                                        letterSpacing: "0.14em",
-                                        color: NAR_ACCENT,
-                                        mb: 0.75,
-                                    }}
-                                >
-                                    BIOGRAFÍA
-                                </CyberTitle>
+                                <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, mb: 0.75, flexWrap: "wrap" }}>
+                                    <CyberTitle
+                                        sx={{
+                                            fontSize: "0.7rem",
+                                            letterSpacing: "0.14em",
+                                            color: NAR_ACCENT,
+                                        }}
+                                    >
+                                        BIOGRAFÍA
+                                    </CyberTitle>
+                                    {isDM && entity?.id && (
+                                        <Button
+                                            size="small"
+                                            variant="outlined"
+                                            onClick={() => dispatch(openWikiOverlay({
+                                                mode: "detail",
+                                                entityId: entity.id,
+                                            }))}
+                                            sx={{
+                                                fontFamily: "'Orbitron', sans-serif",
+                                                fontSize: "0.58rem",
+                                                letterSpacing: "0.08em",
+                                                color: UI_COLORS.textPrimary,
+                                                border: `1px solid ${NAR_ACCENT}`,
+                                                py: 0.2,
+                                                px: 1,
+                                                "&:hover": { bgcolor: `${NAR_ACCENT}18` },
+                                            }}
+                                        >
+                                            Abrir en Archive
+                                        </Button>
+                                    )}
+                                </Box>
                                 <Box
                                     sx={{
                                         display: "flex",

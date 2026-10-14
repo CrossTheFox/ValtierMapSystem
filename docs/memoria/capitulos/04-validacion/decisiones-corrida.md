@@ -51,7 +51,7 @@ No se repitió el alto con el modelo nuevo. Hacerlo habría medido un tubo que e
 
 ## Qué quedó fuera de estas veinte llamadas, y dónde se anotó después
 
-La compuerta sin modelo está en `capa1-compuerta.md` (128 pruebas en verde; contador 3 pendientes y 2 bloqueados). La re-corrida de los ítems de octubre está en `capa2-recorrida.md`. La inspección de un pase está propuesta en `capa4-inspeccion-propuesta.md` y falta que el autor la ratifique. Ninguna de esas tres capas volvió a llamar al modelo.
+La compuerta sin modelo está en `capa1-compuerta.md` (128 pruebas en verde; contador 3 pendientes y 2 bloqueados). La re-corrida de los ítems de octubre está en `capa2-recorrida.md`. La inspección de un pase está ratificada en `capa4-inspeccion-propuesta.md`. Ninguna de esas tres capas volvió a llamar al modelo.
 
 ## Lectura para el capítulo 4, sin subirla de categoría
 

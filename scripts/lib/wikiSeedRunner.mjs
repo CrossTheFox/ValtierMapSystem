@@ -550,6 +550,111 @@ export async function runWikiSeed({
         }
     }
 
+    const camp = await db.collection("campaigns").doc(CAMPAIGN_ID).get();
+    const linkedLoreId = String(args.loreId || camp.data()?.primary_lore_id || "").trim();
+
+    let loreFichas = 0;
+    let loreRels = 0;
+    if (!linkedLoreId) {
+        console.warn("[seed] La campaña no tiene primary_lore_id. El Codex de la mesa queda sembrado. El Lab no verá Aldermar hasta enlazar un Lore y volver a sembrar, o pasar --loreId=.");
+    } else if (ONLY_TYPES) {
+        console.log("[seed] Lore omitido (--only).");
+    } else {
+        console.log(`\n[seed] Lore ${linkedLoreId}: copiando fichas para el Lab y el solar.`);
+        const fichasCol = db.collection("lores").doc(linkedLoreId).collection("fichas");
+        const relCol = db.collection("lores").doc(linkedLoreId).collection("relaciones");
+        const fichaSnap = await fichasCol.get();
+        const bySlug = new Map();
+        for (const doc of fichaSnap.docs) {
+            const slug = doc.data().slug;
+            if (slug && !bySlug.has(slug)) bySlug.set(slug, doc);
+        }
+        const loreSlugToId = {};
+        let eventSlot = 0;
+        for (const entity of ENTITIES) {
+            const slug = entity.slug || slugify(entity.title);
+            const wikiId = slugToId[slug];
+            const payload = {
+                lore_id: linkedLoreId,
+                entity_type: entity.entityType,
+                title: entity.title,
+                summary: entity.summary || "",
+                body: entity.body || "",
+                tags: entity.tags || [],
+                slug,
+                image_url: null,
+                source_ficha_id: null,
+                mesa_source: wikiId && !String(wikiId).startsWith("dry-") ? `wiki:${wikiId}` : null,
+                updated_at: Timestamp.now(),
+            };
+            if (entity.entityType === "evento_historico") {
+                payload.layout_x = 220 + eventSlot * 180;
+                payload.layout_y = 140;
+                eventSlot += 1;
+            }
+            const existing = bySlug.get(slug);
+            if (DRY_RUN) {
+                loreSlugToId[slug] = existing?.id || `dry-lore-${slug}`;
+                loreFichas += 1;
+                continue;
+            }
+            if (existing) {
+                await existing.ref.set({ ...existing.data(), ...payload }, { merge: true });
+                loreSlugToId[slug] = existing.id;
+            } else {
+                const ref = await fichasCol.add({ ...payload, created_at: Timestamp.now() });
+                loreSlugToId[slug] = ref.id;
+            }
+            loreFichas += 1;
+        }
+
+        if (!SKIP_RELATIONS) {
+            const relSnapLore = await relCol.get();
+            const pairToDoc = new Map();
+            for (const doc of relSnapLore.docs) {
+                const data = doc.data();
+                const a = data.from_ficha_id;
+                const b = data.to_ficha_id;
+                if (!a || !b) continue;
+                const key = [a, b].sort().join("|");
+                if (!pairToDoc.has(key)) pairToDoc.set(key, doc);
+            }
+            const writtenPairs = new Set();
+            for (const rel of RELATIONS) {
+                const resolved = resolveSeedRelation(rel, slugToId);
+                if (resolved.error) continue;
+                const fromId = loreSlugToId[resolved.canonFromSlug];
+                const toId = loreSlugToId[resolved.canonToSlug];
+                if (!fromId || !toId) continue;
+                const pair = [fromId, toId].sort().join("|");
+                if (writtenPairs.has(pair)) {
+                    console.warn(`  LORE SKIP par duplicado ${rel.from} -[${rel.relationType}]-> ${rel.to}`);
+                    continue;
+                }
+                writtenPairs.add(pair);
+                const payload = {
+                    lore_id: linkedLoreId,
+                    from_ficha_id: fromId,
+                    to_ficha_id: toId,
+                    relation_type: rel.relationType,
+                    label: rel.label || "",
+                    strength: clampStrength(rel.strength ?? 0),
+                    source_relacion_id: null,
+                    updated_at: Timestamp.now(),
+                };
+                const existing = pairToDoc.get(pair);
+                if (DRY_RUN) {
+                    loreRels += 1;
+                    continue;
+                }
+                if (existing) await existing.ref.set({ ...existing.data(), ...payload }, { merge: true });
+                else await relCol.add({ ...payload, created_at: Timestamp.now() });
+                loreRels += 1;
+            }
+        }
+        console.log(`[seed] Lore fichas: ${loreFichas} | relaciones: ${loreRels}`);
+    }
+
     console.log("\n[seed] Done.");
     console.log(`  Purged relations : ${relDeleted}`);
     console.log(`  Purged entities  : ${entDeleted}`);
@@ -559,6 +664,7 @@ export async function runWikiSeed({
     console.log(`  Relations updated: ${relUpdated}`);
     console.log(`  Relations invalid: ${relInvalid}`);
     console.log(`  Errors           : ${errors}`);
+    if (linkedLoreId) console.log(`  Lore             : lores/${linkedLoreId}/fichas (${loreFichas})`);
     if (DRY_RUN) console.log("\n  (Dry run — no writes performed.)");
     if (!DRY_RUN && errors === 0 && relInvalid === 0) {
         console.log(`\n  Firestore: campaigns/${CAMPAIGN_ID}/wikiEntities`);

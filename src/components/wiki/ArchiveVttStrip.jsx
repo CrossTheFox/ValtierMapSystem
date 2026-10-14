@@ -43,6 +43,7 @@ export default function ArchiveVttStrip({
     onOpenVttLocation,
     onOpenVttCharacter,
     compact = false,
+    readOnly = false,
 }) {
     const charactersById = useSelector((s) => s.world.charactersById ?? {});
     const maps = useSelector((s) => s.world.maps || []);
@@ -55,7 +56,9 @@ export default function ArchiveVttStrip({
             return (
                 <Box sx={{ mt: compact ? 0.85 : 1, p: 1, border: `1px dashed ${UI_COLORS.border}`, borderRadius: 1 }}>
                     <CyberText sx={{ fontSize: "0.72rem", color: UI_COLORS.textSecondary, lineHeight: 1.45 }}>
-                        Sin token en mesa. Edita la ficha para enlazar el personaje jugable.
+                        {readOnly
+                            ? "Sin token en mesa."
+                            : "Sin token en mesa. Edita la ficha para enlazar el personaje jugable."}
                     </CyberText>
                 </Box>
             );

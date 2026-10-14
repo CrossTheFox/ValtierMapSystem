@@ -96,7 +96,7 @@ Esas tres, y las dos de prioridad siguiente, empujaron la UI actual:
 
 La pasada nueva no repite agosto. Recorre Codex, solar, Diario y Lab del Archive actual, con las mismas tareas del protocolo de octubre. Un evaluador: el autor. Escala 0 a 4. Por cada heurística, una evidencia (qué se vio) y la severidad. En el texto se dice que un solo evaluador no cubre lo que cubrirían tres.
 
-La propuesta de esa pasada, hecha el 2026-10-14 sobre Aldermar base y todavía sin ratificar por el autor, está en `docs/memoria/capitulos/04-validacion/capa4-inspeccion-propuesta.md`. No cita severidades hasta esa ratificación. No hubo severidad 4 sugerida.
+La pasada del 2026-10-14 sobre Aldermar base está en `docs/memoria/capitulos/04-validacion/capa4-inspeccion-propuesta.md`. El autor la ratificó el 2026-10-13. No hubo severidad 4. El capítulo 4 cita esas severidades.
 
 Lo que agosto no miró, y octubre sí, entra en esa tabla: dos grafos (Lore y copia de mesa), el verbo de una afinidad, el arco del diario, y el jugador que ve su circuito publicado y no el tablero del DM.
 

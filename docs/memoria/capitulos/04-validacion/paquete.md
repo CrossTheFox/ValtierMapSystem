@@ -66,7 +66,7 @@ Instrumento:
 
 Muy grave, y solo eso se corrige: severidad 4 en una tarea central (no se puede generar, no se distingue un bloqueo de una propuesta válida, o se puede escribir canon sin querer). Se corrige esa cosa, se vuelve a mirar solo esa fila, y el resto se redacta. Severidad 3 se queda como resultado.
 
-Tareas del pase: las del protocolo de octubre sobre esas cuatro superficies, en Aldermar. La propuesta de ese pase, sin ratificar, está en `capa4-inspeccion-propuesta.md`. La compuerta corrida está en `capa1-compuerta.md`. El anexo de octubre está en `capa2-recorrida.md`.
+Tareas del pase: las del protocolo de octubre sobre esas cuatro superficies, en Aldermar. La inspección ratificada está en `capa4-inspeccion-propuesta.md`. La compuerta corrida está en `capa1-compuerta.md`. El anexo de octubre está en `capa2-recorrida.md`.
 
 ## Orden
 

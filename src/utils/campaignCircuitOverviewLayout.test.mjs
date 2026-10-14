@@ -68,15 +68,15 @@ describe("campaignCircuitOverviewLayout", () => {
         const a = buildCampaignCharacterOverviewLayout({ entities, charactersById });
         const b = buildCampaignCharacterOverviewLayout({ entities, charactersById });
         assert.equal(a.hubId, null);
-        assert.equal(a.nodes.length, 4);
+        assert.equal(a.nodes.length, 5);
         assert.deepEqual(
             a.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y })),
             b.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y })),
         );
-        // Reading order: PJ block then NPC, alphabetical within
+        // Reading order: PJ, NPC, then lugar y organización
         assert.deepEqual(
             a.nodes.map((n) => n.id),
-            ["p1", "p2", "n1", "n2"],
+            ["p1", "p2", "n1", "n2", "org"],
         );
         // Grid: with 4 nodes and ≥3 cols, first 3 share a row; 4th wraps
         assert.equal(a.nodes[0].y, a.nodes[1].y);
@@ -129,6 +129,54 @@ describe("campaignCircuitOverviewLayout", () => {
         });
         assert.equal(search.nodes.length, 1);
         assert.equal(search.nodes[0].id, "n1");
+        const onlyOrg = buildCampaignCharacterOverviewLayout({
+            entities,
+            charactersById,
+            kindFilter: "organizacion",
+        });
+        assert.deepEqual(onlyOrg.nodes.map((n) => n.id), ["org"]);
+        assert.equal(onlyOrg.nodes[0].rankLabel, "ORG");
+    });
+
+    it("draws a structural neighbor between two places", () => {
+        const places = [
+            { id: "a", entityType: "locacion", title: "Norte" },
+            { id: "b", entityType: "locacion", title: "Sur" },
+            { id: "ev", entityType: "evento_historico", title: "El cruce" },
+        ];
+        const relations = [
+            { id: "c1", fromEntityId: "a", toEntityId: "b", relationType: "colinda_con" },
+            { id: "c2", fromEntityId: "ev", toEntityId: "a", relationType: "ocurrio_en" },
+        ];
+        const layout = buildCampaignCharacterOverviewLayout({ entities: places, relations });
+        assert.deepEqual(layout.nodes.map((n) => n.id), ["a", "b"]);
+        assert.equal(layout.edges.length, 1);
+        assert.equal(layout.edges[0].relationId, "c1");
+    });
+
+    it("reaches a place on the affinity wave", () => {
+        const withPlace = [
+            ...entities,
+            { id: "plaza", entityType: "locacion", title: "Plaza" },
+        ];
+        const relations = [
+            { id: "r1", fromEntityId: "p1", toEntityId: "plaza", relationType: "aliado_de" },
+        ];
+        const layout = buildCampaignCharacterOverviewLayout({
+            entities: withPlace,
+            charactersById,
+            relations,
+            selectedId: "p1",
+            labDepth: 2,
+        });
+        assert.ok(layout.nodes.some((n) => n.id === "plaza" && n.rankLabel === "LUG"));
+        assert.ok(layout.litIds.has("plaza"));
+        const onlyPlace = buildCampaignCharacterOverviewLayout({
+            entities: withPlace,
+            charactersById,
+            kindFilter: "locacion",
+        });
+        assert.deepEqual(onlyPlace.nodes.map((n) => n.id), ["plaza"]);
     });
 
     it("includes all affinity edges and highlights the impact path", () => {

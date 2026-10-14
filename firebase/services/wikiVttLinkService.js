@@ -127,11 +127,24 @@ async function migrateVttBioIfNeeded(campaignId, character, entity, uid) {
  * Resolve or create the 1:1 wiki PERSONAJE for a VTT character.
  * Used when opening NAR on a table PC — not when minting tokens.
  */
-export async function ensureNarrativeEntityForCharacter(campaignId, character, uid) {
-    if (!campaignId || !character?.id) {
-        throw new Error("ensureNarrativeEntityForCharacter: missing campaignId or character.id");
-    }
+const pendingNarrativeEnsures = new Map();
 
+export function ensureNarrativeEntityForCharacter(campaignId, character, uid) {
+    if (!campaignId || !character?.id) {
+        return Promise.reject(
+            new Error("ensureNarrativeEntityForCharacter: missing campaignId or character.id")
+        );
+    }
+    const key = `${campaignId}:${character.id}`;
+    const pending = pendingNarrativeEnsures.get(key);
+    if (pending) return pending;
+    const run = resolveNarrativeEntityForCharacter(campaignId, character, uid)
+        .finally(() => pendingNarrativeEnsures.delete(key));
+    pendingNarrativeEnsures.set(key, run);
+    return run;
+}
+
+async function resolveNarrativeEntityForCharacter(campaignId, character, uid) {
     const existingId = typeof character.narrativeEntityId === "string" && character.narrativeEntityId
         ? character.narrativeEntityId
         : null;
@@ -148,7 +161,8 @@ export async function ensureNarrativeEntityForCharacter(campaignId, character, u
     }
 
     const linked = await findWikiEntitiesByVttLink(campaignId, { characterId: character.id });
-    const match = linked.find((e) => e.entityType === WIKI_ENTITY_TYPES.PERSONAJE) || linked[0];
+    const personajes = linked.filter((e) => e.entityType === WIKI_ENTITY_TYPES.PERSONAJE);
+    const match = personajes.find((e) => e.id === existingId) || personajes[0] || linked[0];
     if (match) {
         if (character.narrativeEntityId !== match.id) {
             await updateCharacterFields(character.id, { narrativeEntityId: match.id });

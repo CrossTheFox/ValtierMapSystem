@@ -352,6 +352,7 @@ function RelationCard({
     onCancelDelete,
     onConfirmDelete,
     onStrengthCommit,
+    onTypeChange,
 }) {
     return (
         <Box
@@ -437,20 +438,37 @@ function RelationCard({
                         )}
                     </Box>
                     <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 0.35, alignItems: "center" }}>
-                        <Box
-                            sx={{
-                                px: 0.55,
-                                py: 0.15,
-                                border: `1px solid ${NAR_ACCENT}55`,
-                                bgcolor: `${NAR_ACCENT}12`,
-                                fontFamily: '"Fira Code", monospace',
-                                fontSize: "0.55rem",
-                                color: UI_COLORS.textPrimary,
-                                letterSpacing: "0.04em",
-                            }}
-                        >
-                            {row.relationLabel}
-                        </Box>
+                        {canEdit && row.typeOptions?.length > 0 ? (
+                            <FormControl size="small" sx={{ minWidth: 128 }}>
+                                <Select
+                                    value={row.relationType}
+                                    disabled={busy}
+                                    onChange={(ev) => onTypeChange?.(row, ev.target.value)}
+                                    sx={{ ...selectSx, height: 26, fontSize: "0.62rem" }}
+                                    MenuProps={{ PaperProps: { sx: cyberMenuPaperSx } }}
+                                    inputProps={{ "aria-label": `Verbo con ${row.otherTitle}` }}
+                                >
+                                    {row.typeOptions.map(({ value, label }) => (
+                                        <MenuItem key={value} value={value} sx={cyberMenuItemSx}>{label}</MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        ) : (
+                            <Box
+                                sx={{
+                                    px: 0.55,
+                                    py: 0.15,
+                                    border: `1px solid ${NAR_ACCENT}55`,
+                                    bgcolor: `${NAR_ACCENT}12`,
+                                    fontFamily: '"Fira Code", monospace',
+                                    fontSize: "0.55rem",
+                                    color: UI_COLORS.textPrimary,
+                                    letterSpacing: "0.04em",
+                                }}
+                            >
+                                {row.relationLabel}
+                            </Box>
+                        )}
                         {row.kindBadge && (
                             <Box
                                 sx={{
@@ -606,6 +624,10 @@ export default function DossierRelationTrack({
                 otherTypeLabel: WIKI_ENTITY_TYPE_LABELS[entityType] || entityType || "",
                 relationLabel: getRelationDisplayLabel(rel.relationType, outgoing),
                 relationType: rel.relationType,
+                typeOptions: getAffinityRelationTypeOptionsForContext(
+                    { entityType: outgoing ? selfType : entityType },
+                    { entityType: outgoing ? entityType : selfType },
+                ),
                 customLabel: rel.label || "",
                 filterKey,
                 kindBadge,
@@ -668,6 +690,31 @@ export default function DossierRelationTrack({
         }
     }, [dmEdit, campaignId, dispatch, selfEntity]);
 
+    const changeVerb = useCallback(async (row, nextType) => {
+        if (!dmEdit || !campaignId || !row?.id || !nextType || nextType === row.relationType) return;
+        setBusyId(row.id);
+        try {
+            await dispatch(updateWikiRelation({
+                campaignId,
+                relationId: row.id,
+                data: {
+                    relationType: nextType,
+                    strength: defaultStrengthForRelation(nextType, selfEntity?.entityType, row.entityType),
+                    fromEntityType: selfEntity?.entityType,
+                    toEntityType: row.entityType,
+                },
+            })).unwrap();
+        } catch (err) {
+            console.error("[DossierRelationTrack] verb", err);
+            dispatch(showSnackbar({
+                message: "No se pudo cambiar el verbo",
+                severity: "error",
+            }));
+        } finally {
+            setBusyId(null);
+        }
+    }, [dmEdit, campaignId, dispatch, selfEntity]);
+
     const handleRemove = useCallback(async (relationId) => {
         if (!dmEdit || !campaignId || !relationId) return;
         setBusyId(relationId);
@@ -721,19 +768,34 @@ export default function DossierRelationTrack({
                 newTo,
                 newType
             );
-            await dispatch(addWikiRelation({
-                campaignId,
-                data: {
-                    fromEntityId,
-                    toEntityId,
-                    relationType: newType,
-                    strength: clampStrength(newStrength),
-                    label: newType === WIKI_RELATION_TYPES.OTRO ? (newLabel || "") : "",
-                    fromEntityType: selfEntity.entityType,
-                    toEntityType: newTo.entityType,
-                },
-                uid,
-            })).unwrap();
+            const existing = (relations || []).find((rel) => {
+                const ends = [rel.fromEntityId, rel.toEntityId];
+                return ends.includes(selfEntity.id) && ends.includes(newTo.id) && isAffinityRelation({
+                    relationType: rel.relationType,
+                    fromEntityType: rel.fromEntityType || selfEntity.entityType,
+                    toEntityType: rel.toEntityType || newTo.entityType,
+                });
+            });
+            const data = {
+                relationType: newType,
+                strength: clampStrength(newStrength),
+                label: newType === WIKI_RELATION_TYPES.OTRO ? (newLabel || "") : "",
+                fromEntityType: selfEntity.entityType,
+                toEntityType: newTo.entityType,
+            };
+            if (existing?.id) {
+                await dispatch(updateWikiRelation({
+                    campaignId,
+                    relationId: existing.id,
+                    data,
+                })).unwrap();
+            } else {
+                await dispatch(addWikiRelation({
+                    campaignId,
+                    data: { ...data, fromEntityId, toEntityId },
+                    uid,
+                })).unwrap();
+            }
             resetAddForm();
         } catch (err) {
             console.error("[DossierRelationTrack] create", err);
@@ -753,6 +815,7 @@ export default function DossierRelationTrack({
         newStrength,
         newLabel,
         uid,
+        relations,
         dispatch,
         resetAddForm,
     ]);
@@ -1190,6 +1253,7 @@ export default function DossierRelationTrack({
                         onCancelDelete={() => setDeleteId(null)}
                         onConfirmDelete={() => handleRemove(row.id)}
                         onStrengthCommit={commitStrength}
+                        onTypeChange={changeVerb}
                     />
                 ))}
             </Box>

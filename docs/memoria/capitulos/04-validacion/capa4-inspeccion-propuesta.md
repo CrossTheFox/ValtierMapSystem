@@ -1,8 +1,8 @@
-# Capa 4 — inspección propuesta, sin ratificar
+# Capa 4 — inspección ratificada
 
-Fecha: 2026-10-14. Un pase, en Aldermar base, con la sesión de EnvyTheDm. Superficies: Codex, solar (pestaña TIMELINE), Diario, Lab. No se entró a la vista de jugador ni al mapa.
+Fecha del pase: 2026-10-14. Un pase, en Aldermar base, con la sesión de EnvyTheDm. Superficies: Codex, solar (pestaña TIMELINE), Diario, Lab. No se entró a la vista de jugador ni al mapa.
 
-Esto no es el resultado del capítulo. Es la tabla para que el autor la ratifique o la corrija. Hasta esa ratificación, el capítulo 4 no puede citar estas severidades como la inspección del autor.
+Ratificada por el autor el 2026-10-13. Revisó la tabla y la dejó pasar, severidades incluidas. El capítulo 4 cita estos números. No hubo severidad 4, así que no se corrigió interfaz.
 
 Escala de Nielsen, 0 a 4. No apareció una severidad 4 sugerida. No se corrigió interfaz en esta pasada.
 
@@ -23,13 +23,13 @@ Entrar a `/archive` sin `campaignId` se queda en «Cargando archivo narrativo...
 | H9 Errores | 1. No se provocó un error. | 1. Igual. | 1. Igual. | 1. No se provocó un error. El texto de bloqueo de una propuesta inválida está en la revisión del Lab y no se abrió en esta pasada. |
 | H10 Ayuda | 2. El índice tiene una frase («Cada grupo se abre y se cierra por separado»). No hay otra ayuda. | 2. No hay una ayuda en el lienzo. | 2. La frase de «vive solo en el Diario» es la ayuda de ese vacío. | 1. Hay un botón «Ayuda de las ondas». El botón de la propuesta fija dice que no llama al modelo. |
 
-Promedio sugerido, si el autor deja estos números: Codex 1,1; solar 1,4; Diario 1,1; Lab 1,6. H8 del Lab es el único 3. Nada en 4.
+Promedio: Codex 1,1; solar 1,4; Diario 1,1; Lab 1,6. H8 del Lab es el único 3. Nada en 4.
 
 ## Amershi et al. (2019), solo el Lab
 
-Ocho guías. «A medias» significa que el estado vacío no las muestra y la pantalla de resultado no se abrió.
+Ocho guías. El autor dejó estas marcas. «A medias» es el resultado: el estado vacío no muestra la guía completa.
 
-| Guía | Propuesta |
+| Guía | Resultado |
 |---|---|
 | Qué puede hacer el sistema | A medias. Se ve «Evento narrativo», Generar y la propuesta fija. No se explica, antes de elegir ficha, que el resultado son cambios de vínculo y no un relato. |
 | Qué tan seguro está | No en este estado. La confianza aparece con las tarjetas. No se generó. |
@@ -40,4 +40,4 @@ Ocho guías. «A medias» significa que el estado vacío no las muestra y la pan
 | Consecuencias de aplicar | No visto. No se aplicó nada. |
 | Abortar la generación | No visto. Generar estaba deshabilitado. En el código, durante una generación hay Cancelar. |
 
-Para cerrar esta capa, el autor abre «Propuesta de prueba» en el Lab de Aldermar, mira el contador (3 pendientes, 2 bloqueados) y corrige las filas de Amershi que dependen de esa pantalla. Si está de acuerdo con el resto, la tabla de Nielsen pasa a ser la inspección.
+El autor dio por buena esta tabla, incluidas las filas que el pase dejó a medias. El contador de la propuesta fija sigue siendo el de la compuerta: 3 pendientes y 2 bloqueados.

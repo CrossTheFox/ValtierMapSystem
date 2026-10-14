@@ -8,6 +8,7 @@ import LandingPage from "./pages/LandingPage";
 import MainMapPage from "./pages/MainMapPage";
 import PopupDialogPage from "./pages/PopupDialogPage";
 import NarrativeArchivePage from "./pages/NarrativeArchivePage";
+import LibraryHubPage from "./pages/LibraryHubPage";
 
 export default function App() {
     const [user, setUser] = useState(null);
@@ -33,10 +34,16 @@ export default function App() {
     return (
         <Router>
             <Routes>
-                {/* Si no hay usuario, Landing. Si hay, redirige al mapa */}
+                {/* Si no hay usuario, Landing. Si hay, redirige al hub */}
                 <Route 
                     path="/" 
-                    element={user ? <Navigate to="/map" /> : <LandingPage />} 
+                    element={user ? <Navigate to="/biblioteca" /> : <LandingPage />} 
+                />
+
+                {/* Hub post-login: Lores de la biblioteca y mesas */}
+                <Route
+                    path="/biblioteca"
+                    element={user ? <LibraryHubPage /> : <Navigate to="/" />}
                 />
                 
                 {/* Ruta del Mapa Protegida */}

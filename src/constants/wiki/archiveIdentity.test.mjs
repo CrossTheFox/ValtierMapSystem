@@ -9,6 +9,7 @@ import {
     findWikiLocacionForPin,
     collectPinsForWikiLocation,
     findWikiPersonajeForCharacter,
+    dedupePersonajesByVttLink,
 } from "./archiveIdentity.js";
 
 describe("archive identity contract", () => {
@@ -57,5 +58,20 @@ describe("archive identity contract", () => {
             "w1"
         );
         assert.equal(findWikiPersonajeForCharacter({}, "c1", [wiki])?.id, "w1");
+    });
+
+    it("lists one PERSONAJE per VTT token (canonical, else oldest)", () => {
+        const canonical = { id: "w1", entityType: "personaje", linkedVttCharacterId: "c1", createdAt: "2026-02-01T00:00:00Z" };
+        const dupe = { id: "w2", entityType: "personaje", linkedVttCharacterId: "c1", createdAt: "2026-01-01T00:00:00Z" };
+        const npc = { id: "w3", entityType: "personaje" };
+        const place = { id: "w4", entityType: "locacion", linkedVttCharacterId: "c1" };
+        const list = [dupe, canonical, npc, place];
+
+        assert.deepEqual(
+            dedupePersonajesByVttLink(list, { c1: { narrativeEntityId: "w1" } }).map((e) => e.id),
+            ["w1", "w3", "w4"]
+        );
+        assert.deepEqual(dedupePersonajesByVttLink(list, {}).map((e) => e.id), ["w2", "w3", "w4"]);
+        assert.equal(dedupePersonajesByVttLink([npc, place], {}).length, 2);
     });
 });

@@ -1,16 +1,16 @@
 import { useEffect, useCallback, useState, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { Box, Dialog, IconButton } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import AddIcon from "@mui/icons-material/Add";
-import AutoStoriesIcon from "@mui/icons-material/AutoStories";
 import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import FullscreenExitIcon from "@mui/icons-material/FullscreenExit";
 import RemoveIcon from "@mui/icons-material/Remove";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { useDispatch, useSelector } from "react-redux";
-import { CyberTitle, CyberText } from "../customs/CustomTexts";
+import { CyberText } from "../customs/CustomTexts";
 import CyberTooltip from "../customs/CyberTooltip";
 import { UI_COLORS, TYPO, Z_INDEX } from "../../constants/designSystem";
 import { RENDER_LAYERS } from "../../constants/renderLayers";
@@ -30,7 +30,8 @@ import {
     setWikiOverlayAreaFilter,
     setDialogMinimized,
     openWikiOverlay,
-    openNeuralLabOverlay,
+    closeNeuralLabOverlay,
+    setNeuralLabFocusEntity,
     openLocation,
     restoreDialog,
     showSnackbar,
@@ -38,18 +39,26 @@ import {
 import { DIALOG_IDS } from "../../constants/dialogIds";
 import WikiSearchBar from "./WikiSearchBar";
 import WikiAreaNav from "./WikiAreaNav";
+import { ArchiveBrand } from "./ArchiveChrome";
+import ArchiveExitMenu from "./ArchiveExitMenu";
+import ArchiveLoreGear from "./ArchiveLoreGear";
+import { ARCHIVE_TBG_SX, ARCHIVE_TOPNAV_SX } from "../../constants/archiveChrome";
 import WikiEntityList from "./WikiEntityList";
 import WikiEntityDetail from "./WikiEntityDetail";
 import WikiEntityEditor from "./WikiEntityEditor";
 import WikiRelationPanel from "./WikiRelationPanel";
-import WikiTimelineView from "./WikiTimelineView";
-import WikiSessionLogPanel from "./WikiSessionLogPanel";
+import ArchiveDiary from "./archive-diary/ArchiveDiary";
+import CampaignCodex from "./archive-codex/CampaignCodex";
+import CampaignTimeline from "./archive-timeline/CampaignTimeline";
+import CampaignNeuralLabOverlay from "./CampaignNeuralLabOverlay";
 import WikiAiConfigDialog from "./WikiAiConfigDialog";
 import SystemGlossaryDialog from "./SystemGlossaryDialog";
 import { filterEntitiesByLegend } from "./WikiGraphHud";
+import { confirmLeaveEditorDraft } from "../../utils/editorDraftGuard";
 import { useWikiSearch } from "../../hooks/useWikiSearch";
 import { WIKI_ENTITY_TYPES, compareEntitiesByArchiveOrder } from "../../constants/wikiEntityTypes";
 import {
+    dedupePersonajesByVttLink,
     findWikiLocacionForPin,
     wikiEntityLinksLocation,
 } from "../../constants/wiki/archiveIdentity.js";
@@ -63,14 +72,7 @@ import {
     normalizeWikiAreaFilter,
 } from "../../constants/wiki";
 import { resolveMentionClick } from "../../utils/wikiNavigation";
-import {
-    buildTimelineCustomFields,
-    buildTimelineRows,
-    getTimelineMeta,
-    suggestTimelineDateBelow,
-    TIMELINE_BRANCH,
-    TIMELINE_CALENDAR,
-} from "../../utils/wikiTimeline";
+import { buildTimelineCustomFields } from "../../utils/wikiTimeline";
 import { buildGraphDataset, isGraphSelectableEntity } from "../../utils/wikiGraphEntities";
 import { openArchiveTab } from "../../utils/openArchiveTab";
 import { getWikiOverlayDensity } from "../../constants/wikiOverlayTokens";
@@ -97,6 +99,9 @@ const POPUP_PAPER_SX = {
     height: "100dvh",
     borderRadius: 0,
 };
+
+const PLAYER_HIDDEN_AREAS = [WIKI_AREA_IDS.LORE];
+const PLAYER_AREAS = new Set([WIKI_AREA_IDS.CODEX, WIKI_AREA_IDS.TIMELINE, WIKI_AREA_IDS.SESSIONS, WIKI_AREA_IDS.NEURAL_LAB]);
 
 const NEURAL_LAB_FICHA_DIALOG_PAPER_SX = {
     width: "calc(100% - 48px)",
@@ -128,6 +133,7 @@ const NEURAL_LAB_PANEL_TOGGLE_SX = {
 
 export default function NarrativeWikiOverlay({ popupMode = false }) {
     const dispatch = useDispatch();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [neuralLabRightOpen, setNeuralLabRightOpen] = useState(true);
     const [fichaDialogOpen, setFichaDialogOpen] = useState(false);
@@ -140,12 +146,16 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
     const [createEditorNonce, setCreateEditorNonce] = useState(0);
     /** Snapshot for «Volver» after cross-area / cross-entity jumps (mentions, Ir a CODEX, etc.). */
     const [navReturn, setNavReturn] = useState(null);
+    /** @type {[{ articleId: string, mentionOf: string }|null, Function]} */
+    const [mentionFocus, setMentionFocus] = useState(null);
     const wikiOverlay = useSelector((s) => s.ui.wikiOverlay);
     const entities = useSelector((s) => s.wiki.entities);
     const wikiStatus = useSelector((s) => s.wiki.status);
     const loadedCampaignId = useSelector((s) => s.wiki.loadedCampaignId);
     const campaignId = useSelector((s) => s.world.selectedCampaignId);
+    const campaignName = useSelector((s) => s.world.selectedCampaignName);
     const locations = useSelector((s) => s.world.locations);
+    const charactersById = useSelector((s) => s.world.charactersById);
     const syncActive = useSelector((s) => s.wiki.syncActive);
     const relations = useSelector((s) => s.wiki.relations);
     const narrativeSettings = useSelector((s) => s.wiki.narrativeSettings);
@@ -153,7 +163,11 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
     const profile = useSelector((s) => s.player.profile);
     const uid = profile?.uid;
 
-    const readOnly = profile?.role !== ROLES.DM;
+    const isDm = profile?.role === ROLES.DM;
+    /** DM-only preview of the player view: local state, never written, never changes the sync query. */
+    const [previewPlayer, setPreviewPlayer] = useState(false);
+    const [diarySessionId, setDiarySessionId] = useState(null);
+    const readOnly = !isDm || previewPlayer;
 
     const { open, mode, entityId, vttContext, areaFilter } = wikiOverlay;
     const effectiveAreaFilter = normalizeWikiAreaFilter(areaFilter);
@@ -210,12 +224,12 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
             return;
         }
         if (wikiStatus === "idle" && !syncActive) {
-            dispatch(startWikiSync({ campaignId, role: readOnly ? "player" : "dm" }));
+            dispatch(startWikiSync({ campaignId, role: isDm ? "dm" : "player" }));
         } else if (wikiStatus === "idle") {
-            dispatch(fetchWikiEntities({ campaignId, role: readOnly ? "player" : "dm" }));
+            dispatch(fetchWikiEntities({ campaignId, role: isDm ? "dm" : "player" }));
             dispatch(fetchWikiRelations(campaignId));
         }
-    }, [isActive, campaignId, wikiStatus, syncActive, readOnly, dispatch]);
+    }, [isActive, campaignId, wikiStatus, syncActive, isDm, dispatch]);
 
     // Load relations for selected entity
     useEffect(() => {
@@ -259,11 +273,22 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
     }, [isActive, areaFilter, dispatch]);
 
     useEffect(() => {
+        if (!isActive || isDm) return;
+        if (!PLAYER_AREAS.has(effectiveAreaFilter)) {
+            dispatch(setWikiOverlayAreaFilter(WIKI_AREA_IDS.CODEX));
+        }
+    }, [isActive, isDm, effectiveAreaFilter, dispatch]);
+
+    useEffect(() => {
         if (!isActive) setNavReturn(null);
     }, [isActive]);
 
     // Apply area filter after Fuse, before rendering list
-    const { query, setQuery, results: fuseResults, typeFilter, setTypeFilter } = useWikiSearch(entities);
+    const listableEntities = useMemo(
+        () => dedupePersonajesByVttLink(entities, charactersById),
+        [entities, charactersById]
+    );
+    const { query, setQuery, results: fuseResults, typeFilter, setTypeFilter } = useWikiSearch(listableEntities);
     const areaFilteredResults = filterEntitiesByWikiArea(fuseResults, effectiveAreaFilter);
     const results = useMemo(() => {
         const base = [...areaFilteredResults];
@@ -386,13 +411,24 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
 
     const handleAreaFilterChange = useCallback(
         (id) => {
+            if (!confirmLeaveEditorDraft()) return;
             setNavReturn(null);
+            if (id === WIKI_AREA_IDS.NEURAL_LAB) {
+                dispatch(closeNeuralLabOverlay());
+                dispatch(setNeuralLabFocusEntity(null));
+                dispatch(setWikiOverlayEntity(null));
+            }
             dispatch(setWikiOverlayAreaFilter(id));
             if (id === WIKI_AREA_IDS.TIMELINE) {
                 setTypeFilter("");
             }
+            if (popupMode) {
+                const next = new URLSearchParams(searchParams);
+                next.set("areaFilter", id);
+                setSearchParams(next, { replace: true });
+            }
         },
-        [dispatch, setTypeFilter]
+        [dispatch, setTypeFilter, popupMode, searchParams, setSearchParams]
     );
 
     const syncAreaForEntity = useCallback(
@@ -418,6 +454,7 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
         (entity) => {
             dispatch(setWikiOverlayEntity(entity.id));
             syncAreaForEntity(entity);
+            setMentionFocus(null);
         },
         [dispatch, syncAreaForEntity]
     );
@@ -468,15 +505,6 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
         [dispatch]
     );
 
-    const handleOpenInNeuralLab = useCallback(
-        (entity) => {
-            if (!entity) return;
-            dispatch(openNeuralLabOverlay({ focusEntityId: entity.id }));
-        },
-        [dispatch]
-    );
-
-    // NEURAL_LAB: explicit "go to the entity's native area page" action
     const handleGoToEntityPage = useCallback(
         (entity) => {
             if (!entity) return;
@@ -489,16 +517,18 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
     );
 
     const handleNavigateToEntity = useCallback(
-        (mentionId) => {
+        (mentionId, opts) => {
             const resolved = resolveMentionClick(mentionId, { entities, locations });
             if (!resolved) return;
 
             if (resolved.type === "vtt-location") {
+                setMentionFocus(null);
                 openVttLocation(resolved.locationId, 0);
                 return;
             }
 
             if (resolved.type === "vtt-character") {
+                setMentionFocus(null);
                 openVttLocation(resolved.locationId, 1);
                 return;
             }
@@ -514,6 +544,10 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
                 dispatch(setWikiOverlayAreaFilter(targetArea));
                 dispatch(setWikiOverlayEntity(ent.id));
                 dispatch(setWikiOverlayMode("detail"));
+                const highlightOf = opts?.highlightMentionOf;
+                setMentionFocus(
+                    highlightOf ? { articleId: ent.id, mentionOf: highlightOf } : null
+                );
             }
         },
         [dispatch, entities, locations, openVttLocation, effectiveAreaFilter, entityId, captureNavReturn]
@@ -536,55 +570,6 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
             dispatch(setWikiOverlayMode("detail"));
         },
         [dispatch, entities, effectiveAreaFilter, entityId, captureNavReturn]
-    );
-
-    const handleCreateTimelineEvent = useCallback(
-        ({ direction, anchorEntity, isCore = false }) => {
-            let branch = TIMELINE_BRANCH.CENTER;
-            let date = "";
-            let anchorId = null;
-
-            if (isCore) {
-                branch = TIMELINE_BRANCH.CENTER;
-            } else if (!anchorEntity) {
-                const timelineEvents = entities.filter(
-                    (e) => e.entityType === WIKI_ENTITY_TYPES.EVENTO_HISTORICO
-                );
-                const rows = buildTimelineRows(timelineEvents);
-                const lastNode = rows[rows.length - 1]?.nodes?.[0];
-                date = suggestTimelineDateBelow(lastNode ? getTimelineMeta(lastNode.entity).date : "");
-            } else {
-                const meta = getTimelineMeta(anchorEntity);
-                anchorId = anchorEntity.id;
-                date = meta.date;
-                if (direction === "down") {
-                    date = suggestTimelineDateBelow(meta.date);
-                    branch = TIMELINE_BRANCH.CENTER;
-                } else if (direction === "left") {
-                    branch = TIMELINE_BRANCH.LEFT;
-                } else if (direction === "right") {
-                    branch = TIMELINE_BRANCH.RIGHT;
-                }
-            }
-
-            dispatch(
-                openWikiOverlay({
-                    mode: "create",
-                    entityId: null,
-                    areaFilter: WIKI_AREA_IDS.TIMELINE,
-                    vttContext: {
-                        timelinePrefill: {
-                            calendar: TIMELINE_CALENDAR.DZ,
-                            date,
-                            branch,
-                            isCore,
-                            anchorId,
-                        },
-                    },
-                })
-            );
-        },
-        [dispatch, entities]
     );
 
     const handleBackdropClick = useCallback(
@@ -636,6 +621,21 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
         [dispatch, campaignId, syncAreaForEntity]
     );
 
+    const handleCodexSelect = useCallback((id) => {
+        setMentionFocus(null);
+        dispatch(setWikiOverlayEntity(id));
+    }, [dispatch]);
+
+    const handleCodexSurface = useCallback((next) => {
+        if (next?.kind === "edit") {
+            dispatch(setWikiOverlayEntity(next.id));
+            dispatch(setWikiOverlayMode("edit"));
+            return;
+        }
+        if (mode === "edit") dispatch(setWikiOverlayMode(entityId ? "detail" : "list"));
+        else if (mode === "create") dispatch(setWikiOverlayEntity(null));
+    }, [dispatch, mode, entityId]);
+
     if (!popupMode && !open) return null;
 
     if (!popupMode && wikiMinimized) return null;
@@ -661,9 +661,9 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
     }
 
     const isTimelineView = effectiveAreaFilter === WIKI_AREA_IDS.TIMELINE;
-    const isNeuralLabView = false; // Neural Lab is a separate VTT overlay
+    const isNeuralLabView = effectiveAreaFilter === WIKI_AREA_IDS.NEURAL_LAB;
     const isSessionsView = effectiveAreaFilter === WIKI_AREA_IDS.SESSIONS;
-    const timelineEditing = isTimelineView && (mode === "edit" || mode === "create");
+    const isCodexView = effectiveAreaFilter === WIKI_AREA_IDS.CODEX;
     // Players can only be in list/detail modes
     const activeMode = readOnly && (mode === "edit" || mode === "create") ? "list" : mode;
     const wikiEditorKey =
@@ -675,6 +675,7 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
         !isNeuralLabView &&
         !isTimelineView &&
         !isSessionsView &&
+        !isCodexView &&
         activeMode === "detail" &&
         !!selectedEntity;
 
@@ -707,7 +708,75 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
                     flexShrink: 0,
                 }}
             >
-                {/* ── Top Bar ── */}
+                {/* ── Top Bar (mock .topnav) ── */}
+                <Box sx={{ ...ARCHIVE_TOPNAV_SX, gap: "14px", pr: "8px" }}>
+                    <ArchiveBrand sub={campaignName} />
+                    <WikiAreaNav
+                        areaFilter={areaFilter}
+                        onAreaFilterChange={handleAreaFilterChange}
+                        hiddenAreaIds={!isDm ? PLAYER_HIDDEN_AREAS : []}
+                        showGlossaryButton={isDm}
+                        onOpenGlossary={() => setGlossaryOpen(true)}
+                        showConfigButton={!readOnly}
+                        onOpenConfig={() => setAiConfigOpen(true)}
+                    />
+                    {isDm && (
+                        <Box sx={ARCHIVE_TBG_SX} role="group" aria-label="Rol en la vista">
+                            <button type="button" aria-pressed={!previewPlayer} onClick={() => setPreviewPlayer(false)}>DM</button>
+                            <CyberTooltip title="Vista previa de jugador">
+                                <button type="button" aria-pressed={previewPlayer} onClick={() => setPreviewPlayer(true)}>Jugador</button>
+                            </CyberTooltip>
+                        </Box>
+                    )}
+                    {!isDm && (
+                        <Box component="span" sx={{ fontFamily: TYPO.mono, fontSize: "10.5px", color: UI_COLORS.anomaly, letterSpacing: ".08em" }}>
+                            LECTURA
+                        </Box>
+                    )}
+                    <Box sx={{ flex: 1 }} />
+                    {isDm && !previewPlayer && (
+                        <ArchiveLoreGear campaignId={campaignId} />
+                    )}
+                    {popupMode && <ArchiveExitMenu />}
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 0 }}>
+                        {!popupMode && (
+                            <CyberTooltip title="Abrir en pestaña (segundo monitor)">
+                                <IconButton size="small" onClick={handlePopout} sx={iconBtnSx}>
+                                    <OpenInNewIcon />
+                                </IconButton>
+                            </CyberTooltip>
+                        )}
+
+                        {!popupMode && (
+                            <CyberTooltip title={isFullscreen ? "Vista normal" : "Pantalla completa"}>
+                                <IconButton size="small" onClick={() => setIsFullscreen((v) => !v)} sx={iconBtnSx}>
+                                    {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
+                                </IconButton>
+                            </CyberTooltip>
+                        )}
+
+                        {!popupMode && (
+                            <CyberTooltip title="Minimizar">
+                                <IconButton
+                                    size="small"
+                                    onClick={() => dispatch(setDialogMinimized({ id: DIALOG_IDS.WIKI, value: true }))}
+                                    sx={iconBtnSx}
+                                >
+                                    <RemoveIcon />
+                                </IconButton>
+                            </CyberTooltip>
+                        )}
+                        {!popupMode && (
+                            <CyberTooltip title={popupMode ? "Cerrar pestaña (Esc)" : "Cerrar archivo (Esc)"}>
+                                <IconButton size="small" onClick={handleClose} sx={{ ...iconBtnSx, ml: 0.25 }}>
+                                    <CloseIcon />
+                                </IconButton>
+                            </CyberTooltip>
+                        )}
+                    </Box>
+                </Box>
+
+                {((!isCodexView && !isTimelineView) || navReturn) && (
                 <Box
                     sx={{
                         display: "flex",
@@ -720,96 +789,6 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
                         flexShrink: 0,
                     }}
                 >
-                    <Box
-                        sx={{
-                            display: "grid",
-                            gridTemplateColumns: "1fr auto 1fr",
-                            alignItems: "center",
-                            gap: 0.75,
-                            minHeight: 30,
-                        }}
-                    >
-                        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-start" }}>
-                            <WikiAreaNav
-                                compact
-                                areaFilter={areaFilter}
-                                onAreaFilterChange={handleAreaFilterChange}
-                                showGlossaryButton
-                                onOpenGlossary={() => setGlossaryOpen(true)}
-                                showConfigButton={!readOnly}
-                                onOpenConfig={() => setAiConfigOpen(true)}
-                            />
-                        </Box>
-
-                        <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
-                            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                                <AutoStoriesIcon sx={{ color: UI_COLORS.accent, fontSize: compact ? "0.9rem" : "1rem" }} />
-                                <CyberTitle
-                                    sx={{
-                                        color: UI_COLORS.accent,
-                                        fontSize: density.titleFontSize,
-                                        letterSpacing: density.titleLetterSpacing,
-                                        lineHeight: 1.1,
-                                    }}
-                                >
-                                    {compact ? "ARCHIVE" : "NARRATIVE_ARCHIVE"}
-                                </CyberTitle>
-                            </Box>
-                            {readOnly && (
-                                <CyberText sx={{ fontSize: "0.52rem", color: UI_COLORS.anomaly, letterSpacing: 0.8, lineHeight: 1.2 }}>
-                                    LECTURA
-                                </CyberText>
-                            )}
-                        </Box>
-
-                        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 0 }}>
-                            {!popupMode && (
-                                <CyberTooltip title="Abrir en pestaña (segundo monitor)">
-                                    <IconButton size="small" onClick={handlePopout} sx={iconBtnSx}>
-                                        <OpenInNewIcon />
-                                    </IconButton>
-                                </CyberTooltip>
-                            )}
-
-                            {!popupMode && (
-                                <CyberTooltip title={isFullscreen ? "Vista normal" : "Pantalla completa"}>
-                                    <IconButton size="small" onClick={() => setIsFullscreen((v) => !v)} sx={iconBtnSx}>
-                                        {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
-                                    </IconButton>
-                                </CyberTooltip>
-                            )}
-
-                            {!readOnly && isTimelineView && (
-                                <CyberTooltip title="Nuevo evento histórico">
-                                    <IconButton
-                                        size="small"
-                                        onClick={() => handleCreateTimelineEvent({ direction: "down", anchorEntity: null })}
-                                        sx={{ ...iconBtnSx, color: UI_COLORS.accent, "&:hover": { bgcolor: `${UI_COLORS.accent}18`, color: UI_COLORS.accent } }}
-                                    >
-                                        <AddIcon />
-                                    </IconButton>
-                                </CyberTooltip>
-                            )}
-
-
-                            {!popupMode && (
-                                <CyberTooltip title="Minimizar">
-                                    <IconButton
-                                        size="small"
-                                        onClick={() => dispatch(setDialogMinimized({ id: DIALOG_IDS.WIKI, value: true }))}
-                                        sx={iconBtnSx}
-                                    >
-                                        <RemoveIcon />
-                                    </IconButton>
-                                </CyberTooltip>
-                            )}
-                            <CyberTooltip title={popupMode ? "Cerrar pestaña (Esc)" : "Cerrar archivo (Esc)"}>
-                                <IconButton size="small" onClick={handleClose} sx={{ ...iconBtnSx, ml: 0.25 }}>
-                                    <CloseIcon />
-                                </IconButton>
-                            </CyberTooltip>
-                        </Box>
-                    </Box>
 
                     {navReturn && (
                         <Box
@@ -843,7 +822,7 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
                         </Box>
                     )}
 
-                    {!isNeuralLabView && (
+                    {!isNeuralLabView && !isCodexView && !isTimelineView && !isSessionsView && (
                         <WikiSearchBar
                             compact={compact}
                             hideAreaNav
@@ -858,11 +837,54 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
                         />
                     )}
                 </Box>
+                )}
 
                 {/* ── Main Panel ── */}
                 <Box sx={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
-                    {/* Left: Entity list (hidden on Timeline and NEURAL_LAB visual layouts) */}
-                    {!isTimelineView && !isNeuralLabView && (
+                    {isTimelineView && (
+                        <CampaignTimeline
+                            key={campaignId}
+                            campaignId={campaignId}
+                            campaignName={campaignName}
+                            canEdit={!readOnly}
+                            playerView={!isDm || previewPlayer}
+                            onOpenSession={(id) => {
+                                setDiarySessionId(id);
+                                dispatch(setWikiOverlayAreaFilter(WIKI_AREA_IDS.SESSIONS));
+                            }}
+                        />
+                    )}
+                    {isNeuralLabView && (
+                        <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", overflow: "hidden" }}>
+                            <CampaignNeuralLabOverlay
+                                embedded
+                                seat="mesa"
+                                readOnly={!isDm || previewPlayer}
+                                playerEgo={!isDm || previewPlayer}
+                            />
+                        </Box>
+                    )}
+                    {isCodexView && (
+                        <CampaignCodex
+                            campaignId={campaignId}
+                            readOnly={readOnly}
+                            previewPlayer={previewPlayer}
+                            editorKey={wikiEditorKey}
+                            prefillData={prefillData}
+                            onCreate={handleCreateEntity}
+                            onSelect={handleCodexSelect}
+                            onSurface={handleCodexSurface}
+                            onSaved={handleSaved}
+                            onNavigateEntity={handleNavigateRelationEntity}
+                            onOpenVttLocation={openVttLocation}
+                            onOpenDiary={(id) => {
+                                setDiarySessionId(id);
+                                dispatch(setWikiOverlayAreaFilter(WIKI_AREA_IDS.SESSIONS));
+                            }}
+                        />
+                    )}
+                    {/* Left: Entity list (hidden on Timeline, Diario and NEURAL_LAB visual layouts) */}
+                    {!isTimelineView && !isNeuralLabView && !isCodexView && !isSessionsView && (
                         <Box
                             sx={{
                                 width: density.panelLeft,
@@ -926,13 +948,14 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
                                         selectedId={entityId}
                                         onSelect={handleSelectEntity}
                                         groupByType={groupListByType}
+                                        veilDmOnly={previewPlayer}
                                     />
                                 </>
                             )}
                         </Box>
                     )}
 
-                    {!isNeuralLabView && (
+                    {!isNeuralLabView && !isCodexView && !isTimelineView && (
                     <Box
                         sx={{
                             flex: 1,
@@ -944,60 +967,31 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
                             flexDirection: "column",
                         }}
                     >
-                        {isTimelineView && !timelineEditing && (
-                            wikiStatus === "loading" ? (
-                                <CyberText sx={{ color: UI_COLORS.textSecondary, p: 3, fontSize: "0.85rem" }}>
-                                    Cargando línea temporal...
-                                </CyberText>
-                            ) : (
-                                <WikiTimelineView
-                                    entities={results}
-                                    allEntities={entities}
-                                    relations={relations}
-                                    campaignId={campaignId}
-                                    uid={uid}
-                                    narrativeSettings={narrativeSettings}
-                                    selectedId={entityId}
-                                    readOnly={readOnly}
-                                    onSelect={handleSelectEntity}
-                                    onEntityClick={handleNavigateToEntity}
-                                    onCreateCore={() => handleCreateTimelineEvent({ isCore: true })}
-                                    onBranch={handleCreateTimelineEvent}
-                                />
-                            )
-                        )}
-
                         {isSessionsView && (
-                            <WikiSessionLogPanel campaignId={campaignId} readOnly={readOnly} />
-                        )}
-
-                        {isTimelineView && timelineEditing && !readOnly && (
-                            <WikiEntityEditor
-                                key={wikiEditorKey}
-                                entity={activeMode === "edit" ? selectedEntity : null}
+                            <ArchiveDiary
                                 campaignId={campaignId}
-                                prefillData={prefillData}
-                                onSaved={handleSaved}
-                                onCancel={() =>
-                                    selectedEntity
-                                        ? dispatch(setWikiOverlayMode("detail"))
-                                        : dispatch(setWikiOverlayEntity(null))
-                                }
+                                readOnly={readOnly}
+                                focusSessionId={diarySessionId}
+                                uid={uid}
+                                entities={entities}
+                                charactersById={charactersById}
+                                onOpenEntity={handleNavigateToEntity}
                             />
                         )}
 
-                        {!isTimelineView && activeMode === "detail" && (
+                        {!isSessionsView && activeMode === "detail" && (
                             <WikiEntityDetail
                                 compact={compact}
                                 entity={selectedEntity}
                                 entities={entities}
                                 locations={locations}
-                                onEntityClick={handleNavigateToEntity}
-                                onOpenInNeuralLab={
-                                    !readOnly && selectedEntity
-                                        ? () => handleOpenInNeuralLab(selectedEntity)
-                                        : undefined
+                                veilDmOnly={previewPlayer}
+                                highlightMentionOf={
+                                    mentionFocus?.articleId === selectedEntity?.id
+                                        ? mentionFocus.mentionOf
+                                        : null
                                 }
+                                onEntityClick={handleNavigateToEntity}
                                 onEdit={
                                     !readOnly && selectedEntity
                                         ? () => dispatch(setWikiOverlayMode("edit"))
@@ -1013,7 +1007,7 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
                                 }}
                             />
                         )}
-                        {!isTimelineView && !readOnly && (activeMode === "edit" || activeMode === "create") && (
+                        {!isTimelineView && !isSessionsView && !readOnly && (activeMode === "edit" || activeMode === "create") && (
                             <WikiEntityEditor
                                 key={wikiEditorKey}
                                 entity={activeMode === "edit" ? selectedEntity : null}
@@ -1027,7 +1021,7 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
                                 }
                             />
                         )}
-                        {!isTimelineView && activeMode === "list" && !selectedEntity && (
+                        {!isTimelineView && !isSessionsView && activeMode === "list" && !selectedEntity && (
                             <Box sx={{ p: density.emptyStatePy }}>
                                 <CyberText sx={{ color: UI_COLORS.textSecondary, fontSize: density.emptyStateFontSize }}>
                                     Selecciona una ficha del listado para verla aquí.
@@ -1036,35 +1030,6 @@ export default function NarrativeWikiOverlay({ popupMode = false }) {
                         )}
                     </Box>
                     )} {/* end !isNeuralLabView */}
-
-                    {/* Right: detail (timeline) or relations */}
-                    {isTimelineView && activeMode === "detail" && selectedEntity && (
-                        <Box
-                            sx={{
-                                width: { xs: "100%", sm: compact ? 248 : 300 },
-                                maxWidth: compact ? 260 : 340,
-                                flexShrink: 0,
-                                minHeight: 0,
-                                overflow: "hidden",
-                                borderLeft: { xs: "none", sm: `1px solid ${UI_COLORS.border}` },
-                            }}
-                        >
-                            <WikiEntityDetail
-                                compact={compact}
-                                entity={selectedEntity}
-                                entities={entities}
-                                locations={locations}
-                                onEntityClick={handleNavigateToEntity}
-                                onOpenVttLocation={(id) => openVttLocation(id, 0)}
-                                onOpenVttCharacter={(characterId) => {
-                                    const locId = Object.values(locations).find((loc) =>
-                                        loc.characters?.some((c) => c.id === characterId)
-                                    )?.id;
-                                    if (locId) openVttLocation(locId, 1);
-                                }}
-                            />
-                        </Box>
-                    )}
 
                     {showRelationPanel && (
                         <Box sx={{ width: density.panelRight, flexShrink: 0, minHeight: 0, overflow: "hidden" }}>
