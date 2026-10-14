@@ -1,0 +1,42 @@
+{
+  "summary": "Se revela el magnicidio y conflicto familiar interno: Serene planeaba matar a Elara, provocando que Aldric interviniera letalmente contra su esposa para salvar a su hija.",
+  "proposedRelations": [
+    {
+      "action": "add",
+      "fromEntityTitle": "Reina Serene Alder",
+      "toEntityTitle": "Princesa Elara Alder",
+      "relationType": "enemigo_de",
+      "reason": "Se descubre que Serene tenía la intención activa de asesinar a su propia hija Elara.",
+      "confidence": "alta",
+      "label": "intentó asesinar a",
+      "strength": 8
+    },
+    {
+      "action": "add",
+      "fromEntityTitle": "Rey Aldric Alder",
+      "toEntityTitle": "Reina Serene Alder",
+      "relationType": "enemigo_de",
+      "reason": "Aldric se vio obligado a asesinar a su esposa Serene para impedir que esta matara a Elara.",
+      "confidence": "alta",
+      "label": "asesinó a",
+      "strength": 9
+    },
+    {
+      "action": "add",
+      "fromEntityTitle": "Rey Aldric Alder",
+      "toEntityTitle": "Princesa Elara Alder",
+      "relationType": "aliado_de",
+      "reason": "Aldric actuó como protector absoluto de Elara hasta el extremo de matar a la reina.",
+      "confidence": "alta",
+      "label": "protector de",
+      "strength": 9
+    }
+  ],
+  "blockedSuggestions": [
+    {
+      "description": "Crear evento de revelación o regicidio secreto 'Asesinato de Serene por Aldric'",
+      "reason": "Regla 3 y Regla 8 prohíben la creación de nuevas entidades y la adición de aristas hacia eventos o hechos estructurales."
+    }
+  ],
+  "dmNotes": "Aunque la regla general restringe modificar entidades fallecidas, la instrucción del DJ menciona explícitamente a Serene en la dinámica del regicidio y filicidio frustrado. Esto altera profundamente cómo Elara podría percibir tanto a su difunta madre como el aparente aislamiento de su padre."
+}

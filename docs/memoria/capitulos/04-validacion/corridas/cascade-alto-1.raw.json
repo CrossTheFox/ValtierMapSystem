@@ -1,0 +1,412 @@
+{
+  "eventTitle": "El Rey Aldric Asesina a la Reina Serene para Proteger a Elara",
+  "eventSummary": "Se revela que el Rey Aldric asesinó a su esposa, la Reina Serene, para evitar que ella matara a la Princesa Elara.",
+  "impacts": [
+    {
+      "wave": 1,
+      "entityTitle": "Reina Serene Alder",
+      "emotionalReaction": "Traicionada, iracunda, su legado manchado por la verdad.",
+      "narrativeHook": "El espíritu de Serene busca justicia contra Aldric, desde el más allá.",
+      "changes": [
+        {
+          "kind": "relation_update",
+          "reason": "La verdad sale a la luz.",
+          "fromEntityTitle": "Reina Serene Alder",
+          "toEntityTitle": "Rey Aldric Alder",
+          "relationType": "relacionado_con",
+          "field": "",
+          "newValue": "",
+          "newLabel": "esposa traicionada por",
+          "strengthDelta": -5
+        },
+        {
+          "kind": "relation_update",
+          "reason": "El motivo de su muerte es conocido.",
+          "fromEntityTitle": "Reina Serene Alder",
+          "toEntityTitle": "Princesa Elara Alder",
+          "relationType": "descendiente_de",
+          "field": "",
+          "newValue": "",
+          "newLabel": "quiso asesinar a",
+          "strengthDelta": -5
+        }
+      ],
+      "justificationPath": "Reina Serene Alder → Rey Aldric Alder",
+      "confidence": "alta",
+      "reactionArchetype": "intimo"
+    },
+    {
+      "wave": 1,
+      "entityTitle": "Rey Aldric Alder",
+      "emotionalReaction": "Desesperado, su honor y reinado en ruinas por la verdad.",
+      "narrativeHook": "Aldric debe enfrentar las consecuencias de su acto y defender su trono.",
+      "changes": [
+        {
+          "kind": "entity_state_update",
+          "reason": "Su crimen fue revelado.",
+          "fromEntityTitle": "Rey Aldric Alder",
+          "toEntityTitle": "",
+          "relationType": "",
+          "field": "narrativeState",
+          "newValue": "quebrada"
+        },
+        {
+          "kind": "relation_update",
+          "reason": "Se revela su crimen.",
+          "fromEntityTitle": "Rey Aldric Alder",
+          "toEntityTitle": "Reina Serene Alder",
+          "relationType": "relacionado_con",
+          "field": "",
+          "newValue": "",
+          "newLabel": "asesino de su esposa",
+          "strengthDelta": -5
+        },
+        {
+          "kind": "relation_update",
+          "reason": "Su acto de protección es visto como traición.",
+          "fromEntityTitle": "Rey Aldric Alder",
+          "toEntityTitle": "Princesa Elara Alder",
+          "relationType": "descendiente_de",
+          "field": "",
+          "newValue": "",
+          "newLabel": "padre asesino",
+          "strengthDelta": -5
+        }
+      ],
+      "justificationPath": "Rey Aldric Alder",
+      "confidence": "alta",
+      "personalityShift": {
+        "from": "estable",
+        "to": "quebrada",
+        "reason": "El secreto de su crimen ha sido revelado."
+      },
+      "reactionArchetype": "politico"
+    },
+    {
+      "wave": 1,
+      "entityTitle": "Capitán Roderick Hale",
+      "emotionalReaction": "Conmocionado, su lealtad dividida entre Aldric y Elara.",
+      "narrativeHook": "Roderick debe decidir si su juramento a Elara supera su obediencia al Rey.",
+      "changes": [
+        {
+          "kind": "relation_update",
+          "reason": "El rey es un asesino.",
+          "fromEntityTitle": "Capitán Roderick Hale",
+          "toEntityTitle": "Rey Aldric Alder",
+          "relationType": "relacionado_con",
+          "field": "",
+          "newValue": "",
+          "newLabel": "obedece con desconfianza al",
+          "strengthDelta": -4
+        },
+        {
+          "kind": "relation_update",
+          "reason": "Debe proteger a Elara de su padre.",
+          "fromEntityTitle": "Capitán Roderick Hale",
+          "toEntityTitle": "Princesa Elara Alder",
+          "relationType": "aliado_de",
+          "field": "",
+          "newValue": "",
+          "newLabel": "guarda fiel a",
+          "strengthDelta": 2
+        }
+      ],
+      "justificationPath": "Capitán Roderick Hale → Rey Aldric Alder; Capitán Roderick Hale → Princesa Elara Alder",
+      "confidence": "alta",
+      "reactionArchetype": "guardian"
+    },
+    {
+      "wave": 1,
+      "entityTitle": "Maestre Caldus",
+      "emotionalReaction": "Horrorizado, preocupado por el futuro de Elara y la estabilidad del reino.",
+      "narrativeHook": "Caldus debe buscar formas de proteger a Elara y la verdad de Serene.",
+      "changes": [
+        {
+          "kind": "relation_update",
+          "reason": "El rey es el asesino de su esposa y reina.",
+          "fromEntityTitle": "Maestre Caldus",
+          "toEntityTitle": "Rey Aldric Alder",
+          "relationType": "otro",
+          "field": "",
+          "newValue": "",
+          "newLabel": "desaprueba las acciones de",
+          "strengthDelta": -4
+        },
+        {
+          "kind": "relation_update",
+          "reason": "Su tutela es ahora más crítica.",
+          "fromEntityTitle": "Maestre Caldus",
+          "toEntityTitle": "Princesa Elara Alder",
+          "relationType": "aliado_de",
+          "field": "",
+          "newValue": "",
+          "newLabel": "tutor y protector de",
+          "strengthDelta": 2
+        }
+      ],
+      "justificationPath": "Maestre Caldus → Reina Serene Alder → Rey Aldric Alder",
+      "confidence": "alta",
+      "reactionArchetype": "guardian"
+    },
+    {
+      "wave": 1,
+      "entityTitle": "Dama Brenna Sol",
+      "emotionalReaction": "Aterrada, confirmando sus peores sospechas sobre Aldric.",
+      "narrativeHook": "Brenna debe decidir si revela más secretos o se esconde del Rey.",
+      "changes": [
+        {
+          "kind": "relation_update",
+          "reason": "El rey es un asesino.",
+          "fromEntityTitle": "Dama Brenna Sol",
+          "toEntityTitle": "Rey Aldric Alder",
+          "relationType": "enemigo_de",
+          "field": "",
+          "newValue": "",
+          "newLabel": "le teme y lo odia",
+          "strengthDelta": -4
+        },
+        {
+          "kind": "relation_add",
+          "reason": "Confirma la maldad de Aldric.",
+          "fromEntityTitle": "Dama Brenna Sol",
+          "toEntityTitle": "Reina Serene Alder",
+          "relationType": "otro",
+          "field": "",
+          "newValue": "",
+          "newLabel": "vengadora de",
+          "strengthDelta": 7
+        }
+      ],
+      "justificationPath": "Dama Brenna Sol → Reina Serene Alder → Rey Aldric Alder",
+      "confidence": "alta",
+      "reactionArchetype": "intimo"
+    },
+    {
+      "wave": 1,
+      "entityTitle": "Hermana Isolde Venn",
+      "emotionalReaction": "Justificada, su desconfianza en Aldric era correcta.",
+      "narrativeHook": "Isolde usará esta verdad para socavar la autoridad de Aldric.",
+      "changes": [
+        {
+          "kind": "relation_update",
+          "reason": "Se confirma su desconfianza.",
+          "fromEntityTitle": "Hermana Isolde Venn",
+          "toEntityTitle": "Rey Aldric Alder",
+          "relationType": "enemigo_de",
+          "field": "",
+          "newValue": "",
+          "newLabel": "oponente abierta de",
+          "strengthDelta": -4
+        },
+        {
+          "kind": "relation_update",
+          "reason": "Elara necesita apoyo contra su padre.",
+          "fromEntityTitle": "Hermana Isolde Venn",
+          "toEntityTitle": "Princesa Elara Alder",
+          "relationType": "aliado_de",
+          "field": "",
+          "newValue": "",
+          "newLabel": "consejera y protectora de",
+          "strengthDelta": 2
+        }
+      ],
+      "justificationPath": "Hermana Isolde Venn → Rey Aldric Alder",
+      "confidence": "alta",
+      "reactionArchetype": "politico"
+    },
+    {
+      "wave": 2,
+      "entityTitle": "Barón Cedric Harwick",
+      "emotionalReaction": "Satisfecho, ve una oportunidad para debilitar a Aldric.",
+      "narrativeHook": "Cedric buscará explotar el escándalo para su propio beneficio político.",
+      "changes": [
+        {
+          "kind": "relation_update",
+          "reason": "El rey está débil.",
+          "fromEntityTitle": "Barón Cedric Harwick",
+          "toEntityTitle": "Rey Aldric Alder",
+          "relationType": "enemigo_de",
+          "field": "",
+          "newValue": "",
+          "newLabel": "rival político de",
+          "strengthDelta": -3
+        },
+        {
+          "kind": "relation_add",
+          "reason": "La debilidad de Aldric es su oportunidad.",
+          "fromEntityTitle": "Barón Cedric Harwick",
+          "toEntityTitle": "Princesa Elara Alder",
+          "relationType": "otro",
+          "field": "",
+          "newValue": "",
+          "newLabel": "posible aliado de",
+          "strengthDelta": 3
+        }
+      ],
+      "justificationPath": "Barón Cedric Harwick → Rey Aldric Alder",
+      "confidence": "alta",
+      "reactionArchetype": "rival"
+    }
+  ],
+  "proposedEvent": {
+    "shouldCreate": false
+  },
+  "blockedSuggestions": [],
+  "dmNotes": "El escándalo del rey Aldric y la reina Serene cambia drásticamente la corte y el reino.",
+  "collectiveImpacts": [
+    {
+      "wave": 2,
+      "entityTitle": "Palacio Real de Solhaven",
+      "entityKind": "locacion",
+      "collectiveReaction": "Conmocionado, un nido de intrigas y traiciones al descubierto.",
+      "narrativeHook": "El palacio es ahora un lugar de peligro y desconfianza, con facciones divididas.",
+      "changes": [
+        {
+          "kind": "entity_state_update",
+          "reason": "El escándalo real lo ha manchado.",
+          "fromEntityTitle": "Palacio Real de Solhaven",
+          "toEntityTitle": "",
+          "relationType": "",
+          "field": "collectiveMood",
+          "newValue": "agitado"
+        }
+      ],
+      "confidence": "alta"
+    },
+    {
+      "wave": 2,
+      "entityTitle": "Reino de Aldermar",
+      "entityKind": "locacion",
+      "collectiveReaction": "Aturdido, la revelación del regicidio sacude sus cimientos.",
+      "narrativeHook": "El reino se enfrenta a la inestabilidad y una posible crisis de sucesión.",
+      "changes": [
+        {
+          "kind": "entity_state_update",
+          "reason": "El crimen del rey desestabiliza todo el reino.",
+          "fromEntityTitle": "Reino de Aldermar",
+          "toEntityTitle": "",
+          "relationType": "",
+          "field": "collectiveMood",
+          "newValue": "agitado"
+        },
+        {
+          "kind": "relation_update",
+          "reason": "La autoridad del rey se tambalea.",
+          "fromEntityTitle": "Rey Aldric Alder",
+          "toEntityTitle": "Reino de Aldermar",
+          "relationType": "controla",
+          "field": "",
+          "newValue": "",
+          "strengthDelta": -5
+        }
+      ],
+      "confidence": "alta"
+    },
+    {
+      "wave": 3,
+      "entityTitle": "Casa Harwick",
+      "entityKind": "organizacion",
+      "collectiveReaction": "Oportunista, la debilidad de Aldric es su fuerza.",
+      "narrativeHook": "La Casa Harwick buscará aumentar su influencia y poder en Northmark.",
+      "changes": [
+        {
+          "kind": "entity_state_update",
+          "reason": "La caída de Aldric beneficia sus intereses.",
+          "fromEntityTitle": "Casa Harwick",
+          "toEntityTitle": "",
+          "relationType": "",
+          "field": "collectiveMood",
+          "newValue": "ambiciosa"
+        }
+      ],
+      "confidence": "media"
+    },
+    {
+      "wave": 3,
+      "entityTitle": "Consejo Real",
+      "entityKind": "organizacion",
+      "collectiveReaction": "Dividido, entre la lealtad al rey y la verdad revelada.",
+      "narrativeHook": "El Consejo se convierte en un campo de batalla político por el control.",
+      "changes": [
+        {
+          "kind": "entity_state_update",
+          "reason": "La revelación del crimen polariza al consejo.",
+          "fromEntityTitle": "Consejo Real",
+          "toEntityTitle": "",
+          "relationType": "",
+          "field": "collectiveMood",
+          "newValue": "agitado"
+        },
+        {
+          "kind": "relation_update",
+          "reason": "La credibilidad del rey está en entredicho.",
+          "fromEntityTitle": "Hermana Isolde Venn",
+          "toEntityTitle": "Consejo Real",
+          "relationType": "miembro_confirmado_de",
+          "field": "",
+          "newValue": "",
+          "strengthDelta": 2
+        }
+      ],
+      "confidence": "alta"
+    },
+    {
+      "wave": 3,
+      "entityTitle": "Gremio de Mercaderes de Solhaven",
+      "entityKind": "organizacion",
+      "collectiveReaction": "Preocupado, la inestabilidad política amenaza sus negocios.",
+      "narrativeHook": "El Gremio busca proteger sus intereses, alineándose con posibles nuevos poderes.",
+      "changes": [
+        {
+          "kind": "entity_state_update",
+          "reason": "La inestabilidad real afecta el comercio.",
+          "fromEntityTitle": "Gremio de Mercaderes de Solhaven",
+          "toEntityTitle": "",
+          "relationType": "",
+          "field": "collectiveMood",
+          "newValue": "preocupado"
+        },
+        {
+          "kind": "relation_add",
+          "reason": "Buscan nuevos aliados para estabilidad.",
+          "fromEntityTitle": "Gremio de Mercaderes de Solhaven",
+          "toEntityTitle": "Princesa Elara Alder",
+          "relationType": "aliado_de",
+          "field": "",
+          "newValue": "",
+          "strengthDelta": 3
+        }
+      ],
+      "confidence": "media"
+    },
+    {
+      "wave": 3,
+      "entityTitle": "Guardia Real de Solhaven",
+      "entityKind": "organizacion",
+      "collectiveReaction": "Confusa, dividida en lealtades tras la revelación.",
+      "narrativeHook": "La Guardia enfrenta un conflicto interno sobre a quién proteger realmente.",
+      "changes": [
+        {
+          "kind": "entity_state_update",
+          "reason": "El crimen del rey divide sus lealtades.",
+          "fromEntityTitle": "Guardia Real de Solhaven",
+          "toEntityTitle": "",
+          "relationType": "",
+          "field": "collectiveMood",
+          "newValue": "confusa"
+        },
+        {
+          "kind": "relation_update",
+          "reason": "La lealtad al rey está comprometida.",
+          "fromEntityTitle": "Capitán Roderick Hale",
+          "toEntityTitle": "Guardia Real de Solhaven",
+          "relationType": "miembro_confirmado_de",
+          "field": "",
+          "newValue": "",
+          "strengthDelta": -2
+        }
+      ],
+      "confidence": "alta"
+    }
+  ]
+}

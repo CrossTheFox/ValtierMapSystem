@@ -1,0 +1,57 @@
+{
+  "id": "impact-medio-5",
+  "mode": "narrative_impact",
+  "level": "medio",
+  "index": 5,
+  "instruction": "Se descubre que Aldric, el padre de Elara, asesinó a Serene, su esposa (y madre de Elara) para salvarla, ya que esta quería asesinarla.",
+  "anchor": "Elara",
+  "fichasEnGrafo": 24,
+  "fichasEnviadas": 17,
+  "relacionesEnviadas": 27,
+  "charsContexto": 4523,
+  "charsAlImpacto": 4523,
+  "truncado": false,
+  "impactosEsperados": null,
+  "scout": {
+    "used": false,
+    "ok": null
+  },
+  "parseo": true,
+  "finishReason": "STOP",
+  "propuestasValidas": 3,
+  "propuestas": 3,
+  "alucinaciones": [],
+  "rechazosRegla": [],
+  "missingImpacts": [],
+  "reflexion": {
+    "used": false,
+    "ok": null,
+    "note": "El modo ondas no reintenta en el Lab."
+  },
+  "confianza": "media",
+  "ok": true,
+  "errors": [],
+  "summary": "Se revela la verdad tras la muerte de Serene: Aldric la mató para defender a Elara, transformando la dinámica retrospectiva entre Aldric y Serene en enemistad oculta, y generando una grave tensión y distanciamiento entre Elara y Aldric por la mentira y el parricidio encubierto.",
+  "blockedSuggestions": 2,
+  "calls": [
+    {
+      "step": "impact",
+      "modelId": "gemini-3.8-flash",
+      "finishReason": "STOP",
+      "usage": {
+        "promptTokenCount": 1983,
+        "candidatesTokenCount": 681,
+        "totalTokenCount": 2664,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 1983
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "httpRetries": []
+    }
+  ],
+  "modelImpact": "gemini-3.8-flash"
+}

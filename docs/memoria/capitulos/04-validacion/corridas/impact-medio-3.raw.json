@@ -1,0 +1,42 @@
+{
+  "summary": "Se revelan las verdaderas circunstancias del regicidio: Aldric mató a Serene para proteger la vida de Elara, marcando a Serene como una amenaza hacia su propia hija y fracturando retroactivamente la relación entre los monarcas.",
+  "proposedRelations": [
+    {
+      "action": "add",
+      "fromEntityTitle": "Reina Serene Alder",
+      "toEntityTitle": "Princesa Elara Alder",
+      "relationType": "enemigo_de",
+      "reason": "Se revela que Serene planeaba activamente asesinar a su hija Elara.",
+      "confidence": "alta",
+      "label": "intentó asesinar a",
+      "strength": 8
+    },
+    {
+      "action": "add",
+      "fromEntityTitle": "Rey Aldric Alder",
+      "toEntityTitle": "Reina Serene Alder",
+      "relationType": "enemigo_de",
+      "reason": "Aldric se opuso mortalmente a Serene hasta asesinarla para frustrar su intento de matar a Elara.",
+      "confidence": "alta",
+      "label": "asesino de",
+      "strength": 9
+    },
+    {
+      "action": "add",
+      "fromEntityTitle": "Rey Aldric Alder",
+      "toEntityTitle": "Princesa Elara Alder",
+      "relationType": "aliado_de",
+      "reason": "Aldric actuó como el protector definitivo de Elara, cometiendo magnicidio para salvar su vida.",
+      "confidence": "alta",
+      "label": "protector de",
+      "strength": 10
+    }
+  ],
+  "blockedSuggestions": [
+    {
+      "description": "Crear evento 'Asesinato de la Reina Serene por Aldric' o actualizar 'Muerte de la Reina Serene' con relación causal/participación específica.",
+      "reason": "Regla 8 y Regla 3: No se deben crear entidades nuevas de eventos ni modificar hechos estructurales o vínculos hacia eventos históricos ya cerrados."
+    }
+  ],
+  "dmNotes": "Dado que la instrucción menciona explícitamente a Serene (personaje fallecido), se permite modificar sus relaciones según la Regla 10. El impacto emocional para Elara al enterarse de que su padre la salvó matando a su madre ofrece un gran gancho dramático para la campaña."
+}

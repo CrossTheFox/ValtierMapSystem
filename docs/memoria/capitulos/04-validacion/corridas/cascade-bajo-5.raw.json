@@ -1,0 +1,99 @@
+{
+  "eventTitle": "Elara descubre el asesinato de Serene por Aldric",
+  "eventSummary": "Elara descubre que su padre, el Rey Aldric, asesinó a su madre, la Reina Serene, para protegerla de los planes homicidas de la propia Serene.",
+  "impacts": [
+    {
+      "wave": 1,
+      "entityTitle": "Reina Serene Alder",
+      "emotionalReaction": "Alivio y una extraña paz por el cumplimiento de su voluntad final.",
+      "narrativeHook": "El espíritu de Serene busca influir en Elara, revelando verdades ocultas sobre Aldric.",
+      "changes": [
+        {
+          "kind": "dm_note",
+          "reason": "Legado póstumo revelado",
+          "fromEntityTitle": "",
+          "toEntityTitle": "",
+          "relationType": "",
+          "field": "",
+          "newValue": "",
+          "newLabel": "",
+          "noteText": "El \"sacrificio\" de Serene adquiere un nuevo significado póstumo."
+        }
+      ],
+      "justificationPath": "Reina Serene Alder",
+      "confidence": "alta",
+      "reactionArchetype": "sin_arquetipo"
+    },
+    {
+      "wave": 1,
+      "entityTitle": "Rey Aldric Alder",
+      "emotionalReaction": "Desesperación, culpa y el peso insoportable de su secreto expuesto.",
+      "narrativeHook": "Aldric se debate entre la confesión y la manipulación para retener a Elara y el trono.",
+      "changes": [
+        {
+          "kind": "relation_update",
+          "reason": "Revelación del asesinato de Serene",
+          "fromEntityTitle": "Princesa Elara Alder",
+          "toEntityTitle": "Rey Aldric Alder",
+          "relationType": "descendiente_de",
+          "field": "",
+          "newValue": "",
+          "strengthDelta": -5
+        },
+        {
+          "kind": "entity_state_update",
+          "reason": "La verdad sale a la luz",
+          "fromEntityTitle": "Rey Aldric Alder",
+          "toEntityTitle": "",
+          "relationType": "",
+          "field": "narrativeState",
+          "newValue": "quebrada"
+        }
+      ],
+      "justificationPath": "Rey Aldric Alder",
+      "confidence": "alta",
+      "personalityShift": {
+        "from": "estable",
+        "to": "quebrada",
+        "reason": "Su secreto más oscuro ha sido revelado."
+      },
+      "reactionArchetype": "politico"
+    }
+  ],
+  "proposedEvent": {
+    "shouldCreate": true,
+    "certainty": "canon",
+    "eventKind": "descubrimiento",
+    "participants": [
+      "Princesa Elara Alder",
+      "Rey Aldric Alder",
+      "Reina Serene Alder"
+    ],
+    "summary": "La Princesa Elara descubre que el Rey Aldric asesinó a la Reina Serene para protegerla, revelando la oscura verdad de la Casa Alder.",
+    "title": "La Verdad de Serene: El Parricidio Protector"
+  },
+  "blockedSuggestions": [],
+  "dmNotes": "Considerar impacto en la relación de Elara con el Palacio Real de Solhaven.",
+  "collectiveImpacts": [
+    {
+      "wave": 2,
+      "entityTitle": "Palacio Real de Solhaven",
+      "entityKind": "locacion",
+      "collectiveReaction": "Una atmósfera de tensión y desconfianza se asienta sobre la corte.",
+      "narrativeHook": "Intrigas palaciegas se intensifican, buscando explotar la vulnerabilidad real.",
+      "changes": [
+        {
+          "kind": "entity_state_update",
+          "reason": "Escándalo real expuesto",
+          "fromEntityTitle": "Palacio Real de Solhaven",
+          "toEntityTitle": "",
+          "relationType": "",
+          "field": "collectiveMood",
+          "newValue": "paranoica"
+        }
+      ],
+      "confidence": "alta"
+    }
+  ],
+  "eventKind": "politico"
+}

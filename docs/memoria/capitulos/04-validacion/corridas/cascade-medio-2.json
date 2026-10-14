@@ -1,0 +1,101 @@
+{
+  "id": "cascade-medio-2",
+  "mode": "cascade",
+  "level": "medio",
+  "index": 2,
+  "instruction": "Se descubre que Aldric, el padre de Elara, asesinó a Serene, su esposa (y madre de Elara) para salvarla, ya que esta quería asesinarla.",
+  "anchor": "Elara",
+  "fichasEnGrafo": 24,
+  "fichasEnviadas": 10,
+  "relacionesEnviadas": 14,
+  "charsContexto": 4422,
+  "charsAlImpacto": 4422,
+  "truncado": false,
+  "impactosEsperados": 3,
+  "impactosEsperadosTitulos": [
+    "Reina Serene Alder",
+    "Rey Aldric Alder",
+    "Gran Canciller Marcus"
+  ],
+  "scout": {
+    "used": false,
+    "ok": null,
+    "model": null,
+    "error": null
+  },
+  "parseo": true,
+  "finishReason": "STOP",
+  "propuestasValidas": 4,
+  "impactos": 3,
+  "impactosValidos": 3,
+  "alucinaciones": [],
+  "rechazosRegla": [],
+  "missingImpacts": [],
+  "reflexion": {
+    "used": true,
+    "ok": true,
+    "completedMissing": false,
+    "error": null,
+    "titles": [
+      "Reina Serene Alder"
+    ]
+  },
+  "confianza": "alta",
+  "ok": true,
+  "errors": [],
+  "eventTitle": "El Rey Aldric asesina a la Reina Serene para proteger a Elara",
+  "blockedSuggestions": 0,
+  "calls": [
+    {
+      "step": "impact",
+      "modelId": "gemini-2.5-flash",
+      "finishReason": "STOP",
+      "usage": {
+        "promptTokenCount": 3574,
+        "candidatesTokenCount": 647,
+        "totalTokenCount": 4221,
+        "cachedContentTokenCount": 3354,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 3574
+          }
+        ],
+        "cacheTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 3354
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "httpRetries": []
+    },
+    {
+      "step": "reflexion",
+      "modelId": "gemini-2.5-flash",
+      "finishReason": "STOP",
+      "usage": {
+        "promptTokenCount": 3758,
+        "candidatesTokenCount": 1609,
+        "totalTokenCount": 5367,
+        "cachedContentTokenCount": 3444,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 3758
+          }
+        ],
+        "cacheTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 3444
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "httpRetries": []
+    }
+  ],
+  "modelImpact": "gemini-2.5-flash"
+}

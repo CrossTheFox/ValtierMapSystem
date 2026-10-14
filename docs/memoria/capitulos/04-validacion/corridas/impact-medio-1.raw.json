@@ -1,0 +1,42 @@
+{
+  "summary": "Se revela la verdad tras la muerte de Serene: Aldric mató a su esposa para proteger a Elara de un intento de filicidio, alterando drásticamente los vínculos de enemistad y lealtad intrafamiliar.",
+  "proposedRelations": [
+    {
+      "action": "add",
+      "fromEntityTitle": "Rey Aldric Alder",
+      "toEntityTitle": "Reina Serene Alder",
+      "relationType": "enemigo_de",
+      "reason": "Aldric descubrió las intenciones de Serene de asesinar a Elara y la mató para defender a su hija.",
+      "confidence": "alta",
+      "label": "asesino de",
+      "strength": 8.0
+    },
+    {
+      "action": "add",
+      "fromEntityTitle": "Reina Serene Alder",
+      "toEntityTitle": "Princesa Elara Alder",
+      "relationType": "enemigo_de",
+      "reason": "Se revela que Serene intentó asesinar a Elara cuando era una niña.",
+      "confidence": "alta",
+      "label": "amenaza letal para",
+      "strength": 9.0
+    },
+    {
+      "action": "add",
+      "fromEntityTitle": "Rey Aldric Alder",
+      "toEntityTitle": "Princesa Elara Alder",
+      "relationType": "aliado_de",
+      "reason": "Aldric sacrificó su matrimonio y cargó con el regicidio en secreto para proteger la vida de Elara.",
+      "confidence": "alta",
+      "label": "protector secreto de",
+      "strength": 9.0
+    }
+  ],
+  "blockedSuggestions": [
+    {
+      "description": "Crear el evento o secreto 'Revelación del Asesinato de Serene'",
+      "reason": "Regla 3: No se permite la creación de nuevas entidades (eventos históricos, secretos o crónicas); deben usarse solo entidades existentes."
+    }
+  ],
+  "dmNotes": "Aunque Serene es un personaje fallecido, la instrucción del DJ menciona explícitamente sus acciones pasadas y el motivo de su muerte, lo que habilita actualizar la naturaleza de su vínculo póstumo con Aldric y Elara. La reacción emocional de Elara hacia Aldric (si lo perdonará o lo rechazará por ocultar la verdad) queda abierta para resolución narrativa en mesa."
+}

@@ -1,0 +1,101 @@
+{
+  "eventTitle": "El Rey Aldric Asesina a la Reina Serene para Proteger a Elara",
+  "eventSummary": "Se revela que el Rey Aldric asesinó a su esposa, la Reina Serene, para evitar que ella matara a su hija, la Princesa Elara.",
+  "impacts": [
+    {
+      "wave": 1,
+      "entityTitle": "Reina Serene Alder",
+      "emotionalReaction": "Traicionada y furiosa en la muerte.",
+      "narrativeHook": "El espíritu de Serene busca venganza o justicia.",
+      "changes": [
+        {
+          "kind": "relation_update",
+          "reason": "Revelación de asesinato por Aldric.",
+          "fromEntityTitle": "Reina Serene Alder",
+          "toEntityTitle": "Rey Aldric Alder",
+          "relationType": "relacionado_con",
+          "field": "",
+          "newValue": "",
+          "newLabel": "asesinada por",
+          "strengthDelta": -5
+        }
+      ],
+      "justificationPath": "Princesa Elara Alder → descendiente_de → Reina Serene Alder",
+      "confidence": "alta",
+      "reactionArchetype": "sin_arquetipo"
+    },
+    {
+      "wave": 1,
+      "entityTitle": "Rey Aldric Alder",
+      "emotionalReaction": "Profunda culpa y desesperación por sus acciones.",
+      "narrativeHook": "Aldric busca redención o justificación ante Elara.",
+      "changes": [
+        {
+          "kind": "relation_update",
+          "reason": "Confesión de asesinato de su esposa.",
+          "fromEntityTitle": "Rey Aldric Alder",
+          "toEntityTitle": "Reina Serene Alder",
+          "relationType": "relacionado_con",
+          "field": "",
+          "newValue": "",
+          "newLabel": "asesino de",
+          "strengthDelta": -5
+        },
+        {
+          "kind": "entity_state_update",
+          "reason": "La verdad de su acto lo consume.",
+          "fromEntityTitle": "Rey Aldric Alder",
+          "toEntityTitle": "",
+          "relationType": "",
+          "field": "narrativeState",
+          "newValue": "quebrada",
+          "newLabel": ""
+        }
+      ],
+      "justificationPath": "Princesa Elara Alder → descendiente_de → Rey Aldric Alder",
+      "confidence": "alta",
+      "personalityShift": {
+        "from": "estable",
+        "to": "quebrada",
+        "reason": "Revelación del asesinato de su esposa."
+      },
+      "reactionArchetype": "sin_arquetipo"
+    }
+  ],
+  "proposedEvent": {
+    "shouldCreate": true,
+    "certainty": "canon",
+    "eventKind": "politico",
+    "participants": [
+      "Rey Aldric Alder",
+      "Reina Serene Alder",
+      "Princesa Elara Alder"
+    ],
+    "summary": "El Rey Aldric asesinó a la Reina Serene para proteger a su hija, la Princesa Elara, de un complot materno.",
+    "title": "La Verdad del Asesinato de la Reina Serene Revelada"
+  },
+  "blockedSuggestions": [],
+  "dmNotes": "El foco narrativo debe ser la reacción de Elara y la Casa Alder a esta revelación.",
+  "collectiveImpacts": [
+    {
+      "wave": 2,
+      "entityTitle": "Palacio Real de Solhaven",
+      "entityKind": "locacion",
+      "collectiveReaction": "Shock y desconfianza se esparcen entre la corte.",
+      "narrativeHook": "Intrigas palaciegas aumentan por la revelación.",
+      "changes": [
+        {
+          "kind": "entity_state_update",
+          "reason": "Escándalo real y traición revelada.",
+          "fromEntityTitle": "Palacio Real de Solhaven",
+          "toEntityTitle": "",
+          "relationType": "",
+          "field": "collectiveMood",
+          "newValue": "inestable",
+          "noteText": ""
+        }
+      ],
+      "confidence": "alta"
+    }
+  ]
+}

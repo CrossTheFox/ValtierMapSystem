@@ -1,0 +1,46 @@
+{
+  "summary": "Se revela la verdad tras la muerte de Serene: Aldric la mató para defender a Elara, transformando la dinámica retrospectiva entre Aldric y Serene en enemistad oculta, y generando una grave tensión y distanciamiento entre Elara y Aldric por la mentira y el parricidio encubierto.",
+  "proposedRelations": [
+    {
+      "action": "add",
+      "fromEntityTitle": "Rey Aldric Alder",
+      "toEntityTitle": "Reina Serene Alder",
+      "relationType": "enemigo_de",
+      "reason": "Aldric descubrió que Serene planeaba matar a Elara y la asesinó para proteger a su hija, convirtiéndolos en enemigos mortales en su conflicto final.",
+      "confidence": "alta",
+      "label": "asesino de",
+      "strength": 8.0
+    },
+    {
+      "action": "add",
+      "fromEntityTitle": "Princesa Elara Alder",
+      "toEntityTitle": "Rey Aldric Alder",
+      "relationType": "enemigo_de",
+      "reason": "Elara descubre la verdad sobre el asesinato de su madre a manos de su padre, provocando una fractura dramática en su lealtad filial a pesar de que fue para protegerla.",
+      "confidence": "media",
+      "label": "desconfía de",
+      "strength": 6.0
+    },
+    {
+      "action": "add",
+      "fromEntityTitle": "Princesa Elara Alder",
+      "toEntityTitle": "Rey Aldric Alder",
+      "relationType": "aliado_de",
+      "reason": "Aldric actuó como protector supremo de Elara arriesgando el trono y su propia moral para salvarle la vida de su propia madre.",
+      "confidence": "media",
+      "label": "protector de",
+      "strength": 7.0
+    }
+  ],
+  "blockedSuggestions": [
+    {
+      "description": "Crear el evento 'Descubrimiento del Regicidio de Serene' o actualizar el evento 'Muerte de la Reina Serene'",
+      "reason": "Las reglas prohíben crear nuevas entidades o proponer vínculos hacia eventos históricos (hechos estructurales)."
+    },
+    {
+      "description": "Modificar directamente el estado de fallecida o las relaciones históricas estructurales de Reina Serene Alder",
+      "reason": "No se pueden alterar hechos estructurales ni crear edges de tipo evento sobre personajes fallecidos sin una entidad de evento válida dentro de los límites de afinidad."
+    }
+  ],
+  "dmNotes": "La revelación coloca a Elara en una encrucijada moral inmensa: su padre es un regicida y filicida de su esposa que le ocultó la verdad toda su vida, pero lo hizo estrictamente para salvar la vida de Elara. Esto justifica relaciones contradictorias de protección/alianza frente al resentimiento/enemistad."
+}

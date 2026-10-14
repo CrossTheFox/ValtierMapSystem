@@ -1,0 +1,76 @@
+{
+  "id": "cascade-medio-4",
+  "mode": "cascade",
+  "level": "medio",
+  "index": 4,
+  "instruction": "Se descubre que Aldric, el padre de Elara, asesinó a Serene, su esposa (y madre de Elara) para salvarla, ya que esta quería asesinarla.",
+  "anchor": "Elara",
+  "fichasEnGrafo": 24,
+  "fichasEnviadas": 10,
+  "relacionesEnviadas": 14,
+  "charsContexto": 4422,
+  "charsAlImpacto": 4422,
+  "truncado": false,
+  "impactosEsperados": 3,
+  "impactosEsperadosTitulos": [
+    "Reina Serene Alder",
+    "Rey Aldric Alder",
+    "Gran Canciller Marcus"
+  ],
+  "scout": {
+    "used": false,
+    "ok": null,
+    "model": null,
+    "error": null
+  },
+  "parseo": true,
+  "finishReason": "STOP",
+  "propuestasValidas": 6,
+  "impactos": 3,
+  "impactosValidos": 3,
+  "alucinaciones": [],
+  "rechazosRegla": [],
+  "missingImpacts": [],
+  "reflexion": {
+    "used": false,
+    "ok": null,
+    "completedMissing": null,
+    "error": null
+  },
+  "confianza": "alta",
+  "ok": true,
+  "errors": [],
+  "eventTitle": "El Rey Aldric Asesina a la Reina Serene para Salvar a Elara",
+  "blockedSuggestions": 0,
+  "calls": [
+    {
+      "step": "impact",
+      "modelId": "gemini-2.5-flash",
+      "finishReason": "STOP",
+      "usage": {
+        "promptTokenCount": 3574,
+        "candidatesTokenCount": 1818,
+        "totalTokenCount": 5392,
+        "cachedContentTokenCount": 3354,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 3574
+          }
+        ],
+        "cacheTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 3354
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "httpRetries": [
+        429,
+        429
+      ]
+    }
+  ],
+  "modelImpact": "gemini-2.5-flash"
+}
