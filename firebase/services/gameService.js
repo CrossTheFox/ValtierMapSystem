@@ -17,7 +17,6 @@ export async function getOrCreateGameSession(campaignId) {
     const snap = await getDoc(docRef);
     if (!snap.exists()) {
         const initial = {
-            partyPositions: {},
             tokenPositions: {},
             activeMapId: null,
             rulers: {},
@@ -39,15 +38,6 @@ export async function getOrCreateGameSession(campaignId) {
         return initial;
     }
     return snap.data();
-}
-
-export async function updatePartyPosition(campaignId, mapId, position) {
-    const docRef = gameRef(campaignId);
-    await setDoc(
-        docRef,
-        { partyPositions: { [mapId]: position } },
-        { merge: true },
-    );
 }
 
 /**

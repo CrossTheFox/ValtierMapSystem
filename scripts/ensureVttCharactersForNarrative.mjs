@@ -5,8 +5,11 @@
  * Idempotent: reuses linkedVttCharacterId / narrativeEntityId when present.
  *
  * Usage:
- *   node scripts/ensureVttCharactersForNarrative.mjs --campaignId=gIjWUPwQfYMeUJDMSn5o --dry-run
- *   node scripts/ensureVttCharactersForNarrative.mjs --campaignId=gIjWUPwQfYMeUJDMSn5o
+ *   node scripts/ensureVttCharactersForNarrative.mjs --campaignId=ID --dry-run
+ *   node scripts/ensureVttCharactersForNarrative.mjs --campaignId=ID --force
+ *
+ * Default apply is refused: this script mints NPC sheets (locationId: null)
+ * for every wiki PERSONAJE and duplicates identities. Pass --force to write.
  */
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
@@ -26,6 +29,7 @@ const args = Object.fromEntries(
 
 const CAMPAIGN_ID = args.campaignId;
 const DRY_RUN = Boolean(args.dry || args["dry-run"]);
+const FORCE = Boolean(args.force);
 const DEFAULT_STATS = Object.freeze({
     sneak: 0,
     traverse: 0,
@@ -103,12 +107,19 @@ function buildCharacterPayload(campaignId, entity, entityId) {
 
 async function main() {
     if (!CAMPAIGN_ID || typeof CAMPAIGN_ID !== "string") {
-        console.error("Usage: node scripts/ensureVttCharactersForNarrative.mjs --campaignId=ID [--dry-run]");
+        console.error("Usage: node scripts/ensureVttCharactersForNarrative.mjs --campaignId=ID [--dry-run|--force]");
+        process.exit(1);
+    }
+
+    if (!DRY_RUN && !FORCE) {
+        console.error(
+            "[ensure-vtt-for-narrative] Refusing to mint VTT NPC sheets. This clones wiki PERSONAJE into characters/{id} (locationId: null). Use --dry-run to inspect or --force to apply."
+        );
         process.exit(1);
     }
 
     const db = initAdmin();
-    console.log(`[ensure-vtt-for-narrative] campaign=${CAMPAIGN_ID} dry=${DRY_RUN}`);
+    console.log(`[ensure-vtt-for-narrative] campaign=${CAMPAIGN_ID} dry=${DRY_RUN} force=${FORCE}`);
 
     const campSnap = await db.collection("campaigns").doc(CAMPAIGN_ID).get();
     if (!campSnap.exists) {

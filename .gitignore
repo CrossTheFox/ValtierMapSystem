@@ -33,6 +33,9 @@ dist-ssr
 # Local ICON / campaign PDFs & extracts (copyright — not for git)
 docs/
 
+# Thesis drafts stay on this machine (do not force-add)
+docs/memoria/
+
 # Firebase
 valtier-map-system-firebase-admins.json
 

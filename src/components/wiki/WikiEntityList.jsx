@@ -9,6 +9,7 @@ import {
     compareEntitiesByArchiveOrder,
 } from "../../constants/wikiEntityTypes";
 import { WikiToVttLinkBadge } from "./VttWikiLinkBadge";
+import { ARCHIVE_ID_GLITCH_SX } from "../../constants/archiveChrome";
 
 /**
  * Sidebar entity list for the wiki overlay.
@@ -19,6 +20,7 @@ export default function WikiEntityList({
     onSelect,
     compact = false,
     groupByType = false,
+    veilDmOnly = false,
 }) {
     const groupedSections = useMemo(() => {
         if (!groupByType) {
@@ -102,6 +104,7 @@ export default function WikiEntityList({
                                     onSelect={onSelect}
                                     compact={compact}
                                     showType={!groupByType}
+                                    veil={veilDmOnly && entity.visibility === "dm_only"}
                                 />
                             ))}
                         </List>
@@ -112,7 +115,7 @@ export default function WikiEntityList({
     );
 }
 
-function EntityRow({ entity, selected, onSelect, compact = false, showType = true }) {
+function EntityRow({ entity, selected, onSelect, compact = false, showType = true, veil = false }) {
     const typeLabel = WIKI_ENTITY_TYPE_LABELS[entity.entityType] || entity.entityType;
     const isDmOnly = entity.visibility === "dm_only";
 
@@ -146,9 +149,13 @@ function EntityRow({ entity, selected, onSelect, compact = false, showType = tru
                                 fontWeight: selected ? 600 : 400,
                             }}
                         >
-                            {entity.title || "(sin título)"}
+                            {veil ? (
+                                <Box component="span" className="id-glitch" data-label={entity.title || "(sin título)"} sx={ARCHIVE_ID_GLITCH_SX}>
+                                    {entity.title || "(sin título)"}
+                                </Box>
+                            ) : (entity.title || "(sin título)")}
                         </CyberText>
-                        {isDmOnly && (
+                        {isDmOnly && !veil && (
                             <LockIcon sx={{ fontSize: "0.75rem", color: UI_COLORS.accentStrong, flexShrink: 0 }} />
                         )}
                         <WikiToVttLinkBadge entity={entity} compact={compact} />

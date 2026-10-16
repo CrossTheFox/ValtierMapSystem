@@ -39,7 +39,7 @@ export const WIKI_AREAS = [
         label: "CODEX",
         hint: "Fichas, conceptos y entidades del mundo",
         description:
-            "Códice unificado: personajes, locaciones, organizaciones, especies, reliquias, idiomas e ideologías. Fichas con texto libre, etiquetas, relaciones y vínculos al mapa.",
+            "Archivo de mesa: personas (ficha VTT + nodo wiki) y lugares (artículo + pines en mapa), más orgs, especies, reliquias, idiomas e ideologías.",
         phase: "live",
     },
     {
@@ -52,7 +52,7 @@ export const WIKI_AREAS = [
     },
         {
             id: WIKI_AREA_IDS.NEURAL_LAB,
-            label: "NEURAL_LAB",
+            label: "NEURAL LAB",
             hint: "Circuito de relaciones + laboratorio IA (VTT)",
             description:
                 "Superficie aparte del Archive: overview de todos los personajes en circuito Sync-Axis, foco al hacer click, y laboratorio de IA para el DJ.",
@@ -60,22 +60,25 @@ export const WIKI_AREAS = [
         },
     {
         id: WIKI_AREA_IDS.SESSIONS,
-        label: "SESSIONS",
-        hint: "Diario de sesiones de campaña",
+        label: "DIARIO",
+        hint: "Bitácora de sesiones de la mesa",
         description:
             "Registra qué pasó en cada sesión. Los recaps alimentan el contexto del Lab IA para ideas más coherentes con la campaña.",
         phase: "live",
     },
 ];
 
-/** Areas shown in the narrative archive tab nav (excludes Chronicle drawer-only + Neural Lab). */
-export const WIKI_ARCHIVE_AREAS = WIKI_AREAS.filter(
-    (a) => a.id !== WIKI_AREA_IDS.LORE && a.id !== WIKI_AREA_IDS.NEURAL_LAB,
-);
+/** Archive tab nav, in mock order. Chronicle is a codex ficha type, not a tab. */
+export const WIKI_ARCHIVE_AREAS = [
+    WIKI_AREA_IDS.CODEX,
+    WIKI_AREA_IDS.TIMELINE,
+    WIKI_AREA_IDS.SESSIONS,
+    WIKI_AREA_IDS.NEURAL_LAB,
+].map((id) => WIKI_AREAS.find((a) => a.id === id));
 
 /** Intro shown when browsing the codex surface. */
 export const WIKI_ARCHIVE_INTRO =
-    "Archivo narrativo de la campaña. Busca por nombre o etiqueta y haz clic en una ficha para leerla. En el texto puedes enlazar otras fichas con @menciones.";
+    "Archivo de la campaña. Una persona, una ficha; un lugar, un artículo y cero o más pines en el mapa. Busca y lee; @menciones enlazan otras fichas.";
 
 /** @type {WikiAreaId} */
 export const DEFAULT_WIKI_AREA = WIKI_AREA_IDS.LORE;
@@ -90,7 +93,7 @@ export const DEFAULT_ARCHIVE_AREA = WIKI_AREA_IDS.CODEX;
  */
 export const WIKI_AREA_ENTITY_TYPES = {
     [WIKI_AREA_IDS.LORE]: ["cronica"],
-    [WIKI_AREA_IDS.TIMELINE]: ["evento_historico"],
+    [WIKI_AREA_IDS.TIMELINE]: ["evento_historico", "era", "arco"],
     [WIKI_AREA_IDS.CODEX]: [
         "personaje",
         "locacion",
@@ -112,10 +115,9 @@ export const WIKI_AREA_ENTITY_TYPES = {
  */
 export function normalizeWikiAreaFilter(areaId) {
     if (!areaId) return WIKI_AREA_IDS.CODEX;
-    // Legacy Neural Lab lived in Archive; now a separate VTT overlay.
     if (areaId === "glossary") return WIKI_AREA_IDS.CODEX;
     if (areaId === "network" || areaId === WIKI_AREA_IDS.NEURAL_LAB) {
-        return WIKI_AREA_IDS.CODEX;
+        return WIKI_AREA_IDS.NEURAL_LAB;
     }
     return areaId;
 }
@@ -155,3 +157,13 @@ export function getWikiAreaForEntityType(entityType) {
     }
     return WIKI_AREA_IDS.LORE;
 }
+
+export {
+    ARCHIVE_CASCADE_WRITES,
+    linkedLocationIdsOf,
+    locationLinkPatch,
+    wikiEntityIdOfLocation,
+    findWikiLocacionForPin,
+    collectPinsForWikiLocation,
+    findWikiPersonajeForCharacter,
+} from "./archiveIdentity.js";

@@ -10,6 +10,9 @@
  *   - personalityShift              → narrativeState update
  *   - dm_note                       → skip (advisory)
  *   - aiImpactBlocks append         → short editable ficha block on ALL touched entities
+ *
+ * Cascade apply writes wikiEntities + entityRelations only — never characters/{id}
+ * or locations/{id}. See ARCHIVE_CASCADE_WRITES in src/constants/wiki/archiveIdentity.js.
  */
 
 import {

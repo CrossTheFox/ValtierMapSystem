@@ -36,7 +36,6 @@ function assignMap(state, key, value) {
 const gameSlice = createSlice({
     name: "game",
     initialState: {
-        partyPositions: {},
         tokenPositions: {},
         activeMapId: null,
         /** Shared map rulers: id → ruler */
@@ -63,9 +62,6 @@ const gameSlice = createSlice({
         characterSpotlight: null,
     },
     reducers: {
-        setPartyPositions(state, action) {
-            assignMap(state, "partyPositions", action.payload);
-        },
         setTokenPositions(state, action) {
             assignMap(state, "tokenPositions", action.payload);
         },
@@ -74,7 +70,6 @@ const gameSlice = createSlice({
         },
         setGameSession(state, action) {
             const data = action.payload ?? {};
-            if (data.partyPositions) assignMap(state, "partyPositions", data.partyPositions);
             if (data.tokenPositions) assignMap(state, "tokenPositions", data.tokenPositions);
             if (data.activeMapId !== undefined) state.activeMapId = data.activeMapId;
             if ("rulers" in data) assignMap(state, "rulers", data.rulers);
@@ -150,7 +145,6 @@ const gameSlice = createSlice({
 });
 
 export const {
-    setPartyPositions,
     setTokenPositions,
     setActiveMapId,
     setGameSession,

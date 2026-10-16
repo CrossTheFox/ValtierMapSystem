@@ -29,6 +29,7 @@ import BlockIcon from "@mui/icons-material/Block";
 import CancelIcon from "@mui/icons-material/Cancel";
 import HistoryIcon from "@mui/icons-material/History";
 import LightbulbIcon from "@mui/icons-material/Lightbulb";
+import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
 import { useDispatch, useSelector } from "react-redux";
 import { CyberTitle, CyberText } from "../customs/CustomTexts";
 import { UI_COLORS, Z_INDEX } from "../../constants/designSystem";
@@ -42,7 +43,6 @@ import {
     CASCADE_SCOUT_THRESHOLD,
 } from "../../constants/wiki/narrativeAiSchemas";
 import {
-    buildSituationContext,
     buildCascadeContext,
     buildScoutContext,
     computePropagationWaves,
@@ -58,14 +58,16 @@ import {
 import { listSessionLogs } from "../../../firebase/services/sessionLogService";
 import { resolveWikiMentions }   from "../../utils/resolveWikiMentions";
 import { validateAiResponse, buildReflexionPrompt } from "../../utils/validateAiResponse";
+import { buildEval01Package } from "../../utils/eval01Package";
 import { generateNarrativeAi }   from "../../../firebase/services/narrativeAiService";
 import { addWikiRelation, removeWikiRelation, saveWikiEntity } from "../../store/wikiSlice";
 import { showSnackbar } from "../../store/uiSlice";
-import { WIKI_RELATION_TYPE_LABELS, defaultStrengthForRelationType } from "../../constants/wikiRelationTypes";
+import { WIKI_RELATION_TYPE_LABELS, defaultStrengthForRelationType, isAffinityRelation } from "../../constants/wikiRelationTypes";
 import { WIKI_ENTITY_TYPES } from "../../constants/wikiEntityTypes";
 import { slugify, uniqueSlug } from "../../utils/wikiSlug";
 import { linkMentionsInText } from "../../utils/linkWikiMentions";
 import WikiCascadeResult from "./WikiCascadeResult";
+import SyncMeterReadout from "./SyncMeterReadout";
 import {
     resolveNarrativeAiConfig,
     getExplicitlyMentionedEntityIds,
@@ -447,6 +449,7 @@ export default function WikiAiLabPanel({
     entities,
     relations,
     campaignId,
+    loreId = null,
     narrativeSettings,
     onPropagationStart,
     onPropagationEnd,
@@ -458,6 +461,8 @@ export default function WikiAiLabPanel({
     pendingReviewNonce = null,
     propagationDepth: propagationDepthProp = null,
     onPropagationDepthChange = null,
+    renderCascadeResult = null,
+    compact = false,
 }) {
     const dispatch   = useDispatch();
     const uid        = useSelector((s) => s.player.profile?.uid);
@@ -475,6 +480,7 @@ export default function WikiAiLabPanel({
     const [modelId, setModelId]     = useState(GEMINI_MODELS[0].value);
     const [intent, setIntent]       = useState("");
     const [instruction, setInstruction] = useState("");
+    const [fixtureNote, setFixtureNote] = useState("");
     const [debouncedInstruction, setDebouncedInstruction] = useState("");
     const [extraAnchorIds, setExtraAnchorIds] = useState([]);
     const [activeThreadId, setActiveThreadId] = useState(null);
@@ -505,6 +511,9 @@ export default function WikiAiLabPanel({
     const [contextMeta, setContextMeta] = useState(null);
     const [lastContextText, setLastContextText] = useState("");
     const [advancedOpen, setAdvancedOpen] = useState(false);
+    const [moreOpen, setMoreOpen] = useState(false);
+    const [depthHelp, setDepthHelp] = useState(false);
+    const [depthPin, setDepthPin] = useState(false);
     const abortRef = useRef(null);
     const [showContextText, setShowContextText] = useState(false);
     const [tokenUsage, setTokenUsage]   = useState(null);
@@ -1112,10 +1121,10 @@ export default function WikiAiLabPanel({
             sx={{
                 display: "flex",
                 flexDirection: "column",
-                height: "100%",
+                height: compact ? "auto" : "100%",
                 minHeight: 0,
-                bgcolor: UI_COLORS.backgroundSecondary,
-                borderLeft: `1px solid ${UI_COLORS.border}`,
+                bgcolor: compact ? "transparent" : UI_COLORS.backgroundSecondary,
+                borderLeft: compact ? 0 : `1px solid ${UI_COLORS.border}`,
             }}
         >
             {/* Header */}
@@ -1134,6 +1143,7 @@ export default function WikiAiLabPanel({
                 <CyberTitle sx={{ fontSize: "0.72rem", color: UI_COLORS.anomaly, letterSpacing: 2, flex: 1 }}>
                     LAB_IA
                 </CyberTitle>
+                {!compact && (
                 <Chip
                     label="beta"
                     size="small"
@@ -1145,6 +1155,7 @@ export default function WikiAiLabPanel({
                         border: `1px solid ${UI_COLORS.anomaly}44`,
                     }}
                 />
+                )}
             </Box>
 
             {/* Body: single scroll so controls + results are always reachable */}
@@ -1152,7 +1163,7 @@ export default function WikiAiLabPanel({
                 sx={{
                     flex: 1,
                     minHeight: 0,
-                    overflowY: "auto",
+                    overflowY: compact ? "visible" : "auto",
                     display: "flex",
                     flexDirection: "column",
                     ...CYBER_SCROLL_STYLE,
@@ -1163,13 +1174,42 @@ export default function WikiAiLabPanel({
                 sx={{
                     flexShrink: 0,
                     px: 1.5,
-                    py: 1.5,
+                    py: compact ? 1 : 1.5,
                     display: "flex",
                     flexDirection: "column",
-                    gap: 1.5,
+                    gap: compact ? 1 : 1.5,
                     borderBottom: `1px solid ${UI_COLORS.border}`,
                 }}
             >
+                {compact && (
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                        <CyberText sx={{ flex: 1, minWidth: 0, fontSize: "0.84rem", color: "#ffffff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {selectedEntity?.title || "Elige una ficha"}
+                        </CyberText>
+                        <Box
+                            component="button"
+                            type="button"
+                            onClick={() => setMoreOpen((value) => !value)}
+                            sx={{
+                                flex: "none",
+                                px: "8px",
+                                py: "3px",
+                                borderRadius: "4px",
+                                border: `1px solid ${UI_COLORS.border}`,
+                                background: "transparent",
+                                color: "#ffffff",
+                                fontFamily: "'Fira Sans', sans-serif",
+                                fontSize: "12px",
+                                cursor: "pointer",
+                                "&:hover": { borderColor: "#ffffff" },
+                            }}
+                        >
+                            {moreOpen ? "Menos" : "Más"}
+                        </Box>
+                    </Box>
+                )}
+                {(!compact || moreOpen) && (
+                <>
                 {/* Mode — narrative_impact is hidden from UI (kept for CLI regression only) */}
                 <Box>
                     <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary, letterSpacing: 0.5, mb: 0.5 }}>
@@ -1263,8 +1303,11 @@ export default function WikiAiLabPanel({
                         />
                     </Collapse>
                 </Box>
+                </>
+                )}
 
                 {/* Anchor display */}
+                {!compact && (
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                     <CyberText sx={{ fontSize: "0.72rem", color: UI_COLORS.textSecondary }}>Ancla:</CyberText>
                     {selectedEntity ? (
@@ -1291,9 +1334,10 @@ export default function WikiAiLabPanel({
                         </CyberText>
                     )}
                 </Box>
+                )}
 
                 {/* Multi-ancla — solo Ideas de escena */}
-                {mode === AI_MODES.SITUATION && (
+                {mode === AI_MODES.SITUATION && (!compact || moreOpen) && (
                 <Box>
                     <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary, mb: 0.5, letterSpacing: 0.5 }}>
                         CONTEXTO (MULTI-ANCLA)
@@ -1363,6 +1407,7 @@ export default function WikiAiLabPanel({
                 </Box>
                 )}
 
+                {(!compact || moreOpen) && (
                 <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
                         <HistoryIcon sx={{ fontSize: "0.85rem", color: UI_COLORS.textSecondary }} />
                         <CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.textSecondary, flex: 1 }}>
@@ -1375,6 +1420,7 @@ export default function WikiAiLabPanel({
                             </Button>
                         )}
                 </Box>
+                )}
 
                 {/* Intent (situation only) */}
                 {mode === AI_MODES.SITUATION && (
@@ -1408,7 +1454,7 @@ export default function WikiAiLabPanel({
                             onChange={(e) => handleInstructionChange(e.target.value)}
                             placeholder={
                                 mode === AI_MODES.CASCADE
-                                    ? 'ej: "Zorgun muere en batalla, dejando a Oni sin su único pilar"'
+                                    ? 'ej: "El rey asesina a la reina para salvar a la heredera"'
                                     : 'ej: "Haz que Engel muera", "Galathia firma tregua con Mirage"'
                             }
                             label={mode === AI_MODES.CASCADE ? "Evento narrativo" : "Instrucción narrativa"}
@@ -1420,8 +1466,22 @@ export default function WikiAiLabPanel({
                             }}
                         />
 
+                        {compact && mode === AI_MODES.CASCADE && mentionPreview && (
+                            <Box>
+                                <CyberText sx={{ fontSize: "0.72rem", color: UI_COLORS.textSecondary }}>
+                                    {mentionPreview.resolved.length
+                                        ? mentionPreview.resolved.map((m) => m.entity.title).join(" · ")
+                                        : "Sin entidades en el texto"}
+                                </CyberText>
+                                {mentionPreview.ambiguous.map((a, i) => (
+                                    <CyberText key={i} sx={{ fontSize: "0.72rem", color: "#ffa726" }}>
+                                        «{a.text}» es ambiguo ({a.candidates.map((c) => c.title).join(", ")})
+                                    </CyberText>
+                                ))}
+                            </Box>
+                        )}
                         {/* Cascade mention preview */}
-                        {mode === AI_MODES.CASCADE && mentionPreview && (
+                        {mode === AI_MODES.CASCADE && mentionPreview && !compact && (
                             <Box
                                 sx={{
                                     p: 1,
@@ -1475,10 +1535,34 @@ export default function WikiAiLabPanel({
                 {/* Propagation depth slider (cascade only) */}
                 {mode === AI_MODES.CASCADE && (
                     <Box>
-                        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", mb: 0.25 }}>
+                        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 0.25 }}>
                             <CyberText sx={{ fontSize: "0.68rem", color: UI_COLORS.textSecondary }}>
-                                Profundidad de propagación
+                                {compact ? `Ondas · ${propagationDepth}` : "Profundidad de propagación"}
                             </CyberText>
+                            {compact ? (
+                                <Box
+                                    component="button"
+                                    type="button"
+                                    aria-label="Ayuda de las ondas"
+                                    onMouseEnter={() => setDepthHelp(true)}
+                                    onMouseLeave={() => setDepthHelp(false)}
+                                    onClick={() => setDepthPin((value) => !value)}
+                                    sx={{
+                                        width: 22,
+                                        height: 22,
+                                        p: 0,
+                                        borderRadius: "4px",
+                                        border: `1px solid ${UI_COLORS.border}`,
+                                        background: "transparent",
+                                        color: "#ffffff",
+                                        cursor: "pointer",
+                                        fontFamily: "'Orbitron', sans-serif",
+                                        fontSize: "11px",
+                                    }}
+                                >
+                                    ?
+                                </Box>
+                            ) : (
                             <Chip
                                 label={`${propagationDepth} ondas`}
                                 size="small"
@@ -1491,6 +1575,7 @@ export default function WikiAiLabPanel({
                                     "& .MuiChip-label": { px: 0.75 },
                                 }}
                             />
+                            )}
                         </Box>
                         <Slider
                             value={propagationDepth}
@@ -1517,17 +1602,19 @@ export default function WikiAiLabPanel({
                                 py: 0.75,
                             }}
                         />
+                        {(!compact || depthHelp || depthPin) && (
                         <CyberText sx={{ fontSize: "0.6rem", color: UI_COLORS.textSecondary }}>
                             {estimatedTokens != null
                                 ? `${formatTokenEstimate(estimatedTokens)} tokens estimados`
                                 : `recom. 3–4 ondas · núcleo ~${12 + propagationDepth * 6} fichas`}
                             {" · depth alta gasta salida JSON"}
                         </CyberText>
+                        )}
                     </Box>
                 )}
 
                 {/* Inspiración rápida */}
-                {mode === AI_MODES.SITUATION && (
+                {mode === AI_MODES.SITUATION && (!compact || moreOpen) && (
                     <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
                         {INSPIRATION_PROMPTS.map((p) => (
                             <Button
@@ -1625,6 +1712,46 @@ export default function WikiAiLabPanel({
                     )}
                 </Box>
 
+                {loreId && (
+                    <Box>
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            fullWidth
+                            disabled={loading}
+                            aria-label="Abrir propuesta fija Eval-01 sin llamar al modelo"
+                            onClick={() => {
+                                const built = buildEval01Package({ entities });
+                                if (!built.ok) {
+                                    setFixtureNote(`Faltan fichas del seed en este Lore: ${built.missing.join(", ")}.`);
+                                    return;
+                                }
+                                setFixtureNote("");
+                                setMode(AI_MODES.CASCADE);
+                                setResult(built.result);
+                                onPropagationResult?.(built.result);
+                            }}
+                            startIcon={<FactCheckOutlinedIcon sx={{ fontSize: "1rem !important" }} />}
+                            sx={{
+                                borderColor: UI_COLORS.accent,
+                                color: "#ffffff",
+                                fontSize: "0.68rem",
+                                fontFamily: "'Orbitron', sans-serif",
+                                letterSpacing: 0.6,
+                                "&:hover": { borderColor: UI_COLORS.accent, bgcolor: `${UI_COLORS.accent}12` },
+                                "&:disabled": { borderColor: UI_COLORS.border, color: UI_COLORS.textSecondary },
+                            }}
+                        >
+                            Propuesta de prueba
+                        </Button>
+                        {fixtureNote && (
+                            <CyberText sx={{ mt: 0.5, fontSize: "0.68rem", color: UI_COLORS.danger, lineHeight: 1.4 }}>
+                                {fixtureNote}
+                            </CyberText>
+                        )}
+                    </Box>
+                )}
+
                 {softFailWarning && (
                     <Box
                         sx={{
@@ -1641,7 +1768,7 @@ export default function WikiAiLabPanel({
                 )}
 
                 {/* Context meta */}
-                {(contextMeta || estimatedTokens != null) && (
+                {(contextMeta || estimatedTokens != null) && !compact && (
                     <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
                         <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 0.25 }}>
                             {contextMeta && (
@@ -1845,11 +1972,19 @@ export default function WikiAiLabPanel({
                                     )}
                                 </Box>
 
+                                <CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.anomaly, letterSpacing: "0.06em" }}>
+                                    {WIKI_RELATION_TYPE_LABELS[rel.relationType] ?? rel.relationType}
+                                </CyberText>
                                 <CyberText sx={{ fontSize: "0.78rem", color: UI_COLORS.textPrimary, mb: 0.5 }}>
                                     <strong>{rel.fromEntityTitle}</strong>
-                                    <span style={{ color: UI_COLORS.textSecondary }}> → [{WIKI_RELATION_TYPE_LABELS[rel.relationType] ?? rel.relationType}] → </span>
+                                    <span style={{ color: UI_COLORS.textSecondary }}>{" · "}</span>
                                     <strong>{rel.toEntityTitle}</strong>
                                 </CyberText>
+                                {isAffinityRelation({ relationType: rel.relationType }) && rel.action !== "remove" && (
+                                    <SyncMeterReadout
+                                        strength={rel.strength ?? defaultStrengthForRelationType(rel.relationType)}
+                                    />
+                                )}
 
                                 <CyberText sx={{ fontSize: "0.7rem", color: UI_COLORS.textSecondary, mb: 0.75 }}>
                                     {rel.reason}
@@ -1914,17 +2049,50 @@ export default function WikiAiLabPanel({
                 )}
 
                 {/* ── Results: Cascade mode ── */}
-                {result && mode === AI_MODES.CASCADE && (
-                    <WikiCascadeResult
-                        result={result}
-                        campaignId={campaignId}
-                        eventInstruction={instruction}
-                        presentation={cascadePresentation}
-                        onFocusImpact={onFocusImpact}
-                        focusedImpactEntityId={focusedImpactEntityId}
-                        pendingReviewEntityId={pendingReviewEntityId}
-                        pendingReviewNonce={pendingReviewNonce}
-                    />
+                {result && mode === AI_MODES.CASCADE && renderCascadeResult && renderCascadeResult({
+                    result,
+                    eventInstruction: instruction,
+                    onDiscard: () => {
+                        setResult(null);
+                        onPropagationResult?.(null);
+                        restoreCascadePreview();
+                    },
+                })}
+                {result && mode === AI_MODES.CASCADE && !renderCascadeResult && (
+                    <Box>
+                        <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 0.75 }}>
+                            <Button
+                                size="small"
+                                onClick={() => {
+                                    setResult(null);
+                                    onPropagationResult?.(null);
+                                    restoreCascadePreview();
+                                }}
+                                sx={{
+                                    fontFamily: "'Orbitron', sans-serif",
+                                    fontSize: "0.58rem",
+                                    letterSpacing: "0.08em",
+                                    color: UI_COLORS.textSecondary,
+                                    border: `1px solid ${UI_COLORS.border}`,
+                                }}
+                            >
+                                Descartar
+                            </Button>
+                        </Box>
+                        <WikiCascadeResult
+                            result={result}
+                            campaignId={campaignId}
+                            loreId={loreId}
+                            entities={loreId ? entities : null}
+                            relations={loreId ? relations : null}
+                            eventInstruction={instruction}
+                            presentation={cascadePresentation}
+                            onFocusImpact={onFocusImpact}
+                            focusedImpactEntityId={focusedImpactEntityId}
+                            pendingReviewEntityId={pendingReviewEntityId}
+                            pendingReviewNonce={pendingReviewNonce}
+                        />
+                    </Box>
                 )}
             </Box>
             </Box>

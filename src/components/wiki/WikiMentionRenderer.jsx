@@ -222,6 +222,7 @@ function MentionLink({ title, entityId, resolved = true, onEntityClick, entities
     const link = (
         <Box
             component="span"
+            data-wiki-mention={entityId || undefined}
             onClick={clickable ? () => onEntityClick(entityId) : undefined}
             sx={{
                 display: "inline",

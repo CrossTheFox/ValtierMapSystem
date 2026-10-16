@@ -318,7 +318,7 @@ export default function WikiSearchBar({
 
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
 
-            {onAreaFilterChange && (
+            {!hideAreaNav && onAreaFilterChange && (
 
                 <WikiAreaNav
 

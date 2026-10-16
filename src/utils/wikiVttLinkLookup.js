@@ -1,7 +1,13 @@
-import { WIKI_ENTITY_TYPES } from "../constants/wikiEntityTypes";
+import { WIKI_ENTITY_TYPES } from "../constants/wikiEntityTypes.js";
+import {
+    linkedLocationIdsOf,
+    findWikiLocacionForPin,
+    findWikiPersonajeForCharacter,
+} from "../constants/wiki/archiveIdentity.js";
 
 /**
  * Index wiki entities by their VTT link ids for O(1) lookup in VTT lists.
+ * Location index includes every pin in linkedVttLocationIds (1:N).
  */
 export function buildWikiVttLinkIndex(wikiEntities = []) {
     const byCharacterId = new Map();
@@ -11,8 +17,8 @@ export function buildWikiVttLinkIndex(wikiEntities = []) {
         if (entity.linkedVttCharacterId) {
             byCharacterId.set(entity.linkedVttCharacterId, entity);
         }
-        if (entity.linkedVttLocationId) {
-            byLocationId.set(entity.linkedVttLocationId, entity);
+        for (const locId of linkedLocationIdsOf(entity)) {
+            byLocationId.set(locId, entity);
         }
     }
 
@@ -40,14 +46,24 @@ export function getWikiEntityForCharacter(index, characterId, character = null, 
     return index.byCharacterId.get(characterId) || null;
 }
 
-export function getWikiEntityForLocation(index, locationId) {
+/**
+ * @param {{ byLocationId: Map }} index
+ * @param {string} locationId
+ * @param {{ wikiEntityId?: string|null }|null} [location]
+ * @param {object[]} [wikiEntities]
+ */
+export function getWikiEntityForLocation(index, locationId, location = null, wikiEntities = null) {
+    if (location && Array.isArray(wikiEntities)) {
+        const fromPin = findWikiLocacionForPin(location, wikiEntities);
+        if (fromPin) return fromPin;
+    }
     if (!index || !locationId) return null;
     return index.byLocationId.get(locationId) || null;
 }
 
 /** Wiki entity has an active VTT annex link. */
 export function hasWikiVttLink(entity) {
-    return Boolean(entity?.linkedVttCharacterId || entity?.linkedVttLocationId);
+    return Boolean(entity?.linkedVttCharacterId || linkedLocationIdsOf(entity).length);
 }
 
 /** @returns {"character"|"location"|null} */
@@ -56,10 +72,12 @@ export function getWikiVttLinkKind(entity) {
     if (entity.entityType === WIKI_ENTITY_TYPES.PERSONAJE && entity.linkedVttCharacterId) {
         return "character";
     }
-    if (entity.entityType === WIKI_ENTITY_TYPES.LOCACION && entity.linkedVttLocationId) {
+    if (entity.entityType === WIKI_ENTITY_TYPES.LOCACION && linkedLocationIdsOf(entity).length) {
         return "location";
     }
     if (entity.linkedVttCharacterId) return "character";
-    if (entity.linkedVttLocationId) return "location";
+    if (linkedLocationIdsOf(entity).length) return "location";
     return null;
 }
+
+export { findWikiPersonajeForCharacter, findWikiLocacionForPin };

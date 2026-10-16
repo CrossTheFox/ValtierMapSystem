@@ -12,6 +12,7 @@ import {
     orderBy,
     serverTimestamp,
 } from "firebase/firestore";
+import { linkedLocationIdsOf, locationLinkPatch } from "../../src/constants/wiki/archiveIdentity.js";
 
 const wikiEntitiesRef = (campaignId) =>
     collection(db, "campaigns", campaignId, "wikiEntities");
@@ -60,7 +61,7 @@ export async function getWikiEntity(campaignId, entityId) {
  * Create a new wiki entity.
  * @param {string} campaignId
  * @param {object} data — entityType, title, summary, body, tags, visibility, slug,
- *   linkedVttLocationId, linkedVttCharacterId, imageUrl, customFields
+ *   linkedVttLocationId, linkedVttLocationIds, linkedVttCharacterId, imageUrl, customFields
  * @param {string} uid — createdBy
  */
 export async function createWikiEntity(campaignId, data, uid) {
@@ -73,7 +74,7 @@ export async function createWikiEntity(campaignId, data, uid) {
         tags: data.tags || [],
         visibility: data.visibility || "dm_only",
         slug: data.slug || "",
-        linkedVttLocationId: data.linkedVttLocationId || null,
+        ...locationLinkPatch(linkedLocationIdsOf(data)),
         linkedVttCharacterId: data.linkedVttCharacterId || null,
         imageUrl: data.imageUrl || null,
         customFields: data.customFields || {},
@@ -113,16 +114,22 @@ export async function deleteWikiEntity(campaignId, entityId) {
  */
 export async function findWikiEntitiesByVttLink(campaignId, { locationId, characterId } = {}) {
     const ref = wikiEntitiesRef(campaignId);
-    let q;
     if (locationId) {
-        q = query(ref, where("linkedVttLocationId", "==", locationId));
-    } else if (characterId) {
-        q = query(ref, where("linkedVttCharacterId", "==", characterId));
-    } else {
-        return [];
+        const [byLegacy, byArray] = await Promise.all([
+            getDocs(query(ref, where("linkedVttLocationId", "==", locationId))),
+            getDocs(query(ref, where("linkedVttLocationIds", "array-contains", locationId))),
+        ]);
+        const byId = new Map();
+        for (const snap of [...byLegacy.docs, ...byArray.docs]) {
+            byId.set(snap.id, serializeEntity(snap));
+        }
+        return [...byId.values()];
     }
-    const snap = await getDocs(q);
-    return snap.docs.map(serializeEntity);
+    if (characterId) {
+        const snap = await getDocs(query(ref, where("linkedVttCharacterId", "==", characterId)));
+        return snap.docs.map(serializeEntity);
+    }
+    return [];
 }
 
 /**

@@ -11,9 +11,11 @@ import { useDispatch, useSelector } from 'react-redux';
 import { setIsSelectingPosition, setSelectedWorldPosition, showSnackbar, openWikiOverlay } from '../../../store/uiSlice';
 import { WIKI_ENTITY_TYPES } from '../../../constants/wikiEntityTypes';
 import { WIKI_AREA_IDS } from '../../../constants/wiki/index';
+import { findWikiLocacionForPin } from '../../../constants/wiki/archiveIdentity.js';
 import { useCampaignWikiEntities } from '../../../hooks/useCampaignWikiEntities';
 import { linkWikiLocacionToVtt } from '../../../../firebase/services/wikiVttLinkService';
 import { fetchWikiEntities } from '../../../store/wikiSlice';
+import { updateLocationInState } from '../../../store/worldSlice';
 import AutoStoriesIcon from '@mui/icons-material/AutoStories';
 import { VttToWikiLinkBadge } from '../../wiki/VttWikiLinkBadge';
 import { UI_COLORS } from '../../../constants/uiColors';
@@ -42,6 +44,7 @@ export default function LocationsSubTab({ currentCampaignId, locations, maps }) 
             mapId: maps[0]?.id || "", 
             description: "", 
             history: "",
+            wikiEntityId: null,
             position: null 
         });
     };
@@ -58,6 +61,19 @@ export default function LocationsSubTab({ currentCampaignId, locations, maps }) 
                 const { isNew, ...newData } = selectedItem;
                 const docRef = await createCampaignElement('locations', newData);
                 setSelectedItem({ id: docRef.id, ...newData });
+                if (newData.wikiEntityId) {
+                    await linkWikiLocacionToVtt(
+                        currentCampaignId,
+                        newData.wikiEntityId,
+                        docRef.id,
+                        uid
+                    );
+                    dispatch(updateLocationInState({
+                        id: docRef.id,
+                        data: { wikiEntityId: newData.wikiEntityId },
+                    }));
+                    dispatch(fetchWikiEntities({ campaignId: currentCampaignId }));
+                }
 
                 dispatch(showSnackbar({
                     message: "PROTOCOL_EXECUTED: NEW_ENTRY_SECURED",
@@ -93,14 +109,17 @@ export default function LocationsSubTab({ currentCampaignId, locations, maps }) 
     }, [selectedWorldPosition, selectedItem, dispatch]);
 
     const narrativeLocaciones = wikiEntities.filter((e) => e.entityType === WIKI_ENTITY_TYPES.LOCACION);
-    const linkedNarrativeEntity = selectedItem?.id
-        ? narrativeLocaciones.find((e) => e.linkedVttLocationId === selectedItem.id)
+    const linkedNarrativeEntity = selectedItem
+        ? findWikiLocacionForPin(selectedItem, narrativeLocaciones)
+            || (selectedItem.wikiEntityId
+                ? narrativeLocaciones.find((e) => e.id === selectedItem.wikiEntityId)
+                : null)
         : null;
 
     const handleOpenNarrativeWiki = () => {
         if (!selectedItem?.id) return;
         dispatch(openWikiOverlay({
-            mode: linkedNarrativeEntity ? "detail" : "create",
+            mode: linkedNarrativeEntity ? "detail" : "list",
             areaFilter: WIKI_AREA_IDS.CODEX,
             entityId: linkedNarrativeEntity?.id || null,
             vttContext: {
@@ -110,8 +129,25 @@ export default function LocationsSubTab({ currentCampaignId, locations, maps }) 
         }));
     };
 
+    const handleCreateNarrativeWiki = () => {
+        if (!selectedItem?.id) return;
+        dispatch(openWikiOverlay({
+            mode: "create",
+            areaFilter: WIKI_AREA_IDS.CODEX,
+            entityId: null,
+            vttContext: {
+                linkedVttLocationId: selectedItem.id,
+                prefillType: WIKI_ENTITY_TYPES.LOCACION,
+            },
+        }));
+    };
+
     const handleNarrativeWikiLink = async (wikiEntityId) => {
-        if (!currentCampaignId || !selectedItem?.id || selectedItem.isNew) return;
+        if (!currentCampaignId || !selectedItem) return;
+        if (selectedItem.isNew || !selectedItem.id) {
+            setSelectedItem((prev) => ({ ...prev, wikiEntityId: wikiEntityId || null }));
+            return;
+        }
         setWikiLinkSaving(true);
         try {
             await linkWikiLocacionToVtt(
@@ -120,6 +156,11 @@ export default function LocationsSubTab({ currentCampaignId, locations, maps }) 
                 selectedItem.id,
                 uid
             );
+            dispatch(updateLocationInState({
+                id: selectedItem.id,
+                data: { wikiEntityId: wikiEntityId || null },
+            }));
+            setSelectedItem((prev) => ({ ...prev, wikiEntityId: wikiEntityId || null }));
             dispatch(fetchWikiEntities({ campaignId: currentCampaignId }));
             dispatch(showSnackbar({
                 message: wikiEntityId ? "Vínculo narrativo actualizado." : "Vínculo narrativo eliminado.",
@@ -264,54 +305,75 @@ export default function LocationsSubTab({ currentCampaignId, locations, maps }) 
                                             </CyberText>
                                         </Box>
                                     </Stack>
-                                    <CyberInput 
-                                        label="GEOGRAPHICAL_DESCRIPTION" 
-                                        multiline rows={3}
-                                        value={selectedItem.description || ''} 
-                                        onChange={(e) => setSelectedItem({...selectedItem, description: e.target.value})}
-                                    />
-
                                     <Box sx={{ border: `1px solid ${UI_COLORS.accent}33`, p: 2, borderRadius: 0 }}>
                                         <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
                                             <Stack direction="row" alignItems="center" gap={1}>
                                                 <CyberText sx={{ color: UI_COLORS.accent, fontSize: '0.75rem' }}>
-                                                    NARRATIVE_ARCHIVE_LINK
+                                                    LUGAR DEL ARCHIVO
                                                 </CyberText>
                                                 {linkedNarrativeEntity && (
                                                     <VttToWikiLinkBadge wikiEntity={linkedNarrativeEntity} compact />
                                                 )}
                                             </Stack>
-                                            <Tooltip title={selectedItem.id ? "Abrir o crear ficha en el archivo" : "Guarda la ubicación primero"}>
-                                                <span>
-                                                    <IconButton
-                                                        size="small"
-                                                        disabled={!selectedItem.id}
-                                                        onClick={handleOpenNarrativeWiki}
-                                                        sx={{ color: UI_COLORS.accent, '&:hover': { bgcolor: `${UI_COLORS.accent}18` } }}
+                                            <Stack direction="row" spacing={0.5}>
+                                                <Tooltip title={selectedItem.id ? "Abrir artículo en Archive" : "Guarda el pin primero para abrir Archive"}>
+                                                    <span>
+                                                        <IconButton
+                                                            size="small"
+                                                            disabled={!selectedItem.id}
+                                                            onClick={handleOpenNarrativeWiki}
+                                                            sx={{ color: UI_COLORS.accent, '&:hover': { bgcolor: `${UI_COLORS.accent}18` } }}
+                                                        >
+                                                            <AutoStoriesIcon sx={{ fontSize: '1rem' }} />
+                                                        </IconButton>
+                                                    </span>
+                                                </Tooltip>
+                                                {!linkedNarrativeEntity && selectedItem.id && (
+                                                    <Box
+                                                        component="button"
+                                                        type="button"
+                                                        onClick={handleCreateNarrativeWiki}
+                                                        sx={{
+                                                            px: 1,
+                                                            py: 0.45,
+                                                            borderRadius: 0.75,
+                                                            border: `1px solid ${UI_COLORS.border}`,
+                                                            bgcolor: "transparent",
+                                                            color: UI_COLORS.textPrimary,
+                                                            fontFamily: "'Orbitron', sans-serif",
+                                                            fontSize: "0.52rem",
+                                                            letterSpacing: "0.08em",
+                                                            cursor: "pointer",
+                                                        }}
                                                     >
-                                                        <AutoStoriesIcon sx={{ fontSize: '1rem' }} />
-                                                    </IconButton>
-                                                </span>
-                                            </Tooltip>
+                                                        CREAR_FICHA
+                                                    </Box>
+                                                )}
+                                            </Stack>
                                         </Stack>
                                         <CyberInput
                                             select
-                                            label="FICHA_LOCACION_NARRATIVA"
-                                            value={linkedNarrativeEntity?.id || ''}
-                                            disabled={!selectedItem.id || selectedItem.isNew || wikiLinkSaving}
+                                            label="FICHA_LOCACION"
+                                            value={linkedNarrativeEntity?.id || selectedItem.wikiEntityId || ''}
+                                            disabled={wikiLinkSaving}
                                             onChange={(e) => handleNarrativeWikiLink(e.target.value || null)}
                                         >
-                                            <option value="" style={{ backgroundColor: '#000' }}>
-                                                {selectedItem.isNew ? 'GUARDAR_UBICACION_PRIMERO' : 'SIN_VINCULO_NARRATIVO'}
+                                            <option value="" style={{ backgroundColor: '#000', color: '#fff' }}>
+                                                SIN_VINCULO — elegir lugar existente
                                             </option>
                                             {narrativeLocaciones.map((ent) => (
-                                                <option key={ent.id} value={ent.id} style={{ backgroundColor: '#000' }}>
+                                                <option key={ent.id} value={ent.id} style={{ backgroundColor: '#000', color: '#fff' }}>
                                                     {(ent.title || ent.slug || ent.id).toUpperCase()}
                                                 </option>
                                             ))}
                                         </CyberInput>
+                                        {linkedNarrativeEntity?.summary && (
+                                            <CyberText sx={{ fontSize: '0.72rem', color: UI_COLORS.textPrimary, mt: 1.25, display: 'block', lineHeight: 1.45 }}>
+                                                {linkedNarrativeEntity.summary}
+                                            </CyberText>
+                                        )}
                                         <CyberText sx={{ fontSize: '0.65rem', color: UI_COLORS.textSecondary, mt: 1, display: 'block', lineHeight: 1.4 }}>
-                                            El pin VTT es la ciudad/mazmorra en el mapa; la ficha narrativa puede ser país, región o jerarquía superior. Crea regiones en el Códice sin pin y enlázalas aquí.
+                                            El pin es una instancia en el mapa (puede haber varias). El artículo vive en el Archive; no se clona al colocar el pin.
                                         </CyberText>
                                     </Box>
                                 </Stack>
@@ -326,14 +388,6 @@ export default function LocationsSubTab({ currentCampaignId, locations, maps }) 
                                 />
                             </Grid>
 
-                            <Grid size={12}>
-                                <CyberInput 
-                                    label="HISTORICAL_LOGS" 
-                                    multiline rows={5}
-                                    value={selectedItem.history || ''} 
-                                    onChange={(e) => setSelectedItem({...selectedItem, history: e.target.value})}
-                                />
-                            </Grid>
                         </Grid>
 
                         <Box sx={{ mt: 3, pb: 2 }}>

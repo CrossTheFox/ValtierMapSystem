@@ -1,15 +1,17 @@
 import { Box } from "@mui/material";
 
-import CharacterNarrativeChips from "../wiki/CharacterNarrativeChips";
+import CharacterNarrativeChips, { characterNarrativeChipModel } from "../wiki/CharacterNarrativeChips";
 import { UI_COLORS } from "../../constants/uiColors";
 
 /** Narrative chips only — classes live in the dialog header. */
 export default function CharacterSheetMetaStrip({ character, wikiEntities = [] }) {
     if (!character) return null;
 
+    const model = characterNarrativeChipModel(character, wikiEntities);
     const hasChips =
-        character.speciesEntityId ||
-        (character.organizationMemberships?.length > 0);
+        Boolean(model.species) ||
+        model.traitTags.length > 0 ||
+        model.memberships.length > 0;
 
     if (!hasChips) return null;
 

@@ -1,7 +1,8 @@
 /**
  * linkVttToWiki.mjs
  *
- * Fuzzy-match VTT tokens/locations to wiki entities and create 1:1 annex links.
+ * Fuzzy-match VTT tokens/locations to wiki entities and create annex links.
+ * Locations are 1 wiki : N pins (same place on several maps).
  *
  * Usage:
  *   npm run link:vtt-wiki:dry
@@ -15,6 +16,7 @@ import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { SEED_CAMPAIGN_ID } from "./data/valtiaWikiSeed.mjs";
+import { linkedLocationIdsOf, locationLinkPatch } from "../src/constants/wiki/archiveIdentity.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -158,16 +160,111 @@ async function applyCharacterLink(db, campaignId, wikiEntity, character, uid) {
 }
 
 async function applyLocationLink(db, campaignId, wikiEntity, location, uid) {
-    await clearStaleWikiLinks(db, campaignId, "linkedVttLocationId", location.id, wikiEntity.id, uid);
+    const wikiCol = db.collection("campaigns").doc(campaignId).collection("wikiEntities");
+    const [byLegacy, byArray] = await Promise.all([
+        wikiCol.where("linkedVttLocationId", "==", location.id).get(),
+        wikiCol.where("linkedVttLocationIds", "array-contains", location.id).get(),
+    ]);
+    const seen = new Set();
+    for (const docSnap of [...byLegacy.docs, ...byArray.docs]) {
+        if (docSnap.id === wikiEntity.id || seen.has(docSnap.id)) continue;
+        seen.add(docSnap.id);
+        const remaining = linkedLocationIdsOf({ id: docSnap.id, ...docSnap.data() })
+            .filter((id) => id !== location.id);
+        await docSnap.ref.update({
+            ...locationLinkPatch(remaining),
+            updatedAt: new Date().toISOString(),
+            updatedBy: uid,
+        });
+    }
+
+    const ids = linkedLocationIdsOf(wikiEntity);
+    if (!ids.includes(location.id)) ids.push(location.id);
     const updates = {
-        linkedVttLocationId: location.id,
+        ...locationLinkPatch(ids),
         updatedAt: new Date().toISOString(),
         updatedBy: uid,
     };
     if (!wikiEntity.imageUrl && location.imageUrl) {
         updates.imageUrl = location.imageUrl;
     }
-    await db.collection("campaigns").doc(campaignId).collection("wikiEntities").doc(wikiEntity.id).update(updates);
+    await wikiCol.doc(wikiEntity.id).update(updates);
+    await db.collection("locations").doc(location.id).update({ wikiEntityId: wikiEntity.id });
+}
+
+function matchLocationsToWiki(vttItems, wikiItems) {
+    const report = {
+        linked: [],
+        skipped_already_linked: [],
+        ambiguous: [],
+        unmatched_vtt: [],
+        unmatched_wiki: [],
+    };
+
+    for (const vtt of vttItems) {
+        const already = wikiItems.find((w) =>
+            vtt.wikiEntityId === w.id || linkedLocationIdsOf(w).includes(vtt.id)
+        );
+        if (already) {
+            report.skipped_already_linked.push({
+                vttId: vtt.id,
+                vttName: vtt.name,
+                wikiId: already.id,
+                wikiTitle: already.title,
+            });
+            continue;
+        }
+
+        const scored = wikiItems
+            .map((w) => ({
+                wiki: w,
+                score: scoreMatch(vtt.name, w),
+            }))
+            .filter((x) => x.score >= MIN_SCORE)
+            .sort((a, b) => b.score - a.score);
+
+        if (scored.length === 0) {
+            report.unmatched_vtt.push({ vttId: vtt.id, vttName: vtt.name });
+            continue;
+        }
+
+        const best = scored[0];
+        const second = scored[1];
+        if (second && best.score - second.score < 0.08) {
+            report.ambiguous.push({
+                vttId: vtt.id,
+                vttName: vtt.name,
+                candidates: scored.slice(0, 3).map((s) => ({
+                    wikiId: s.wiki.id,
+                    wikiTitle: s.wiki.title,
+                    slug: s.wiki.slug,
+                    score: Number(s.score.toFixed(3)),
+                })),
+            });
+            continue;
+        }
+
+        report.linked.push({
+            vttId: vtt.id,
+            vttName: vtt.name,
+            wikiId: best.wiki.id,
+            wikiTitle: best.wiki.title,
+            slug: best.wiki.slug,
+            score: Number(best.score.toFixed(3)),
+        });
+    }
+
+    for (const w of wikiItems) {
+        if (linkedLocationIdsOf(w).length === 0 && !report.linked.some((r) => r.wikiId === w.id)) {
+            report.unmatched_wiki.push({
+                wikiId: w.id,
+                wikiTitle: w.title,
+                slug: w.slug,
+            });
+        }
+    }
+
+    return report;
 }
 
 function matchVttToWiki(vttItems, wikiItems, linkField) {
@@ -267,7 +364,7 @@ async function main() {
     const wikiLocaciones = wikiEntities.filter((e) => e.entityType === "locacion");
 
     const charReport = matchVttToWiki(characters, wikiPersonajes, "linkedVttCharacterId");
-    const locReport = matchVttToWiki(locations, wikiLocaciones, "linkedVttLocationId");
+    const locReport = matchLocationsToWiki(locations, wikiLocaciones);
 
     const report = {
         campaignId: CAMPAIGN_ID,

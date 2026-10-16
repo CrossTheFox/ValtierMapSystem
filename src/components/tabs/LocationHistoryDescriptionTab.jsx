@@ -16,10 +16,11 @@ import AnimatedTypewriterText from "../animations/AnimatedTypewriterText";
 import LandscapeIcon from "@mui/icons-material/Landscape";
 import { UI_COLORS } from "../../constants/uiColors";
 import { useCampaignWikiEntities } from "../../hooks/useCampaignWikiEntities";
-import { WIKI_ENTITY_TYPES } from "../../constants/wikiEntityTypes";
+import { findWikiLocacionForPin } from "../../constants/wiki/archiveIdentity.js";
 import WikiMentionRenderer from "../wiki/WikiMentionRenderer";
 import { openWikiOverlay } from "../../store/uiSlice";
 import { ROLES } from "../../constants/roles";
+import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
 
 function ArchiveImage({ imageUrl }) {
     const [url, setUrl] = useState(() => (imageUrl?.startsWith("http") ? imageUrl : getCachedUrl(imageUrl)) || null);
@@ -121,11 +122,9 @@ export default function LocationHistoryDescriptionTab({ location, campaignId }) 
     const wikiEntities = useCampaignWikiEntities(campaignId);
 
     const wikiEntity = useMemo(() => {
-        if (!location?.id) return null;
-        return wikiEntities.find(
-            (e) => e.entityType === WIKI_ENTITY_TYPES.LOCACION && e.linkedVttLocationId === location.id
-        ) || null;
-    }, [wikiEntities, location?.id]);
+        if (!location) return null;
+        return findWikiLocacionForPin(location, wikiEntities);
+    }, [wikiEntities, location]);
 
     const historyEvents = Array.isArray(location?.history) ? location.history : [];
     const hasArchive = !!wikiEntity;
@@ -149,7 +148,7 @@ export default function LocationHistoryDescriptionTab({ location, campaignId }) 
     };
 
     return (
-        <Box sx={{ flexGrow: 1, p: { xs: 2, sm: 3 }, overflow: "auto" }}>
+        <Box sx={{ flexGrow: 1, p: { xs: 2, sm: 3 }, overflow: "auto", ...CYBER_SCROLL_STYLE }}>
             <SourceBadge source={hasArchive ? "archive" : "vtt"} />
 
             <Grid container spacing={4}>
@@ -194,7 +193,7 @@ export default function LocationHistoryDescriptionTab({ location, campaignId }) 
                     </Box>
                 </Grid>
 
-                {(historyEvents.length > 0 || !hasArchive) && (
+                {historyEvents.length > 0 && !hasArchive && (
                     <Grid size={{ xs: 12 }}>
                         <Box sx={{ mt: 2, pt: 3, borderTop: `1px solid ${UI_COLORS.accent}22` }}>
                             <CyberTitle variant="h6" sx={{ mb: 4, color: UI_COLORS.accent, textAlign: "center", fontSize: "clamp(13px, 1vw, 16px)" }}>

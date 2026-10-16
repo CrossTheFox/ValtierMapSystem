@@ -17,7 +17,9 @@ import HubIcon from "@mui/icons-material/Hub";
 import SportsKabaddiIcon from "@mui/icons-material/SportsKabaddi";
 import AvTimerIcon from "@mui/icons-material/AvTimer";
 import { switchMap, setGridConfig, persistMapGridConfig } from "../../store/worldSlice";
-import { openDialog, openWikiOverlay, openNeuralLabOverlay, restoreDialog, showSnackbar } from "../../store/uiSlice";
+import { openDialog, openWikiOverlay, restoreDialog, showSnackbar } from "../../store/uiSlice";
+import { WIKI_AREA_IDS } from "../../constants/wiki";
+import { openArchiveTab } from "../../utils/openArchiveTab";
 import { setActiveMapForPlayers, updateInitiative, normalizeInitiative, updateSessionClocksOpen } from "../../../firebase/services/gameService";
 import { CyberText, CyberTitle } from "../customs/CustomTexts";
 import { UI_COLORS } from "../../constants/uiColors";
@@ -55,7 +57,7 @@ export default function MapSelectorHUD({ children = null }) {
     const role = useSelector((s) => s.player.profile?.role);
     const gridConfig = useSelector((s) => s.world.gridConfig);
     const gameActiveMapId = useSelector((s) => s.game.activeMapId);
-    const { openDialogs, wikiOverlay, neuralLabOverlay } = useSelector((s) => s.ui);
+    const { openDialogs, wikiOverlay } = useSelector((s) => s.ui);
     const initiative = useSelector((s) => s.game.initiative);
     const sessionClocksOpen = useSelector((s) => s.game.sessionClocks?.open !== false);
 
@@ -179,7 +181,7 @@ export default function MapSelectorHUD({ children = null }) {
                             </IconButton>
                         </Tooltip>
                     )}
-                    <Tooltip title="Lore" placement="bottom">
+                    <Tooltip title="Crónica" placement="bottom">
                         <IconButton
                             size="small"
                             onClick={() => dispatch(openDialog("loreBrowser"))}
@@ -202,17 +204,27 @@ export default function MapSelectorHUD({ children = null }) {
                             </IconButton>
                         </Tooltip>
                     )}
-                    {isDM && (
-                        <Tooltip title="Neural Lab" placement="bottom">
-                            <IconButton
-                                size="small"
-                                onClick={() => dispatch(openNeuralLabOverlay())}
-                                sx={navIconSx(!!neuralLabOverlay?.open)}
-                            >
-                                <HubIcon sx={{ fontSize: "1.05rem" }} />
-                            </IconButton>
-                        </Tooltip>
-                    )}
+                    <Tooltip title="Neural Lab" placement="bottom">
+                        <IconButton
+                            size="small"
+                            onClick={() => {
+                                if (!campaignId) return;
+                                const tab = openArchiveTab({
+                                    campaignId,
+                                    areaFilter: WIKI_AREA_IDS.NEURAL_LAB,
+                                });
+                                if (!tab) {
+                                    dispatch(showSnackbar({
+                                        message: "No se pudo abrir el Archive. Revisa que el navegador no bloquee ventanas.",
+                                        severity: "warning",
+                                    }));
+                                }
+                            }}
+                            sx={navIconSx(false)}
+                        >
+                            <HubIcon sx={{ fontSize: "1.05rem" }} />
+                        </IconButton>
+                    </Tooltip>
                     {isDM && (
                         <Tooltip title={initiative?.open ? "Cerrar iniciativa" : "Abrir iniciativa"} placement="bottom">
                             <IconButton

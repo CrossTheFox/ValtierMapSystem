@@ -9,6 +9,8 @@
  *   5. Locación VTT con mismo nombre que el título wiki
  */
 
+import { linkedLocationIdsOf } from "../constants/wiki/archiveIdentity.js";
+
 const TYPE_PERSONAJE = "personaje";
 const TYPE_LOCACION = "locacion";
 
@@ -137,6 +139,9 @@ export function resolveWikiEntityImageCandidates(entity, locations = {}, charact
     if (entity.linkedVttLocationId) {
         pushUnique(paths, locations[entity.linkedVttLocationId]?.imageUrl);
     }
+    for (const locId of linkedLocationIdsOf(entity)) {
+        pushUnique(paths, locations[locId]?.imageUrl);
+    }
 
     if (entity.entityType === TYPE_LOCACION && entity.title) {
         pushUnique(paths, findVttLocationByTitle(entity.title, locations)?.imageUrl);
@@ -180,6 +185,9 @@ export function resolveWikiEntityImageSource(entity, locations = {}, charactersB
 
     if (entity.linkedVttLocationId && locations[entity.linkedVttLocationId]?.imageUrl) {
         return "vtt_location";
+    }
+    for (const locId of linkedLocationIdsOf(entity)) {
+        if (locations[locId]?.imageUrl) return "vtt_location";
     }
 
     if (

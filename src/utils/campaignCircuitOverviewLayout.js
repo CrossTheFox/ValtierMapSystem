@@ -15,10 +15,29 @@ import { isKnownPlayerCharacterName, isPlayerCharacter } from "./characterRoster
 import { WIKI_ENTITY_TYPES } from "../constants/wikiEntityTypes.js";
 import {
     isAffinityRelation,
+    WIKI_RELATION_TYPES,
 } from "../constants/wikiRelationTypes.js";
+
+/** Structural verbs the overview still draws when both ends are circuit cards. */
+const LAB_NEIGHBOR_TYPES = new Set([
+    WIKI_RELATION_TYPES.VIVE_EN,
+    WIKI_RELATION_TYPES.OCURRIO_EN,
+    WIKI_RELATION_TYPES.COLINDA_CON,
+    WIKI_RELATION_TYPES.SEDE_EN,
+    WIKI_RELATION_TYPES.PERTENECIENTE_A,
+]);
 
 const MUTED = "#aaaaaa";
 const PJ_COLOR = "#00f2ea";
+const PLACE_COLOR = "#00f2ea";
+const ORG_COLOR = "#ffaa00";
+
+const LAB_KIND_META = {
+    pj: { rankLabel: "PJ", relationLabel: "Operador", color: PJ_COLOR },
+    npc: { rankLabel: "NPC", relationLabel: "Contacto", color: MUTED },
+    locacion: { rankLabel: "LUG", relationLabel: "Lugar", color: PLACE_COLOR },
+    organizacion: { rankLabel: "ORG", relationLabel: "Organización", color: ORG_COLOR },
+};
 
 const CELL_GAP_X = 52;
 const CELL_GAP_Y = 44;
@@ -172,6 +191,33 @@ export function listCampaignPersonajeEntities(entities = [], charactersById = {}
 }
 
 /**
+ * Circuit cards: deduped personajes, then places, then organizations.
+ * Other ficha types stay out of the overview (the Lab does not target them).
+ * @param {object[]} entities
+ * @param {Record<string, object>} [charactersById]
+ * @returns {{ items: object[], aliasToCanonical: Map<string, string> }}
+ */
+export function listCampaignLabEntities(entities = [], charactersById = {}) {
+    const { items: people, aliasToCanonical } = listCampaignPersonajeEntities(entities, charactersById);
+    const byTitle = (a, b) => String(a.entity.title || a.entity.id).localeCompare(
+        String(b.entity.title || b.entity.id),
+        "es",
+    );
+    const ofType = (entityType, kind) => (entities || [])
+        .filter((e) => e?.id && e.entityType === entityType)
+        .map((e) => ({ entity: e, kind }))
+        .sort(byTitle);
+    return {
+        items: [
+            ...people,
+            ...ofType(WIKI_ENTITY_TYPES.LOCACION, "locacion"),
+            ...ofType(WIKI_ENTITY_TYPES.ORGANIZACION, "organizacion"),
+        ],
+        aliasToCanonical,
+    };
+}
+
+/**
  * Place items on a left-to-right, top-to-bottom square-ish grid.
  */
 export function placeInSquareGrid(items, {
@@ -196,12 +242,12 @@ export function placeInSquareGrid(items, {
 }
 
 /**
- * All undirected affinity edges between PERSONAJE (canonical ids).
+ * Undirected affinity edges between circuit cards (personaje, lugar, organización).
  */
 export function buildOverviewAffinityEdges(entities = [], relations = []) {
-    const { entities: personajes, aliasToCanonical } = dedupePersonajeEntities(entities);
-    const ids = new Set(personajes.map((e) => e.id));
-    const entityById = new Map(personajes.map((e) => [e.id, e]));
+    const { items, aliasToCanonical } = listCampaignLabEntities(entities);
+    const ids = new Set(items.map((item) => item.entity.id));
+    const entityById = new Map(items.map((item) => [item.entity.id, item.entity]));
     const seen = new Set();
     const edges = [];
 
@@ -210,11 +256,12 @@ export function buildOverviewAffinityEdges(entities = [], relations = []) {
         const b = resolveCanonicalEntityId(rel?.toEntityId, aliasToCanonical);
         if (!a || !b || a === b) continue;
         if (!ids.has(a) || !ids.has(b)) continue;
-        if (!isAffinityRelation({
+        const affinity = isAffinityRelation({
             relationType: rel.relationType,
             fromEntityType: entityById.get(a)?.entityType,
             toEntityType: entityById.get(b)?.entityType,
-        })) continue;
+        });
+        if (!affinity && !LAB_NEIGHBOR_TYPES.has(rel.relationType)) continue;
         const key = a < b ? `${a}::${b}` : `${b}::${a}`;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -230,7 +277,7 @@ export function buildOverviewAffinityEdges(entities = [], relations = []) {
 }
 
 /**
- * BFS affinity waves using canonical personaje ids.
+ * BFS affinity waves across circuit cards (canonical personaje ids).
  */
 export function computeOverviewRelationWaves(
     anchorId,
@@ -238,14 +285,14 @@ export function computeOverviewRelationWaves(
     relations = [],
     maxDepth = 3,
 ) {
-    const { entities: personajes, aliasToCanonical } = dedupePersonajeEntities(entities);
+    const { items, aliasToCanonical } = listCampaignLabEntities(entities);
     const canonicalAnchor = resolveCanonicalEntityId(anchorId, aliasToCanonical);
-    const ids = new Set(personajes.map((e) => e.id));
+    const ids = new Set(items.map((item) => item.entity.id));
     if (!canonicalAnchor || !ids.has(canonicalAnchor)) {
         return { waves: [], aliasToCanonical };
     }
 
-    const entityById = new Map(personajes.map((e) => [e.id, e]));
+    const entityById = new Map(items.map((item) => [item.entity.id, item.entity]));
     const { edges: allEdges } = buildOverviewAffinityEdges(entities, relations);
     const adj = new Map();
     for (const edge of allEdges) {
@@ -347,7 +394,7 @@ export function withOverviewEdges(
  *   charactersById?: Record<string, object>,
  *   imagePathFor?: (entity: object) => string|null,
  *   positions?: Record<string, { x: number, y: number }>,
- *   kindFilter?: 'all'|'pj'|'npc',
+ *   kindFilter?: 'all'|'pj'|'npc'|'locacion'|'organizacion',
  *   searchQuery?: string,
  *   relations?: object[],
  *   selectedId?: string|null,
@@ -366,13 +413,14 @@ export function buildCampaignCharacterOverviewLayout({
     labDepth = 3,
 } = {}) {
     const q = String(searchQuery || "").trim().toLowerCase();
-    const { items: listedAll, aliasToCanonical } = listCampaignPersonajeEntities(
+    const { items: listedAll, aliasToCanonical } = listCampaignLabEntities(
         entities,
         charactersById,
     );
     let listed = listedAll;
-    if (kindFilter === "pj") listed = listed.filter((x) => x.kind === "pj");
-    if (kindFilter === "npc") listed = listed.filter((x) => x.kind === "npc");
+    if (kindFilter && kindFilter !== "all") {
+        listed = listed.filter((x) => x.kind === kindFilter);
+    }
     if (q) {
         listed = listed.filter((x) => {
             const title = String(x.entity.title || x.entity.id).toLowerCase();
@@ -393,7 +441,7 @@ export function buildCampaignCharacterOverviewLayout({
     let maxY = GRID_ORIGIN_Y;
 
     const nodes = placed.map(({ entity, kind, x, y }) => {
-        const isPj = kind === "pj";
+        const meta = LAB_KIND_META[kind] || LAB_KIND_META.npc;
         const saved = positions?.[entity.id];
         const useX = Number.isFinite(saved?.x) ? Math.round(saved.x) : x;
         const useY = Number.isFinite(saved?.y) ? Math.round(saved.y) : y;
@@ -410,15 +458,15 @@ export function buildCampaignCharacterOverviewLayout({
             kind: "satellite",
             title: entity.title || entity.id,
             entityType: entity.entityType,
-            rankLabel: isPj ? "PJ" : "NPC",
-            rankColor: isPj ? PJ_COLOR : MUTED,
-            color: isPj ? PJ_COLOR : MUTED,
+            rankLabel: meta.rankLabel,
+            rankColor: meta.color,
+            color: meta.color,
             x: useX,
             y: useY,
             w: CIRCUIT_NODE_W,
             h: CIRCUIT_NODE_H,
             sync: null,
-            relationLabel: isPj ? "Operador" : "Contacto",
+            relationLabel: meta.relationLabel,
             imagePath: typeof imagePathFor === "function" ? imagePathFor(entity) : null,
             avatarStatus: linkedChar?.status || "alive",
             avatarCrop: linkedChar?.tokenCrop || null,

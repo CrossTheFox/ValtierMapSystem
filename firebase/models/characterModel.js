@@ -40,6 +40,7 @@ export function createCharacter({
         relations: {},
         // Narrative wiki integration
         narrativeEntityId: null, // -> wikiEntities personaje (1:1)
+        ficha_id: null, // -> lores/{lore}/fichas personaje (1:1). Does not clear narrativeEntityId.
         speciesEntityId: null, // -> wikiEntities especie
         organizationMemberships: [], // [{ organizationEntityId, status, role }]
         createdAt: serverTimestamp()

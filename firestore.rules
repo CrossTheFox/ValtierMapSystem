@@ -146,6 +146,24 @@ service cloud.firestore {
         );
       }
 
+      // Player ego already filtered. The player reads only their own doc.
+      match /labViews/{userId} {
+        allow read: if isDM() || (isAuthenticated() && request.auth.uid == userId);
+        allow write: if isDM();
+      }
+
+      // Published mesa line. The DM writes it from the Lore; players read only this.
+      match /timelineViews/{viewId} {
+        allow read: if isAuthenticated();
+        allow write: if isDM();
+      }
+
+      // Per-campaign unlock. Missing doc stays hidden. Players never list this:
+      // they read the published ego in labViews.
+      match /fichaVisibilidad/{fichaId} {
+        allow read, write: if isDM();
+      }
+
       match /aiThreads/{threadId} {
         allow read, write: if isDM();
         match /messages/{messageId} {
@@ -161,6 +179,87 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read, create: if isAuthenticated();
         allow update, delete: if isDM();
+      }
+    }
+
+    // ── Lores ─────────────────────────────────────────────────────────────────
+    // Owner-only. No public lore, no collaborators, no anonymous reads.
+
+    function ownsLore(loreId) {
+      return isAuthenticated()
+        && get(/databases/$(database)/documents/lores/$(loreId)).data.owner_id == request.auth.uid;
+    }
+
+    function linkedCampaignIdAt(loreId, index) {
+      let list = get(/databases/$(database)/documents/lores/$(loreId)).data.linked_campaigns;
+      return list is list && list.size() > index && list[index].keys().hasAny(["id"])
+        ? list[index].id
+        : "";
+    }
+
+    function campaignPointsAtLore(campaignId, loreId) {
+      return campaignId is string
+        && campaignId.size() > 0
+        && exists(/databases/$(database)/documents/campaigns/$(campaignId))
+        && get(/databases/$(database)/documents/campaigns/$(campaignId)).data.primary_lore_id == loreId;
+    }
+
+    // A global DM may edit the lab of a Lore this mesa already annexed.
+    // Checks the first four links. The owner always can. Does not grant delete of the Lore.
+    function dmOfLinkedLore(loreId) {
+      return isDM() && (
+        campaignPointsAtLore(linkedCampaignIdAt(loreId, 0), loreId)
+        || campaignPointsAtLore(linkedCampaignIdAt(loreId, 1), loreId)
+        || campaignPointsAtLore(linkedCampaignIdAt(loreId, 2), loreId)
+        || campaignPointsAtLore(linkedCampaignIdAt(loreId, 3), loreId)
+      );
+    }
+
+    function canEditLoreLab(loreId) {
+      return ownsLore(loreId) || dmOfLinkedLore(loreId);
+    }
+
+    match /lores/{loreId} {
+      allow read, delete: if isAuthenticated() && resource.data.owner_id == request.auth.uid;
+      allow create: if isAuthenticated()
+        && request.resource.data.owner_id == request.auth.uid
+        && request.resource.data.visibility == "private";
+      allow update: if isAuthenticated()
+        && resource.data.owner_id == request.auth.uid
+        && request.resource.data.owner_id == resource.data.owner_id
+        && request.resource.data.visibility == "private";
+
+      match /fichas/{fichaId} {
+        allow read: if canEditLoreLab(loreId);
+        allow create: if ownsLore(loreId) || (
+          dmOfLinkedLore(loreId)
+          && request.resource.data.lore_id == loreId
+          && request.resource.data.entity_type in ["personaje", "locacion", "organizacion"]
+        );
+        allow update: if ownsLore(loreId) || (
+          dmOfLinkedLore(loreId)
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly([
+              "narrative_state", "condicion", "condicion_nota", "collective_mood",
+              "reaction_archetype", "stress_response", "narrative_traits", "bond_notes",
+              "collective_archetype",
+              "layout_lab_x", "layout_lab_y", "ai_impact_blocks", "updated_at"
+            ])
+        );
+        allow delete: if ownsLore(loreId);
+      }
+
+      match /relaciones/{relationId} {
+        allow read, write: if canEditLoreLab(loreId);
+      }
+
+      // Timeline eras and arcos are not fichas (docs/Modelo/linea-de-tiempo.md).
+      match /eras/{eraId} {
+        allow read, write: if ownsLore(loreId);
+      }
+
+      match /arcos/{arcoId} {
+        allow read, write: if ownsLore(loreId);
       }
     }
 

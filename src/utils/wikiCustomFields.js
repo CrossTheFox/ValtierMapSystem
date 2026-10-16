@@ -114,6 +114,19 @@ export function getPersonajeMemberships(personajeEntity) {
     return Array.isArray(arr) ? arr.map(normalizeMembership) : [];
 }
 
+/**
+ * Linked PERSONAJE uses org.members kind=vtt + characterId.
+ * Lore-only NPCs stay kind=wiki + entityId.
+ */
+export function orgMemberRefForPersonaje(personajeEntity) {
+    const vttId = personajeEntity?.linkedVttCharacterId;
+    if (typeof vttId === "string" && vttId) {
+        return { kind: MEMBER_REF_KIND.VTT, id: vttId };
+    }
+    const wikiId = personajeEntity?.id;
+    return { kind: MEMBER_REF_KIND.WIKI, id: typeof wikiId === "string" ? wikiId : "" };
+}
+
 function sameMember(a, b) {
     return a.kind === b.kind && a.id === b.id;
 }

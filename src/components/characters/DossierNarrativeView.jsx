@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, CircularProgress, TextField } from "@mui/material";
+import { Box, Button, CircularProgress, TextField } from "@mui/material";
 import { useDispatch, useSelector } from "react-redux";
 
 import { CyberText, CyberTitle } from "../customs/CustomTexts";
@@ -27,7 +27,7 @@ import {
     getEntityDmNotes,
     setEntityDmNotes,
 } from "../../../firebase/services/entityDmNotesService";
-import { showSnackbar } from "../../store/uiSlice";
+import { openWikiOverlay, showSnackbar } from "../../store/uiSlice";
 import {
     fetchWikiEntities,
     fetchWikiRelations,
@@ -43,9 +43,6 @@ import WikiAiImpactBlocks from "../wiki/WikiAiImpactBlocks";
 import WikiDateInput from "../wiki/WikiDateInput";
 import WikiSearchableSelect, { entitiesToSearchOptions } from "../wiki/WikiSearchableSelect";
 import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
-import { updateCharacterFields } from "../../../firebase/services/characterService";
-import { updateCharacterInList } from "../../store/characterSlice";
-import { updateCharacterInState } from "../../store/worldSlice";
 
 /** True until wiki entities + relations snapshots are in for this campaign. */
 function isWikiGraphLoading(wiki, campaignId) {
@@ -283,22 +280,6 @@ export default function DossierNarrativeView({ character }) {
             fichaDirtyRef.current = false;
             setEntity((prev) => ({ ...(prev || {}), ...updated, id: entityId, customFields }));
 
-            // Keep VTT species mirror in sync when present.
-            const nextSpecies = d.speciesEntityId || null;
-            if (character?.id && (character.speciesEntityId || null) !== nextSpecies) {
-                try {
-                    await updateCharacterFields(character.id, { speciesEntityId: nextSpecies });
-                    patchDraft?.({ speciesEntityId: nextSpecies });
-                    dispatch(updateCharacterInList({ id: character.id, data: { speciesEntityId: nextSpecies } }));
-                    dispatch(updateCharacterInState({
-                        id: character.id,
-                        data: { speciesEntityId: nextSpecies },
-                    }));
-                } catch (syncErr) {
-                    console.warn("[DossierNarrativeView] species VTT sync", syncErr);
-                }
-            }
-
             setSaveStatus("saved");
             if (savedClearRef.current) clearTimeout(savedClearRef.current);
             savedClearRef.current = setTimeout(() => setSaveStatus("idle"), 1600);
@@ -312,7 +293,7 @@ export default function DossierNarrativeView({ character }) {
             }));
             return false;
         }
-    }, [campaignId, uid, entity?.customFields, character?.id, character?.speciesEntityId, patchDraft, dispatch]);
+    }, [campaignId, uid, entity?.customFields, dispatch]);
 
     const persistDmNotes = useCallback(async () => {
         const entityId = entityIdRef.current;
@@ -528,16 +509,39 @@ export default function DossierNarrativeView({ character }) {
                             }}
                         >
                             <Box sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 260 }}>
-                                <CyberTitle
-                                    sx={{
-                                        fontSize: "0.7rem",
-                                        letterSpacing: "0.14em",
-                                        color: NAR_ACCENT,
-                                        mb: 0.75,
-                                    }}
-                                >
-                                    BIOGRAFÍA
-                                </CyberTitle>
+                                <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, mb: 0.75, flexWrap: "wrap" }}>
+                                    <CyberTitle
+                                        sx={{
+                                            fontSize: "0.7rem",
+                                            letterSpacing: "0.14em",
+                                            color: NAR_ACCENT,
+                                        }}
+                                    >
+                                        BIOGRAFÍA
+                                    </CyberTitle>
+                                    {isDM && entity?.id && (
+                                        <Button
+                                            size="small"
+                                            variant="outlined"
+                                            onClick={() => dispatch(openWikiOverlay({
+                                                mode: "detail",
+                                                entityId: entity.id,
+                                            }))}
+                                            sx={{
+                                                fontFamily: "'Orbitron', sans-serif",
+                                                fontSize: "0.58rem",
+                                                letterSpacing: "0.08em",
+                                                color: UI_COLORS.textPrimary,
+                                                border: `1px solid ${NAR_ACCENT}`,
+                                                py: 0.2,
+                                                px: 1,
+                                                "&:hover": { bgcolor: `${NAR_ACCENT}18` },
+                                            }}
+                                        >
+                                            Abrir en Archive
+                                        </Button>
+                                    )}
+                                </Box>
                                 <Box
                                     sx={{
                                         display: "flex",

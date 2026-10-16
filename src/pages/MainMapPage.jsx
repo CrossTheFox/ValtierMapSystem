@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState } from "react";
 import { useSelector } from "react-redux";
+import { Navigate } from "react-router-dom";
 import { Box } from "@mui/material";
 
 import gsap from "gsap";
@@ -7,14 +8,10 @@ import gsap from "gsap";
 import PixiRoot from "../layers/PixiRoot";
 import UIOverlay from "../layers/UIOverlay";
 import CyberLoader from "../components/animations/CyberLoader";
-import CyberPattern from "../components/animations/CyberPattern";
 
 import { UI_COLORS } from "../constants/uiColors";
 import { RENDER_LAYERS } from "../constants/renderLayers";
-import { StyledWrapper } from "../styles/LandingPageStyles";
 import { ViewportContext } from "../context/ViewportContext";
-
-import CampaignSelector from "./CampaignSelector";
 
 import { useWorldSync } from "../hooks/useWorldSync";
 import { useGameSync } from "../hooks/useGameSync";
@@ -71,14 +68,7 @@ export default function MainMapPage() {
         }
     }, [isReady]);
 
-    if (!selectedCampaignId) {
-        return (
-            <StyledWrapper accent={UI_COLORS.accent || "#00f2ea"}>
-                <CyberPattern />
-                <CampaignSelector />
-            </StyledWrapper>
-        );
-    }
+    if (!selectedCampaignId) return <Navigate to="/biblioteca" replace />;
 
     return (
         <ViewportContext.Provider value={viewport}>

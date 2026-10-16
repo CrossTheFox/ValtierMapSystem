@@ -25,6 +25,7 @@ import {
     resolveWikiEntityImagePath,
     resolveWikiEntityImageSource,
 } from "../../utils/resolveWikiEntityImage";
+import { setEditorDraftDirty } from "../../utils/editorDraftGuard";
 import { WIKI_ENTITY_TYPES, WIKI_ENTITY_TYPE_OPTIONS, WIKI_ENTITY_TYPE_LABELS } from "../../constants/wikiEntityTypes";
 import {
     TIMELINE_BRANCH,
@@ -58,6 +59,8 @@ import {
     reconcilePersonajeMemberships,
 } from "../../../firebase/services/membershipService";
 import { linkWikiLocacionToVtt, linkWikiPersonajeToVtt } from "../../../firebase/services/wikiVttLinkService";
+import { linkedLocationIdsOf } from "../../constants/wiki/archiveIdentity.js";
+import { updateLocationInState } from "../../store/worldSlice";
 import {
     uploadWikiEntityImage,
     uploadWikiInlineImage,
@@ -170,6 +173,9 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
         slug: entity?.slug || prefillData.slug || "",
         imageUrl: entity?.imageUrl || prefillData.imageUrl || "",
         linkedVttLocationId: entity?.linkedVttLocationId || prefillData.linkedVttLocationId || null,
+        linkedVttLocationIds: linkedLocationIdsOf(entity).length
+            ? linkedLocationIdsOf(entity)
+            : linkedLocationIdsOf(prefillData),
         linkedVttCharacterId: entity?.linkedVttCharacterId || prefillData.linkedVttCharacterId || null,
         customFields: entity?.customFields || prefillData.customFields || {},
     });
@@ -248,8 +254,11 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
 
     const handleCancel = useCallback(async () => {
         await releasePendingUploads();
+        setEditorDraftDirty(false);
         onCancel?.();
     }, [releasePendingUploads, onCancel]);
+
+    useEffect(() => () => setEditorDraftDirty(false), []);
 
     // Auto-generate slug from title when creating
     useEffect(() => {
@@ -258,8 +267,14 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
         }
     }, [form.title, isNew]);
 
-    const set = useCallback((field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value })), []);
-    const setDirect = useCallback((field, value) => setForm((prev) => ({ ...prev, [field]: value })), []);
+    const set = useCallback((field) => (e) => {
+        setEditorDraftDirty(true);
+        setForm((prev) => ({ ...prev, [field]: e.target.value }));
+    }, []);
+    const setDirect = useCallback((field, value) => {
+        setEditorDraftDirty(true);
+        setForm((prev) => ({ ...prev, [field]: value }));
+    }, []);
 
     const handleCoverImageChange = useCallback(
         async (url) => {
@@ -281,8 +296,13 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
 
     const handleTagDelete = (tag) => setForm((prev) => ({ ...prev, tags: prev.tags.filter((t) => t !== tag) }));
 
-    const handleVttLink = ({ linkedVttLocationId, linkedVttCharacterId }) => {
-        setForm((prev) => ({ ...prev, linkedVttLocationId, linkedVttCharacterId }));
+    const handleVttLink = ({ linkedVttLocationId, linkedVttLocationIds, linkedVttCharacterId }) => {
+        setForm((prev) => ({
+            ...prev,
+            linkedVttLocationId: linkedVttLocationId !== undefined ? linkedVttLocationId : prev.linkedVttLocationId,
+            linkedVttLocationIds: linkedVttLocationIds !== undefined ? linkedVttLocationIds : prev.linkedVttLocationIds,
+            linkedVttCharacterId: linkedVttCharacterId !== undefined ? linkedVttCharacterId : prev.linkedVttCharacterId,
+        }));
     };
 
     const isTimelineEvent = form.entityType === WIKI_ENTITY_TYPES.EVENTO_HISTORICO;
@@ -354,6 +374,7 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
             : "banner";
 
     const setMetaField = useCallback((field, value) => {
+        setEditorDraftDirty(true);
         setForm((prev) => ({
             ...prev,
             customFields: mergeCustomFields(prev.customFields, prev.entityType, { [field]: value }),
@@ -393,7 +414,8 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
                         campaignId,
                         savedId,
                         getPersonajeMemberships(entity),
-                        getPersonajeMemberships({ customFields: form.customFields })
+                        getPersonajeMemberships({ customFields: form.customFields }),
+                        { linkedVttCharacterId: form.linkedVttCharacterId || null }
                     );
                 }
             }
@@ -403,12 +425,17 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
                 campaignId &&
                 form.entityType === WIKI_ENTITY_TYPES.LOCACION
             ) {
-                await linkWikiLocacionToVtt(
-                    campaignId,
-                    savedId,
-                    form.linkedVttLocationId || null,
-                    uid
-                );
+                const prevIds = linkedLocationIdsOf(entity);
+                const nextIds = linkedLocationIdsOf(form);
+                const toRemove = prevIds.filter((id) => !nextIds.includes(id));
+                for (const pinId of toRemove) {
+                    await linkWikiLocacionToVtt(campaignId, null, pinId, uid);
+                    dispatch(updateLocationInState({ id: pinId, data: { wikiEntityId: null } }));
+                }
+                for (const pinId of nextIds) {
+                    await linkWikiLocacionToVtt(campaignId, savedId, pinId, uid);
+                    dispatch(updateLocationInState({ id: pinId, data: { wikiEntityId: savedId } }));
+                }
                 dispatch(fetchWikiEntities({ campaignId }));
             }
 
@@ -428,6 +455,7 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
 
             committedRef.current = true;
             await commitPendingUploads(form);
+            setEditorDraftDirty(false);
 
             onSaved && onSaved(result.payload);
         } catch (e) {
@@ -576,6 +604,7 @@ export default function WikiEntityEditor({ entity, campaignId, onSaved, onCancel
                     <WikiVttLinkPicker
                         entityType={form.entityType}
                         linkedVttLocationId={form.linkedVttLocationId}
+                        linkedVttLocationIds={form.linkedVttLocationIds}
                         linkedVttCharacterId={form.linkedVttCharacterId}
                         onChange={handleVttLink}
                     />

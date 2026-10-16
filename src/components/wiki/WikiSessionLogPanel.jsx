@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
     Box, Button, TextField, IconButton, Stack, Chip, Dialog,
     DialogTitle, DialogContent, DialogActions,
@@ -16,12 +16,17 @@ import {
     deleteSessionLog,
 } from "../../../firebase/services/sessionLogService";
 
-export default function WikiSessionLogPanel({ campaignId, readOnly }) {
+export default function WikiSessionLogPanel({ campaignId, readOnly, focusSessionId = null }) {
     const [sessions, setSessions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [editorOpen, setEditorOpen] = useState(false);
     const [editing, setEditing] = useState(null);
     const [form, setForm] = useState({ title: "", recap: "", sessionDate: "", participants: "" });
+    const focusRef = useRef(null);
+
+    useEffect(() => {
+        focusRef.current?.scrollIntoView({ block: "nearest" });
+    }, [focusSessionId, sessions]);
 
     const reload = useCallback(async () => {
         if (!campaignId) return;
@@ -104,10 +109,23 @@ export default function WikiSessionLogPanel({ campaignId, readOnly }) {
                     </CyberText>
                 )}
                 {sessions.map((s) => (
-                    <Box key={s.id} sx={{ mb: 1.5, p: 1.5, border: `1px solid ${UI_COLORS.border}`, borderRadius: 1, bgcolor: `${UI_COLORS.backgroundPrimary}aa` }}>
+                    <Box
+                        key={s.id}
+                        ref={s.id === focusSessionId ? focusRef : undefined}
+                        sx={{
+                            mb: 1.5, p: 1.5, borderRadius: 1,
+                            border: `1px solid ${s.id === focusSessionId ? UI_COLORS.anomaly : UI_COLORS.border}`,
+                            bgcolor: `${UI_COLORS.backgroundPrimary}aa`,
+                        }}
+                    >
                         <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1 }}>
                             <Box sx={{ flex: 1, minWidth: 0 }}>
                                 <CyberTitle sx={{ fontSize: "0.8rem", color: UI_COLORS.accent }}>{s.title}</CyberTitle>
+                                {s.id === focusSessionId && (
+                                    <CyberText sx={{ fontSize: "0.72rem", color: UI_COLORS.anomaly, mt: 0.5 }}>
+                                        Marca de mesa. Esta sesión no es una ficha.
+                                    </CyberText>
+                                )}
                                 {s.sessionDate && (
                                     <Chip label={s.sessionDate} size="small" sx={{ height: 18, fontSize: "0.55rem", mt: 0.5 }} />
                                 )}

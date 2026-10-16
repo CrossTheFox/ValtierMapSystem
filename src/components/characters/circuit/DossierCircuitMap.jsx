@@ -108,6 +108,11 @@ export default function DossierCircuitMap({
     canDragNodes = false,
     onNodePositionPreview,
     onNodePositionCommit,
+    labArrange = false,
+    pickedIds = null,
+    onMarqueeSelect,
+    onNodeContextMenu,
+    linkTargetId = null,
     topLeftSlot = null,
     topRightSlot = null,
     showSyncChrome = null,
@@ -133,6 +138,13 @@ export default function DossierCircuitMap({
     dragPreviewRef.current = onNodePositionPreview;
     const dragCommitRef = useRef(onNodePositionCommit);
     dragCommitRef.current = onNodePositionCommit;
+    const pickedIdsRef = useRef(pickedIds);
+    pickedIdsRef.current = pickedIds;
+    const layoutRef = useRef(layout);
+    layoutRef.current = layout;
+    const marqueeCbRef = useRef(onMarqueeSelect);
+    marqueeCbRef.current = onMarqueeSelect;
+    const [marqueeBox, setMarqueeBox] = useState(null);
     const stateRef = useRef({
         x: 0,
         y: 0,
@@ -558,6 +570,20 @@ export default function DossierCircuitMap({
         if (stateRef.current.nodeDragging) return;
         if (e.target.closest(".ckt-node, .ckt-chrome, button, input, [data-ckt-overlay]")) return;
         if (stateRef.current.traveling) return;
+        if (labArrange && canDragNodes && e.button === 0 && !e.altKey) {
+            stopInertia();
+            const st = stateRef.current;
+            st.dragging = false;
+            st.marquee = {
+                clientX: e.clientX,
+                clientY: e.clientY,
+                clientX2: e.clientX,
+                clientY2: e.clientY,
+                active: false,
+            };
+            viewportRef.current?.setPointerCapture?.(e.pointerId);
+            return;
+        }
         stopInertia();
         const st = stateRef.current;
         st.dragging = true;
@@ -588,7 +614,41 @@ export default function DossierCircuitMap({
             };
             nd.x = next.x;
             nd.y = next.y;
-            dragPreviewRef.current?.(nd.entityId, next);
+            const group = nd.group?.length ? nd.group : [{
+                entityId: nd.entityId,
+                originX: nd.originX,
+                originY: nd.originY,
+            }];
+            const shiftX = next.x - nd.originX;
+            const shiftY = next.y - nd.originY;
+            for (const member of group) {
+                const placed = {
+                    x: Math.round(Math.min(ww - pad, Math.max(pad, member.originX + shiftX))),
+                    y: Math.round(Math.min(wh - pad, Math.max(pad, member.originY + shiftY))),
+                };
+                member.x = placed.x;
+                member.y = placed.y;
+                dragPreviewRef.current?.(member.entityId, placed);
+            }
+            return;
+        }
+        if (st.marquee) {
+            const dx = e.clientX - st.marquee.clientX;
+            const dy = e.clientY - st.marquee.clientY;
+            if (Math.abs(dx) + Math.abs(dy) > 4) st.marquee.active = true;
+            st.marquee.clientX2 = e.clientX;
+            st.marquee.clientY2 = e.clientY;
+            const rect = viewportRef.current?.getBoundingClientRect();
+            if (rect && st.marquee.active) {
+                const left = Math.min(st.marquee.clientX, e.clientX) - rect.left;
+                const top = Math.min(st.marquee.clientY, e.clientY) - rect.top;
+                setMarqueeBox({
+                    left,
+                    top,
+                    width: Math.abs(dx),
+                    height: Math.abs(dy),
+                });
+            }
             return;
         }
         if (!st.dragging) return;
@@ -624,8 +684,19 @@ export default function DossierCircuitMap({
         } catch {
             /* ignore */
         }
-        if (nd.moved && Number.isFinite(nd.x) && Number.isFinite(nd.y)) {
-            dragCommitRef.current?.(nd.entityId, { x: nd.x, y: nd.y });
+        if (nd.moved) {
+            const group = nd.group?.length ? nd.group : [{
+                entityId: nd.entityId,
+                x: nd.x,
+                y: nd.y,
+            }];
+            for (const member of group) {
+                const x = Number.isFinite(member.x) ? member.x : nd.x;
+                const y = Number.isFinite(member.y) ? member.y : nd.y;
+                if (Number.isFinite(x) && Number.isFinite(y)) {
+                    dragCommitRef.current?.(member.entityId, { x, y });
+                }
+            }
         }
     }, []);
 
@@ -640,6 +711,12 @@ export default function DossierCircuitMap({
         st.vy = 0;
         st.nodeDragging = true;
         const entityId = node.entityId || node.id;
+        const picked = pickedIdsRef.current;
+        const idSet = picked instanceof Set ? picked : new Set(picked || []);
+        const nodes = layoutRef.current?.nodes || [];
+        const groupNodes = idSet.has(entityId)
+            ? nodes.filter((n) => idSet.has(n.entityId || n.id))
+            : [node];
         nodeDragRef.current = {
             active: true,
             entityId,
@@ -651,6 +728,13 @@ export default function DossierCircuitMap({
             y: Number(node.y) || 0,
             moved: false,
             pointerId: e.pointerId,
+            group: groupNodes.map((n) => ({
+                entityId: n.entityId || n.id,
+                originX: Number(n.x) || 0,
+                originY: Number(n.y) || 0,
+                x: Number(n.x) || 0,
+                y: Number(n.y) || 0,
+            })),
         };
         setDraggingNodeId(entityId);
         viewportRef.current?.classList.add("ckt-node-dragging");
@@ -667,6 +751,33 @@ export default function DossierCircuitMap({
             return;
         }
         const st = stateRef.current;
+        if (st.marquee) {
+            const box = st.marquee;
+            st.marquee = null;
+            setMarqueeBox(null);
+            try {
+                viewportRef.current?.releasePointerCapture?.(e.pointerId);
+            } catch {
+                /* ignore */
+            }
+            if (!box.active) {
+                marqueeCbRef.current?.([]);
+                return;
+            }
+            const rect = viewportRef.current?.getBoundingClientRect();
+            const scale = Math.max(0.01, st.scale || 1);
+            const x1 = (Math.min(box.clientX, box.clientX2 ?? box.clientX) - (rect?.left || 0) - st.x) / scale;
+            const x2 = (Math.max(box.clientX, box.clientX2 ?? box.clientX) - (rect?.left || 0) - st.x) / scale;
+            const y1 = (Math.min(box.clientY, box.clientY2 ?? box.clientY) - (rect?.top || 0) - st.y) / scale;
+            const y2 = (Math.max(box.clientY, box.clientY2 ?? box.clientY) - (rect?.top || 0) - st.y) / scale;
+            const hits = (layoutRef.current?.nodes || []).filter((n) => {
+                const cx = (Number(n.x) || 0) + (Number(n.w) || 138) / 2;
+                const cy = (Number(n.y) || 0) + (Number(n.h) || 72) / 2;
+                return cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2;
+            }).map((n) => n.entityId || n.id);
+            marqueeCbRef.current?.(hits);
+            return;
+        }
         if (!st.dragging) return;
         st.dragging = false;
         viewportRef.current?.classList.remove("dragging");
@@ -783,6 +894,21 @@ export default function DossierCircuitMap({
                     onSelectNode?.(hubNode || null);
                 }}
             >
+                {marqueeBox && (
+                    <Box
+                        sx={{
+                            position: "absolute",
+                            left: marqueeBox.left,
+                            top: marqueeBox.top,
+                            width: marqueeBox.width,
+                            height: marqueeBox.height,
+                            border: `1px solid ${UI_COLORS.anomaly}`,
+                            bgcolor: `${UI_COLORS.anomaly}22`,
+                            pointerEvents: "none",
+                            zIndex: 6,
+                        }}
+                    />
+                )}
                 <div ref={atmosphereRef} className="ckt-atmosphere" aria-hidden style={{ opacity: syncChromeVisible ? 1 : 0 }} />
                 <div ref={gridRef} className="ckt-grid" aria-hidden />
 
@@ -857,6 +983,8 @@ export default function DossierCircuitMap({
                                 onDragStart={handleNodeDragStart}
                                 onSelect={onSelectNode}
                                 canFocusTravel={canFocusTravel}
+                                onNodeContextMenu={onNodeContextMenu}
+                                marked={linkTargetId != null && (linkTargetId === node.entityId || linkTargetId === node.id)}
                                 canToggleStruct={canToggleStruct}
                                 relationMode={relationMode}
                                 onFocusEntity={onFocusEntity}

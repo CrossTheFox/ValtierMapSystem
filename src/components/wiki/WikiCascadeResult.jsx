@@ -41,11 +41,14 @@ import { UI_COLORS } from "../../constants/uiColors";
 import { Z_INDEX } from "../../constants/designSystem";
 import { CYBER_SCROLL_STYLE } from "../../constants/cyberScrollStyle";
 import { REACTION_ARCHETYPE_LABELS, REACTION_ARCHETYPE_TOOLTIPS } from "../../constants/wiki/entityFieldSchemas";
-import { WIKI_RELATION_TYPE_LABELS } from "../../constants/wikiRelationTypes";
+import { isAffinityRelation, WIKI_RELATION_TYPE_LABELS } from "../../constants/wikiRelationTypes";
+import { CODEX_TYPES } from "../../constants/wiki/archiveCodex";
+import { labImpactChrome } from "../../utils/labImpactMarks";
 import { addWikiRelation, updateWikiRelation, removeWikiRelation, saveWikiEntity } from "../../store/wikiSlice";
 import { showSnackbar } from "../../store/uiSlice";
 import { applyProposedWikiEvent } from "../../utils/applyProposedWikiEvent";
 import { applyProposedImpact } from "../../utils/applyProposedImpact";
+import { applyLoreProposedImpact } from "../../utils/applyLoreProposedImpact";
 import {
     buildAiImpactBlockBody,
     normalizeCollectiveImpactForApply,
@@ -67,6 +70,7 @@ import {
     WIKI_RELATION_STRENGTH_MAX,
 } from "../../../firebase/services/wikiRelationService";
 import { impactEntityIdOf } from "./CascadeImpactPopover";
+import SyncMeterReadout from "./SyncMeterReadout";
 
 /** Hidden for now — cascade review focuses on impacts/relations only. */
 const SHOW_PROPOSED_HISTORICAL_EVENT = false;
@@ -188,6 +192,11 @@ function buildStrengthDrafts(impact, relations = []) {
             relationType: enriched.relationType,
             currentStrength: enriched.currentStrength,
             proposedStrength: enriched.proposedStrength ?? 0,
+            affinity: enriched.isAffinity ?? isAffinityRelation({
+                relationType: enriched.relationType,
+                fromEntityType: enriched.fromEntity?.entityType ?? null,
+                toEntityType: enriched.toEntity?.entityType ?? null,
+            }),
             include: true,
         });
     });
@@ -218,43 +227,6 @@ function impactWithStrengthDrafts(impact, strengthDrafts = []) {
         return ch;
     });
     return { ...impact, resolvedChanges };
-}
-
-function StrengthBadge({ change }) {
-    const label = formatStrengthChangeLabel(change);
-    if (!label) return null;
-    const delta = change.strengthDeltaResolved;
-    const noChange = delta === 0
-        || (change.currentStrength != null
-            && change.proposedStrength != null
-            && change.currentStrength === change.proposedStrength);
-    const up = typeof delta === "number" && delta > 0;
-    const down = typeof delta === "number" && delta < 0;
-    const color = noChange
-        ? UI_COLORS.textSecondary
-        : up
-            ? UI_COLORS.anomaly
-            : down
-                ? UI_COLORS.accentStrong
-                : UI_COLORS.anomaly;
-
-    return (
-        <Chip
-            label={label}
-            size="small"
-            sx={{
-                height: 18,
-                mt: 0.35,
-                fontSize: "0.58rem",
-                fontFamily: "'Orbitron', sans-serif",
-                letterSpacing: 0.4,
-                bgcolor: `${color}18`,
-                color,
-                border: `1px solid ${color}55`,
-                "& .MuiChip-label": { px: 0.75 },
-            }}
-        />
-    );
 }
 
 function ChangeRow({ change, applying, onApply, applied = false }) {
@@ -307,10 +279,12 @@ function ChangeRow({ change, applying, onApply, applied = false }) {
                         </>
                     ) : (
                         <>
-                            <strong>{change.fromEntityTitle || "?"}</strong>
-                            <span style={{ color: UI_COLORS.textSecondary }}>
-                                {" → ["}{relLabel || "sin tipo"}{"] → "}
+                            <span style={{ color: UI_COLORS.anomaly, letterSpacing: "0.06em", fontSize: "0.62rem" }}>
+                                {relLabel || "sin tipo"}
                             </span>
+                            <br />
+                            <strong>{change.fromEntityTitle || "?"}</strong>
+                            <span style={{ color: UI_COLORS.textSecondary }}>{" · "}</span>
                             <strong>{change.toEntityTitle || "?"}</strong>
                             {change.newLabel && (
                                 <span style={{ color: UI_COLORS.textSecondary }}>
@@ -320,7 +294,17 @@ function ChangeRow({ change, applying, onApply, applied = false }) {
                         </>
                     )}
                 </CyberText>
-                {isRelation && <StrengthBadge change={change} />}
+                {isRelation && change.kind !== "relation_remove" && change.isAffinity && change.proposedStrength != null && (
+                    <SyncMeterReadout
+                        strength={change.proposedStrength}
+                        caption={formatStrengthChangeLabel(change) || ""}
+                    />
+                )}
+                {isRelation && change.isStructural && (
+                    <CyberText sx={{ fontSize: "0.58rem", color: UI_COLORS.textSecondary, mt: 0.25 }}>
+                        Hecho · sin sync
+                    </CyberText>
+                )}
                 <CyberText sx={{ fontSize: "0.65rem", color: UI_COLORS.textSecondary, mt: 0.25 }}>
                     {change.reason}
                 </CyberText>
@@ -374,10 +358,15 @@ function QueueImpactRow({
     applied = false,
     selected = false,
     onFocus,
+    sample = null,
+    entity = null,
 }) {
     const seal = gradeImpactSeal(impact);
     const sealColor = sealGradeColor(seal);
     const reaction = impact.emotionalReaction || impact.collectiveReaction || "—";
+    const meta = CODEX_TYPES[entity?.entityType] || null;
+    const floatLabel = sample?.label || sealGradeLabel(seal);
+    const floatColor = sample?.color || sealColor;
     const failHint = seal === "fail"
         ? (impact.validationErrors?.[0]
             || impact.resolvedChanges?.find((c) => !c.valid)?.validationError
@@ -397,17 +386,18 @@ function QueueImpactRow({
             }}
             sx={{
                 display: "grid",
-                gridTemplateColumns: "1fr auto",
-                gap: 0.45,
+                gridTemplateColumns: "auto 1fr auto",
+                gap: 0.7,
                 alignItems: "center",
                 px: 0.85,
                 py: 0.7,
                 mb: 0.4,
                 borderRadius: "6px",
                 border: selected
-                    ? `1px solid ${UI_COLORS.accentStrong}66`
-                    : "1px solid transparent",
-                bgcolor: selected ? `${UI_COLORS.accentStrong}14` : "transparent",
+                    ? `1px solid ${floatColor}`
+                    : `1px solid ${floatColor}55`,
+                borderLeft: `3px solid ${floatColor}`,
+                bgcolor: selected ? `${floatColor}18` : "rgba(7,7,12,0.55)",
                 cursor: "pointer",
                 opacity: applied ? 0.65 : 1,
                 "&:hover": {
@@ -416,6 +406,32 @@ function QueueImpactRow({
                 },
             }}
         >
+            <Box
+                aria-hidden
+                sx={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: "50%",
+                    border: `2px solid ${meta?.color || floatColor}`,
+                    display: "grid",
+                    placeItems: "center",
+                    flexShrink: 0,
+                    bgcolor: "rgba(7,7,12,0.9)",
+                    boxShadow: `0 0 12px ${floatColor}66`,
+                }}
+            >
+                <Box
+                    component="span"
+                    sx={{
+                        fontFamily: "Orbitron, sans-serif",
+                        fontSize: "9px",
+                        letterSpacing: "0.08em",
+                        color: meta?.color || floatColor,
+                    }}
+                >
+                    {meta?.code || "·"}
+                </Box>
+            </Box>
             <Box sx={{ minWidth: 0 }}>
                 <CyberTitle
                     sx={{
@@ -441,6 +457,29 @@ function QueueImpactRow({
                 >
                     {reaction}
                 </CyberText>
+                <Box
+                    component="span"
+                    sx={{
+                        display: "inline-block",
+                        mt: 0.45,
+                        maxWidth: "100%",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        fontFamily: "'Fira Code', monospace",
+                        fontSize: "10px",
+                        letterSpacing: "0.03em",
+                        color: floatColor,
+                        border: `1px solid ${floatColor}`,
+                        borderRadius: "3px",
+                        px: "6px",
+                        py: "2px",
+                        bgcolor: "rgba(7,7,12,0.94)",
+                        boxShadow: `0 0 10px ${floatColor}55`,
+                    }}
+                >
+                    {floatLabel}
+                </Box>
                 {failHint ? (
                     <CyberText
                         sx={{
@@ -795,6 +834,9 @@ function ImpactCard({
 export default function WikiCascadeResult({
     result,
     campaignId,
+    loreId = null,
+    entities: entitiesProp = null,
+    relations: relationsProp = null,
     eventInstruction,
     onEntityClick,
     presentation = "inline",
@@ -805,8 +847,10 @@ export default function WikiCascadeResult({
 }) {
     const dispatch  = useDispatch();
     const uid       = useSelector((s) => s.player.profile?.uid);
-    const relations = useSelector((s) => s.wiki.relations ?? []);
-    const entities  = useSelector((s) => s.wiki.entities ?? []);
+    const storeRelations = useSelector((s) => s.wiki.relations ?? []);
+    const storeEntities  = useSelector((s) => s.wiki.entities ?? []);
+    const relations = relationsProp || storeRelations;
+    const entities  = entitiesProp || storeEntities;
     const narrativeSettings = useSelector((s) => s.wiki.narrativeSettings ?? {});
 
     const [applying, setApplying] = useState(false);
@@ -944,26 +988,36 @@ export default function WikiCascadeResult({
     }, [pendingReviewNonce, pendingReviewEntityId, result, openImpactReview]);
 
     const handleApplyImpact = useCallback(async (impact, blockBodyOverride = null, strengthDrafts = null) => {
-        if (!campaignId) return;
+        if (!campaignId && !loreId) return;
         setApplying(true);
         try {
             const patched = strengthDrafts?.length
                 ? impactWithStrengthDrafts(impact, strengthDrafts)
                 : impact;
-            const { applied, skipped, errors: applyErrors, details = [] } = await applyProposedImpact({
-                impact: patched,
-                dispatch,
-                saveWikiEntity,
-                addWikiRelation,
-                updateWikiRelation,
-                removeWikiRelation,
-                campaignId,
-                uid,
-                entities,
-                relations,
-                eventMeta: { eventTitle: result?.eventTitle || "" },
-                blockBodyOverride,
-            });
+            const appliedPack = loreId
+                ? await applyLoreProposedImpact({
+                    impact: patched,
+                    loreId,
+                    entities,
+                    relations,
+                    eventMeta: { eventTitle: result?.eventTitle || "" },
+                    blockBodyOverride,
+                })
+                : await applyProposedImpact({
+                    impact: patched,
+                    dispatch,
+                    saveWikiEntity,
+                    addWikiRelation,
+                    updateWikiRelation,
+                    removeWikiRelation,
+                    campaignId,
+                    uid,
+                    entities,
+                    relations,
+                    eventMeta: { eventTitle: result?.eventTitle || "" },
+                    blockBodyOverride,
+                });
+            const { applied, skipped, errors: applyErrors, details = [] } = appliedPack;
             const head = applied === 0 && skipped > 0
                 ? `Sin cambios aplicados (${skipped} omitido${skipped !== 1 ? "s" : ""})`
                 : `Impacto: ${applied} aplicado${applied !== 1 ? "s" : ""}${skipped ? ` · ${skipped} omitido${skipped !== 1 ? "s" : ""}` : ""}`;
@@ -984,7 +1038,7 @@ export default function WikiCascadeResult({
             setApplying(false);
             setImpactReview(null);
         }
-    }, [campaignId, uid, entities, relations, dispatch, result?.eventTitle, impactKeyOf]);
+    }, [campaignId, loreId, uid, entities, relations, dispatch, result?.eventTitle, impactKeyOf]);
 
     const handleApplyCollectiveImpact = useCallback((collective) => {
         if (!campaignId || !collective) return;
@@ -1053,6 +1107,8 @@ export default function WikiCascadeResult({
             .filter((imp) => !appliedImpactKeys.has(impactKeyOf(imp))),
     ];
     const isQueue = presentation === "queue";
+    const impactChrome = labImpactChrome(result, relations);
+    const entityById = new Map((entities || []).map((row) => [row.id, row]));
     const eventTitle = result.eventTitle?.trim()
         || eventInstruction?.trim().slice(0, 120)
         || "Evento catalizador";
@@ -1097,7 +1153,7 @@ export default function WikiCascadeResult({
                 </CyberText>
                 <CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.textSecondary, width: "100%" }}>
                     {isQueue
-                        ? "Sellos también en las cards del mapa. Click una fila para inspeccionar."
+                        ? "La pastilla de cada fila es la misma que flota sobre la ficha en el mapa."
                         : "Cada impacto lleva sello OK / WARN / FAIL (muertos y hechos estructurales = FAIL)."}
                 </CyberText>
             </Box>
@@ -1239,6 +1295,8 @@ export default function WikiCascadeResult({
                         <QueueImpactRow
                             key={`q-${eid || i}`}
                             impact={imp}
+                            sample={eid ? impactChrome.marks[eid] : null}
+                            entity={eid ? entityById.get(eid) : null}
                             applied={appliedImpactKeys.has(impactKeyOf(imp))}
                             selected={Boolean(
                                 focusedImpactEntityId
@@ -1261,6 +1319,8 @@ export default function WikiCascadeResult({
                             <QueueImpactRow
                                 key={`qc-${eid || i}`}
                                 impact={norm}
+                                sample={eid ? impactChrome.marks[eid] : null}
+                                entity={eid ? entityById.get(eid) : null}
                                 applied={appliedImpactKeys.has(impactKeyOf(norm))}
                                 selected={Boolean(
                                     focusedImpactEntityId
@@ -1589,8 +1649,8 @@ export default function WikiCascadeResult({
                                     <>
                                         <strong>{confirmChange.fromEntityTitle}</strong>
                                         {confirmChange.relationType && (
-                                            <span style={{ color: UI_COLORS.textSecondary }}>
-                                                {" → [" + (WIKI_RELATION_TYPE_LABELS[confirmChange.relationType] ?? confirmChange.relationType) + "] → "}
+                                            <span style={{ color: UI_COLORS.anomaly }}>
+                                                {" · " + (WIKI_RELATION_TYPE_LABELS[confirmChange.relationType] ?? confirmChange.relationType) + " · "}
                                             </span>
                                         )}
                                         <strong>{confirmChange.toEntityTitle}</strong>
@@ -1694,12 +1754,17 @@ export default function WikiCascadeResult({
                                             </CyberText>
                                             <CyberText sx={{ fontSize: "0.62rem", color: UI_COLORS.textSecondary }}>
                                                 {relLabel}
-                                                {fromVal != null && (
+                                                {draft.affinity && fromVal != null && (
                                                     <> · actual {fromVal}{delta != null && delta !== 0 ? ` (${delta > 0 ? "+" : ""}${delta})` : ""}</>
                                                 )}
-                                                {fromVal == null && " · nueva"}
+                                                {draft.affinity && fromVal == null && " · nueva"}
+                                                {!draft.affinity && " · hecho, sin sync"}
                                             </CyberText>
+                                            {draft.affinity && (
+                                                <SyncMeterReadout strength={Number(draft.proposedStrength) || 0} />
+                                            )}
                                         </Box>
+                                        {draft.affinity && (
                                         <TextField
                                             type="number"
                                             size="small"
@@ -1752,6 +1817,7 @@ export default function WikiCascadeResult({
                                                 "& input": { color: UI_COLORS.textPrimary, py: 0.75 },
                                             }}
                                         />
+                                        )}
                                         <Button
                                             size="small"
                                             disabled={applying}
